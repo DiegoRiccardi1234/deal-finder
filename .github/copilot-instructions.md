@@ -38,9 +38,11 @@
 - Se i selettori CSS cambiano, aggiorna solo la funzione della fonte interessata senza impattare le altre.
 - Fonti supportate: `trovaprezzi.it`, `amazon.it`, `ebay.it`, `vinted.it`.
 - `cerca_offerte` deve rispettare il filtro `fonti` (selezione esplicita delle fonti) e `condizione`.
+- eBay: scraping diretto HTML della pagina di ricerca (`/sch/i.html`), **non** RSS (rss.ebay.it non esiste). Selettori `li[data-viewport]` con classi `s-card__*`.
 
 ## Data Conventions
 - Il prezzo va normalizzato a `float` (supporto formato italiano `1.299,00` e varianti).
+- `parse_price()` gestisce tutti questi formati reali: `"€ 899,00"`, `"A partire da € 1.299,00"`, `"€899,00 con coupon"`, `"EUR 899,00"`, `"1.299,00 €"`, range `"100,00 - 200,00"` (prende il minimo). Restituisce `None` se non parsabile.
 - L'oggetto dati standard e` `Offerta(nome, prezzo, negozio, link, fonte)`.
 - Ordina sempre i risultati per prezzo crescente prima dell'output.
 - CSV: usa UTF-8 con BOM (`utf-8-sig`) per compatibilita con Excel in locale italiano.

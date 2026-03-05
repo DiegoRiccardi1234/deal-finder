@@ -24,7 +24,6 @@ import random
 import re
 import sys
 import time
-import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Optional
@@ -179,19 +178,33 @@ def get_headers() -> dict[str, str]:
     }
 
 
-def parse_price(text: str) -> float:
+def parse_price(text: str) -> Optional[float]:
     """
     Converte una stringa di prezzo in float.
-    Gestisce formati come '€ 1.299,00', '1299.00', '1.299,00 - 1.399,00'.
-    In caso di range, prende il valore minimo.
-    Ritorna float('inf') se il parsing fallisce.
+
+    Gestisce tutti i formati reali Amazon/eBay italiani:
+      - "€ 899,00"            (spazio dopo €)
+      - "A partire da € 1.299,00"
+      - "€899,00 con coupon"
+      - "EUR 899,00"
+      - "1.299,00 €"          (simbolo dopo il numero)
+      - "1.299,00 - 1.399,00" (range → prende il minimo)
+
+    Ritorna None se il parsing fallisce.
     """
     if not text:
-        return float("inf")
+        return None
 
-    # Normalizza: converte in stringa e pulisce simboli/rumore comuni.
     text = str(text)
+    # Normalizza spazi speciali
     text = text.replace("\u00a0", " ").replace("\u202f", " ")
+
+    # Rimuove prefissi comuni ("A partire da", "da", ecc.)
+    text = re.sub(r"(?i)^.*?(?:a partire da|da)\s*", "", text)
+    # Rimuove suffissi comuni ("con coupon", "con sconto", ecc.)
+    text = re.sub(r"(?i)\s+con\s+.*$", "", text)
+
+    # Rimuove simboli valuta e parole note
     text = text.replace("EUR", "").replace("€", "").strip()
     text = re.sub(r"[()\[\]]", "", text)
     text = re.sub(r"\s+", " ", text)
@@ -204,7 +217,7 @@ def parse_price(text: str) -> float:
     text = re.sub(r"[^\d,\.]", "", text)
 
     if not text:
-        return float("inf")
+        return None
 
     # Formato europeo: 1.299,00 → togli i punti migliaia, sostituisci virgola decimale
     if "," in text:
@@ -216,13 +229,13 @@ def parse_price(text: str) -> float:
             # È separatore migliaia, non decimale
             text = text.replace(".", "")
     else:
-        # Rimuove qualsiasi residuo non numerico eccetto il punto decimale
         text = re.sub(r"[^\d.]", "", text)
 
     try:
-        return float(text)
+        val = float(text)
+        return val if val > 0 else None
     except ValueError:
-        return float("inf")
+        return None
 
 
 def _extract_shipping_from_text(text: str) -> str:
@@ -440,7 +453,7 @@ def scrape_trovaprezzi(
                 prezzo_tag = item.select_one(".a8Pemb, .T14wmb") if item else None
                 prezzo_txt = prezzo_tag.get_text(" ", strip=True) if prezzo_tag else ""
                 prezzo = parse_price(prezzo_txt)
-                if prezzo == float("inf"):
+                if prezzo is None:
                     continue
 
                 link_tag = (item.select_one("a.shntl[href]") if item else None) or (item.select_one("a[href]") if item else None)
@@ -574,18 +587,21 @@ def scrape_amazon(
                 # ----- Prezzo -----
                 # Prova prima il tag già formattato (.a-offscreen), poi la composizione
                 prezzo_tag = card.select_one(".a-price .a-offscreen")
+                prezzo_raw = ""
                 if prezzo_tag:
-                    prezzo = parse_price(prezzo_tag.get_text(strip=True))
+                    prezzo_raw = prezzo_tag.get_text(strip=True)
                 else:
                     intero_tag    = card.select_one(".a-price-whole")
                     decimale_tag  = card.select_one(".a-price-fraction")
                     if intero_tag and decimale_tag:
-                        prezzo_str = f"{intero_tag.get_text(strip=True)}.{decimale_tag.get_text(strip=True)}"
-                        prezzo = parse_price(prezzo_str)
+                        prezzo_raw = f"{intero_tag.get_text(strip=True)}.{decimale_tag.get_text(strip=True)}"
                     else:
                         continue  # Nessun prezzo trovato
 
-                if prezzo == float("inf"):
+                prezzo = parse_price(prezzo_raw)
+                # Debug log: mostra titolo + prezzo grezzo + prezzo parsed
+                print(f"    [DEBUG Amazon] {nome[:50]} | raw='{prezzo_raw}' | parsed={prezzo}")
+                if prezzo is None:
                     continue
 
                 # ----- Negozio / Venditore -----
@@ -655,7 +671,7 @@ def scrape_amazon(
 
 
 # ===========================================================================
-# SCRAPER — ebay.it (RSS pubblico)
+# SCRAPER — ebay.it (scraping diretto HTML)
 # ===========================================================================
 
 def scrape_ebay(
@@ -664,19 +680,13 @@ def scrape_ebay(
     query_tokens: list[str],
     condizione: str = "tutti",
 ) -> list[Offerta]:
-    """Scraper eBay tramite feed RSS pubblico (senza API key)."""
-    condizione_code = ""
+    """Scraper eBay.it tramite scraping diretto della pagina di ricerca."""
+    # _sop=15 → ordina per prezzo + spedizione crescente
+    url = f"https://www.ebay.it/sch/i.html?_nkw={quote_plus(query)}&_sop=15"
     if condizione == "nuovo":
-        condizione_code = "1000"
+        url += "&LH_ItemCondition=1000"
     elif condizione == "usato":
-        condizione_code = "3000"
-
-    url = (
-        "https://rss.ebay.it/ws/eBayISAPI.dll?ViewListingSearchResults"
-        f"&keywords={quote_plus(query)}"
-    )
-    if condizione_code:
-        url += f"&LH_ItemCondition={condizione_code}"
+        url += "&LH_ItemCondition=3000"
 
     print(f"\n🔍 Cerco su eBay.it: \"{query}\"")
     risultati: list[Offerta] = []
@@ -685,63 +695,110 @@ def scrape_ebay(
         headers = get_headers()
         headers["Referer"] = "https://www.ebay.it/"
 
+        time.sleep(random.uniform(2.0, 3.0))
+
         resp = fetch_with_retry(url, headers)
+        if resp.status_code in (401, 403, 429):
+            print("    ⚠️  eBay.it: accesso bloccato, salto la fonte.")
+            return risultati
         resp.raise_for_status()
 
-        root = ET.fromstring(resp.content)
-        items = root.findall(".//item")
-        if not items:
-            print("    ⚠️  eBay RSS: nessun item nel feed, salto la fonte.")
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        # Controlla CAPTCHA / robot check
+        page_title = (soup.title.string or "") if soup.title else ""
+        if any(kw in page_title.lower() for kw in ("sorry", "captcha", "robot")):
+            print("    ❌ eBay.it ha restituito una pagina anti-bot.")
             return risultati
 
-        for item in items:
-            title = (item.findtext("title") or "").strip()
-            link = (item.findtext("link") or "").strip()
-            description = (item.findtext("description") or "").strip()
-            if not title or not link:
-                continue
+        # Selettori eBay 2025+: li[data-viewport] con classi s-card__*
+        cards = soup.select("li[data-viewport]")
+        if not cards:
+            print("    ⚠️  Nessun prodotto trovato su eBay — selettore cambiato o CAPTCHA.")
+            return risultati
 
-            price_match = re.search(r"€\s*\d{1,3}(?:[\.\s]\d{3})*(?:,\d{2})?", f"{title} {description}")
-            if not price_match:
-                continue
+        # Testi di UI eBay da rimuovere dai titoli
+        _JUNK_TITLE = ["viene aperta una nuova finestra o scheda", "Nuova inserzione"]
 
-            prezzo = parse_price(price_match.group(0))
-            if prezzo == float("inf"):
-                continue
+        seen_links: set[str] = set()
+        for card in cards:
+            try:
+                # ----- Titolo -----
+                title_tag = card.select_one(".s-card__title")
+                if not title_tag:
+                    continue
+                nome = title_tag.get_text(strip=True)
+                if not nome:
+                    continue
+                # Pulisci testo UI eBay dal titolo
+                for junk in _JUNK_TITLE:
+                    nome = nome.replace(junk, "")
+                nome = nome.strip()
+                # Salta la card promozionale "Shop on eBay"
+                if nome.lower().startswith("shop on ebay"):
+                    continue
+                if not nome:
+                    continue
 
-            if not is_relevant(title, query_tokens):
-                continue
-            if budget_max is not None and prezzo > budget_max:
-                continue
+                # ----- Prezzo -----
+                price_tag = card.select_one(".s-card__price")
+                if not price_tag:
+                    continue
+                prezzo = parse_price(price_tag.get_text(strip=True))
+                if prezzo is None:
+                    continue
 
-            desc_lower = description.lower()
-            spedizione = "n.d."
-            if "spedizione gratuita" in desc_lower or "free shipping" in desc_lower:
-                spedizione = "Gratuita ✅"
-            else:
-                ship_match = re.search(
-                    r"(?:€\s*\d{1,3}(?:[\.\s]\d{3})*(?:,\d{2})?|EUR\s*\d{1,3}(?:[\.\s]\d{3})*(?:,\d{2})?)\s*(?:di\s+)?spedizione",
-                    description,
-                    flags=re.IGNORECASE,
+                # ----- Link (preferisci /itm/) -----
+                link = ""
+                for a_tag in card.select("a.s-card__link[href]"):
+                    href = str(a_tag.get("href", "") or "")
+                    if "/itm/" in href:
+                        link = href
+                        break
+                if not link:
+                    first_a = card.select_one("a.s-card__link[href]")
+                    link = str(first_a.get("href", "") or "") if first_a else ""
+                if not link or link in seen_links:
+                    continue
+                seen_links.add(link)
+
+                # ----- Spedizione (dal testo completo della card) -----
+                card_text = card.get_text(" ", strip=True)
+                spedizione = _extract_shipping_from_text(card_text)
+                if spedizione == "n.d.":
+                    card_lower = card_text.lower()
+                    if "spedizione gratuita" in card_lower:
+                        spedizione = "Gratuita ✅"
+                    else:
+                        ship_m = re.search(
+                            r"[+]?\s*(?:EUR|€)\s*\d{1,3}(?:[\.\s]\d{3})*(?:,\d{2})?\s*(?:di\s+)?spes[ei]\s+di\s+spedizione",
+                            card_text, re.IGNORECASE,
+                        )
+                        if ship_m:
+                            val_m = re.search(r"(?:EUR|€)\s*\d{1,3}(?:[\.\s]\d{3})*(?:,\d{2})?", ship_m.group(0), re.IGNORECASE)
+                            if val_m:
+                                spedizione = val_m.group(0).replace("EUR", "€").strip()
+
+                # ----- Filtri -----
+                if not is_relevant(nome, query_tokens):
+                    continue
+                if budget_max is not None and prezzo > budget_max:
+                    continue
+
+                risultati.append(
+                    Offerta(
+                        nome=nome,
+                        prezzo=prezzo,
+                        negozio="eBay.it",
+                        link=link,
+                        fonte="ebay.it",
+                        spedizione=spedizione,
+                    )
                 )
-                if ship_match:
-                    ship_value = re.search(r"(?:€|EUR)\s*\d{1,3}(?:[\.\s]\d{3})*(?:,\d{2})?", ship_match.group(0), re.IGNORECASE)
-                    if ship_value:
-                        spedizione = ship_value.group(0).replace("EUR", "€").replace("  ", " ").strip()
+            except (AttributeError, TypeError):
+                continue
 
-            risultati.append(
-                Offerta(
-                    nome=title,
-                    prezzo=prezzo,
-                    negozio="eBay.it",
-                    link=link,
-                    fonte="ebay.it",
-                    spedizione=spedizione,
-                )
-            )
-
-        if not risultati:
-            print("    ⚠️  eBay RSS: item trovati ma nessuno valido dopo i filtri.")
+        print(f"    ✅ Trovate {len(cards)} card grezze, {len(risultati)} valide dopo filtri")
 
     except requests.Timeout:
         print("    ❌ eBay.it: timeout raggiunto anche dopo i retry.")
@@ -815,7 +872,7 @@ def scrape_vinted(
                 if not m:
                     continue
                 prezzo = parse_price(m.group(0))
-                if prezzo == float("inf"):
+                if prezzo is None:
                     continue
 
                 href = str(link_tag.get("href", "") or "")
@@ -862,7 +919,7 @@ def scrape_vinted(
                     if not price_match:
                         continue
                     prezzo = parse_price(price_match.group(0))
-                    if prezzo == float("inf"):
+                    if prezzo is None:
                         continue
 
                     if not is_relevant(nome, query_tokens):
@@ -998,10 +1055,21 @@ def detect_category_and_questions(testo_utente: str) -> dict[str, object]:
     try:
         client = Groq(api_key=api_key)
         prompt = (
-            "Classifica il prodotto in una categoria tra: smartphone, laptop, abbigliamento, "
-            "scarpe, elettrodomestico, altro. Restituisci SOLO JSON con chiavi: "
-            "categoria (string), domande (array di max 3 stringhe focalizzate su preferenze utente: colore, storage, variante, uso). "
-            "NON fare domande su specifiche tecniche del prodotto (es megapixel, batteria)."
+            "Sei un assistente acquisti. Il tuo compito è fare domande SOLO sulle preferenze "
+            "dell'utente per trovare il prodotto giusto online.\n\n"
+            "REGOLE ASSOLUTE:\n"
+            "- Fai SOLO domande su: colore, modello specifico, storage/capacità, taglia/misura, uso previsto\n"
+            "- NON chiedere MAI: megapixel, batteria, processore, RAM, sistema operativo, specifiche tecniche\n"
+            "- Se l'utente ha già specificato modello + almeno una preferenza, restituisci preferenze_chiare=true "
+            "senza fare altre domande\n"
+            "- Massimo 2 domande in totale, mai di più\n\n"
+            "Per smartphone: chiedi modello (Pro/standard/Plus) e colore o storage\n"
+            "Per laptop: chiedi uso principale (studio/lavoro/gaming) e peso/portabilità\n"
+            "Per abbigliamento: chiedi taglia e colore\n"
+            "Per scarpe: chiedi numero e uso (sportivo/casual)\n\n"
+            "Restituisci SOLO JSON con chiavi: categoria (string tra smartphone, laptop, "
+            "abbigliamento, scarpe, elettrodomestico, altro), domande (array di max 2 stringhe), "
+            "preferenze_chiare (bool)."
         )
         completion = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
