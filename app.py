@@ -31,7 +31,12 @@ st.set_page_config(
 # Import modulo scraper locale
 # ---------------------------------------------------------------------------
 try:
-    from offerte_tech import Offerta, cerca_offerte, parse_search_intent
+    from offerte_tech import (
+        Offerta,
+        cerca_offerte,
+        detect_category_and_questions,
+        parse_search_intent,
+    )
 except ImportError as _e:
     st.error(
         f"❌ Impossibile importare `offerte_tech.py`: {_e}\n\n"
@@ -99,24 +104,28 @@ if "assist_chat" not in st.session_state:
     st.session_state["assist_chat"] = []
 if "assist_confirm" not in st.session_state:
     st.session_state["assist_confirm"] = ""
+if "assist_categoria" not in st.session_state:
+    st.session_state["assist_categoria"] = "altro"
+if "assist_domande" not in st.session_state:
+    st.session_state["assist_domande"] = []
+if "filtri_ai" not in st.session_state:
+    st.session_state["filtri_ai"] = {}
+if "filtri_ai_ultima_ricerca" not in st.session_state:
+    st.session_state["filtri_ai_ultima_ricerca"] = {}
 
 SYSTEM_PROMPT_AI = (
     "Sei un assistente esperto di tecnologia che aiuta gli utenti a scegliere "
     "prodotti tech al miglior prezzo. Rispondi sempre in italiano, sii conciso "
-    "e diretto. Quando consigli un prodotto cita sempre il numero (#) e il prezzo. "
+    "e diretto. Restituisci SEMPRE una Top 3 con questa struttura per ogni voce: "
+    "posizione, motivo sintetico (es. Miglior prezzo / Miglior qualita-prezzo / Alternativa economica), "
+    "prezzo + spedizione, e perche e consigliato rispetto agli altri. "
+    "Quando consigli un prodotto cita sempre il numero (#) e il prezzo. "
     "Non inventare prodotti che non sono nella lista. "
     "Quando i dati tecnici dei prodotti sono incompleti, usa la tua conoscenza generale "
     "delle specifiche tecniche dei modelli elencati per rispondere. Per schede video, "
     "CPU, laptop e componenti hardware, sei autorizzato a basarti sui benchmark e "
     "specifiche tecniche che conosci per dare consigli precisi e dettagliati."
 )
-
-SYSTEM_PROMPT_RICERCA_ASSISTITA = (
-    "Sei un assistente che aiuta a costruire una query shopping tech. "
-    "Fai UNA sola domanda breve per volta in italiano. "
-    "Nelle prime 3 interazioni raccogli: prodotto/modello desiderato, budget min/max, condizione (nuovo/usato/tutti)."
-)
-
 
 def _get_groq_api_key() -> str:
     """Legge la key da Streamlit secrets, con fallback variabile ambiente."""
@@ -146,14 +155,14 @@ def _build_results_summary(
     righe = []
     for i, o in enumerate(offerte, start=1):
         prezzo_txt = f"€{o.prezzo:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        righe.append(f"#{i} | {prezzo_txt} | {o.negozio} | {o.nome}")
+        righe.append(f"#{i} | {prezzo_txt} | spedizione: {o.spedizione} | {o.negozio} | {o.nome}")
 
     elenco = "\n".join(righe)
     return (
         f"Ho cercato \"{query}\" con budget {budget_txt} e ho trovato questi risultati:\n"
         f"{elenco}\n\n"
-        "Analizza i risultati e consigliami quale comprare e perché.\n"
-        "Sii diretto e vai al punto."
+        "Analizza i risultati e restituisci una TOP 3 con motivazioni sintetiche.\n"
+        "Per ogni posizione includi: motivo, prezzo + spedizione e confronto rispetto alle alternative."
     )
 
 
@@ -189,7 +198,7 @@ def _offerte_to_csv_bytes(offerte: list[Offerta]) -> bytes:
     buf = io.StringIO()
     writer = csv.DictWriter(
         buf,
-        fieldnames=["posizione", "nome", "prezzo_eur", "negozio", "fonte", "link"],
+        fieldnames=["posizione", "nome", "prezzo_eur", "spedizione", "negozio", "fonte", "link"],
         lineterminator="\n",
     )
     writer.writeheader()
@@ -198,6 +207,7 @@ def _offerte_to_csv_bytes(offerte: list[Offerta]) -> bytes:
             "posizione":  i,
             "nome":       o.nome,
             "prezzo_eur": f"{o.prezzo:.2f}",
+            "spedizione": o.spedizione,
             "negozio":    o.negozio,
             "fonte":      o.fonte,
             "link":       o.link,
@@ -215,6 +225,7 @@ def _offerte_to_records(offerte: list[Offerta]) -> list[dict]:
             "#":        i,
             "Prodotto": o.nome,
             "Prezzo €": round(o.prezzo, 2),
+            "Spedizione": f"📦 Spedizione: {o.spedizione}",
             "Negozio":  o.negozio,
             "Fonte":    o.fonte,
             "Link":     o.link,
@@ -223,12 +234,26 @@ def _offerte_to_records(offerte: list[Offerta]) -> list[dict]:
     ]
 
 
+def _format_filtri_note(filtri: dict[str, str]) -> str:
+    if not filtri:
+        return ""
+    parts: list[str] = []
+    for k, v in filtri.items():
+        key = str(k).strip().lower()
+        val = str(v).strip()
+        if key == "colore" and val.lower() == "rosa":
+            parts.append('colore=rosa -> abbinato a "Lavanda"')
+        else:
+            parts.append(f"{key}={val}")
+    return " | ".join(parts)
+
+
 # ===========================================================================
 # INTESTAZIONE
 # ===========================================================================
 st.title("🛒 Offerte Tech Italia")
 st.caption(
-    "Cerca prodotti tech su **trovaprezzi.it**, **Amazon.it**, **eBay.it** e **Vinted.it** · "
+    "Cerca prodotti tech su **Google Shopping**, **Amazon.it**, **eBay.it** e **Vinted.it** · "
     "Risultati ordinati per prezzo crescente"
 )
 st.divider()
@@ -240,6 +265,9 @@ ai_key = _get_groq_api_key()
 if st.button("🤖 Aiutami a cercare", width="content"):
     st.session_state["assist_mode"] = True
     st.session_state["assist_turni"] = 0
+    st.session_state["assist_categoria"] = "altro"
+    st.session_state["assist_domande"] = []
+    st.session_state["filtri_ai"] = {}
     st.session_state["assist_chat"] = [
         {
             "role": "assistant",
@@ -262,28 +290,33 @@ if st.session_state.get("assist_mode", False):
                     st.write(msg.get("content", ""))
 
             if st.session_state.get("assist_turni", 0) < 3:
-                input_assist = st.chat_input(
-                    "Rispondi alla domanda dell'assistente...",
-                    key="assist_chat_input",
-                )
-                if input_assist:
+                input_assist = st.text_input(
+                    "Rispondi alla domanda dell'assistente",
+                    key="assist_chat_input_text",
+                ).strip()
+                invia_assist = st.button("Invia risposta", key="assist_send_btn", width="content")
+                if invia_assist and input_assist:
                     st.session_state["assist_chat"].append({"role": "user", "content": input_assist})
                     st.session_state["assist_turni"] = int(st.session_state.get("assist_turni", 0)) + 1
 
                     if st.session_state["assist_turni"] < 3:
-                        with st.spinner("🤖 Sto preparando la prossima domanda..."):
-                            try:
-                                prossima = _call_groq_chat(
-                                    st.session_state.get("assist_chat", []),
-                                    ai_key,
-                                    system_prompt=SYSTEM_PROMPT_RICERCA_ASSISTITA,
-                                )
-                                if not prossima:
-                                    prossima = "Perfetto. Qual e il tuo budget minimo e massimo?"
-                            except Exception:
-                                prossima = "Perfetto. Indicami budget minimo/massimo e se preferisci nuovo o usato."
+                        if st.session_state["assist_turni"] == 1:
+                            category_info = detect_category_and_questions(input_assist)
+                            categoria = str(category_info.get("categoria", "altro") or "altro").strip().lower()
+                            domande_raw = category_info.get("domande", [])
+                            domande = [str(d).strip() for d in domande_raw if str(d).strip()]
+                            st.session_state["assist_categoria"] = categoria
+                            st.session_state["assist_domande"] = domande
+
+                        domande = st.session_state.get("assist_domande", [])
+                        idx = int(st.session_state["assist_turni"]) - 1
+                        if idx < len(domande):
+                            prossima = domande[idx]
+                        else:
+                            prossima = "Indicami budget e preferenza tra nuovo/usato."
 
                         st.session_state["assist_chat"].append({"role": "assistant", "content": prossima})
+                        st.session_state["assist_chat_input_text"] = ""
                         st.rerun()
                     else:
                         transcript = "\n".join(
@@ -300,6 +333,9 @@ if st.session_state.get("assist_mode", False):
                         prezzo_min_ai = int(intent.get("prezzo_min", 0) or 0)
                         prezzo_max_ai = int(intent.get("prezzo_max", 2000) or 2000)
                         condizione_ai = str(intent.get("condizione", "tutti") or "tutti").strip().lower()
+                        filtri_ai = intent.get("filtri", {})
+                        if not isinstance(filtri_ai, dict):
+                            filtri_ai = {}
                         if condizione_ai not in {"tutti", "nuovo", "usato"}:
                             condizione_ai = "tutti"
 
@@ -311,7 +347,13 @@ if st.session_state.get("assist_mode", False):
                         st.session_state["ultimo_prezzo_min"] = prezzo_min_ai
                         st.session_state["ultimo_prezzo_max"] = prezzo_max_ai
                         st.session_state["condizione"] = condizione_ai
+                        st.session_state["filtri_ai"] = {
+                            str(k).strip(): str(v).strip()
+                            for k, v in filtri_ai.items()
+                            if str(k).strip() and str(v).strip()
+                        }
                         st.session_state["assist_mode"] = False
+                        st.session_state["assist_chat_input_text"] = ""
                         st.session_state["assist_confirm"] = (
                             "✅ Campi compilati: "
                             f"query='{query_ai}', prezzo_min={prezzo_min_ai}, prezzo_max={prezzo_max_ai}, condizione={condizione_ai}. "
@@ -415,10 +457,13 @@ if avvia_ricerca:
         with st.spinner("⏳ Sto cercando sulle fonti selezionate…"):
             try:
                 with contextlib.redirect_stdout(log_buffer):
+                    usa_filtri_ai = bool(st.session_state.get("assist_confirm", ""))
+                    filtri_per_ricerca = st.session_state.get("filtri_ai", {}) if usa_filtri_ai else {}
                     risultati = cerca_offerte(
                         query        = query_input.strip(),
                         budget_max   = float(prezzo_max),
                         prezzo_min   = float(prezzo_min),
+                        filtri_ai    = filtri_per_ricerca,
                         top_n        = int(top_n_input),
                         export_csv   = False,
                         condizione   = condizione,
@@ -427,6 +472,8 @@ if avvia_ricerca:
                 st.session_state["risultati"]   = risultati
                 st.session_state["log_ricerca"] = log_buffer.getvalue()
                 st.session_state["chat_attiva"] = bool(risultati)
+                st.session_state["filtri_ai_ultima_ricerca"] = filtri_per_ricerca
+                st.session_state["assist_confirm"] = ""
 
             except Exception as exc:
                 st.session_state["log_ricerca"] = log_buffer.getvalue()
@@ -500,6 +547,9 @@ if st.session_state.get("ricerca_effettuata", False):
                     format="€ %.2f",
                     width="small",
                 ),
+                "Spedizione": st.column_config.TextColumn(
+                    "📦 Spedizione", width="medium"
+                ),
                 "Negozio": st.column_config.TextColumn(
                     "🏪 Negozio", width="medium"
                 ),
@@ -514,10 +564,23 @@ if st.session_state.get("ricerca_effettuata", False):
             },
         )
 
+        risultati_con_alternativa = [o for o in offerte if str(o.alternativa or "").strip()]
+        if risultati_con_alternativa:
+            st.markdown("**Alternative smart rilevate**")
+            for o in risultati_con_alternativa:
+                st.markdown(f"**{o.nome}**")
+                st.warning(o.alternativa)
+
         st.caption(
             "💡 Clicca sull'intestazione di una colonna per ordinare · "
             "La colonna **Link** apre la pagina del prodotto in una nuova scheda"
         )
+
+        filtri_attivi = st.session_state.get("filtri_ai_ultima_ricerca", {})
+        if isinstance(filtri_attivi, dict) and filtri_attivi:
+            note = _format_filtri_note({str(k): str(v) for k, v in filtri_attivi.items()})
+            if note:
+                st.caption(f"🎯 Filtri applicati: {note}.")
 
         st.divider()
 

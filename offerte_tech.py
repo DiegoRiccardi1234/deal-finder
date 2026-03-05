@@ -24,6 +24,7 @@ import random
 import re
 import sys
 import time
+import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Optional
@@ -148,12 +149,15 @@ class Offerta:
     negozio: str
     link:    str
     fonte:   str = field(default="")
+    spedizione: str = field(default="n.d.")
+    alternativa: str = field(default="")
 
     def __str__(self) -> str:
         nome_corto = self.nome[:62] + "…" if len(self.nome) > 63 else self.nome
         prezzo_fmt = f"€ {self.prezzo:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         return (
             f"  💰 {prezzo_fmt:<12}  🏪 {self.negozio:<18}  📦 {nome_corto}\n"
+            f"     📦 Spedizione: {self.spedizione}\n"
             f"     🔗 {self.link}"
         )
 
@@ -212,6 +216,25 @@ def parse_price(text: str) -> float:
         return float(text)
     except ValueError:
         return float("inf")
+
+
+def _extract_shipping_from_text(text: str) -> str:
+    """Estrae costo spedizione da testo libero con fallback 'n.d.'."""
+    text_lower = text.lower()
+    if "spedizione gratuita" in text_lower or "consegna gratuita" in text_lower or "free shipping" in text_lower:
+        return "Gratuita ✅"
+
+    match = re.search(
+        r"((?:€|EUR)\s*\d{1,3}(?:[\.\s]\d{3})*(?:[\.,]\d{2})?)\s*(?:di\s+)?spedizione",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        match = re.search(r"spedizione\s*(?:da|:)?\s*((?:€|EUR)\s*\d{1,3}(?:[\.\s]\d{3})*(?:[\.,]\d{2})?)", text, flags=re.IGNORECASE)
+    if match:
+        value = match.group(1).replace("EUR", "€").replace("  ", " ").strip()
+        return value
+    return "n.d."
 
 
 def tokenize_query(query: str) -> list[str]:
@@ -353,7 +376,7 @@ def fetch_with_retry(
 
 
 # ===========================================================================
-# SCRAPER — trovaprezzi.it
+# SCRAPER — Google Shopping
 # ===========================================================================
 
 def scrape_trovaprezzi(
@@ -362,159 +385,88 @@ def scrape_trovaprezzi(
     query_tokens: list[str],
 ) -> list[Offerta]:
     """
-    Scraper per trovaprezzi.it.
-
-    trovaprezzi.it aggrega offerte da decine di shop italiani (Unieuro,
-    MediaWorld, eBay, ecc.), quindi una singola pagina copre molte fonti.
-
-    Strategia:
-      1) tenta URL categoria statico,
-      2) fallback su /prezzi_<categoria>.aspx?nome=<query>,
-      3) fallback su /ricerca.aspx?nome=<query>.
-
-    Se tutti i tentativi falliscono, logga e salta la fonte.
+    Scraper Google Shopping (hl=it, gl=it) come fallback stabile a Trovaprezzi.
     """
-    categoria_path = _select_trovaprezzi_categoria(query_tokens)
-    categoria_slug = categoria_path.split("/")[-1] if categoria_path else ""
-    encoded_query = quote_plus(query)
-
-    candidate_urls: list[str] = []
-    if categoria_path:
-        candidate_urls.append(f"https://www.trovaprezzi.it/{categoria_path}")
-    if categoria_slug:
-        candidate_urls.append(f"https://www.trovaprezzi.it/prezzi_{categoria_slug}.aspx?nome={encoded_query}")
-    candidate_urls.append(f"https://www.trovaprezzi.it/ricerca.aspx?nome={encoded_query}")
-
-    # Deduplica endpoint mantenendo l'ordine.
-    candidate_urls = list(dict.fromkeys(candidate_urls))
-
-    if categoria_path:
-        print(f"\n🔍 Cerco su trovaprezzi.it (categoria): \"{categoria_path}\"")
-    else:
-        print(f"\n🔍 Cerco su trovaprezzi.it: \"{query}\"")
+    url = f"https://www.google.it/search?tbm=shop&q={quote_plus(query)}&hl=it&gl=it"
+    print(f"\n🔍 Cerco su Google Shopping: \"{query}\"")
 
     risultati: list[Offerta] = []
 
     try:
-        for idx, endpoint in enumerate(candidate_urls, start=1):
-            headers = get_headers()
-            headers["Referer"] = "https://www.trovaprezzi.it/"
+        headers = get_headers()
+        headers["Referer"] = "https://www.google.it/"
 
+        resp = fetch_with_retry(url, headers)
+        if resp.status_code in (401, 403, 429):
+            print("    ⚠️  Google Shopping: accesso bloccato, salto la fonte.")
+            return risultati
+
+        resp.raise_for_status()
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+        page_title = (soup.title.string or "") if soup.title else ""
+        if any(kw in page_title.lower() for kw in ("sorry", "captcha", "robot", "unusual traffic")):
+            print("    ⚠️  Google Shopping: blocco anti-bot, salto la fonte.")
+            return risultati
+
+        name_nodes = soup.select(".Xjkr3b, .tAxDx")
+        if not name_nodes:
+            print("    ⚠️  Google Shopping: nessun risultato parsabile, salto la fonte.")
+            return risultati
+
+        seen_links: set[str] = set()
+        for name_tag in name_nodes:
             try:
-                resp = fetch_with_retry(endpoint, headers)
-
-                if resp.status_code == 400:
-                    print(f"    ⚠️  trovaprezzi.it: HTTP 400 su endpoint {idx}, provo fallback…")
-                    continue
-                if resp.status_code in (401, 403):
-                    print(f"    ⚠️  trovaprezzi.it: accesso bloccato su endpoint {idx}, provo fallback…")
+                nome = name_tag.get_text(" ", strip=True)
+                if not nome:
                     continue
 
-                resp.raise_for_status()
+                item = name_tag
+                for _ in range(4):
+                    parent = item.find_parent("div") if item else None
+                    if not parent:
+                        break
+                    item = parent
+                    if item.select_one(".a8Pemb, .T14wmb"):
+                        break
 
-                soup = BeautifulSoup(resp.text, "html.parser")
-
-                # Controlla se il sito ha restituito una pagina CAPTCHA / anti-bot
-                page_title = (soup.title.string or "") if soup.title else ""
-                if any(kw in page_title.lower() for kw in ("captcha", "verifica", "robot", "challenge")):
-                    print(f"    ⚠️  trovaprezzi.it: anti-bot su endpoint {idx}, provo fallback…")
+                prezzo_tag = item.select_one(".a8Pemb, .T14wmb") if item else None
+                prezzo_txt = prezzo_tag.get_text(" ", strip=True) if prezzo_tag else ""
+                prezzo = parse_price(prezzo_txt)
+                if prezzo == float("inf"):
                     continue
 
-                product_links = soup.select("a[href*='/goto/']")
-                if not product_links:
-                    print(f"    ⚠️  trovaprezzi.it: nessun link prodotto su endpoint {idx}, provo fallback…")
+                link_tag = (item.select_one("a.shntl[href]") if item else None) or (item.select_one("a[href]") if item else None)
+                if not link_tag:
+                    continue
+                href = str(link_tag.get("href", "") or "")
+                if not href:
+                    continue
+                link = href if href.startswith("http") else urljoin("https://www.google.it", href)
+                if link in seen_links:
+                    continue
+                seen_links.add(link)
+
+                if not is_relevant(nome, query_tokens):
+                    continue
+                if budget_max is not None and prezzo > budget_max:
                     continue
 
-                print(f"    ✅ Trovati {len(product_links)} link prodotto grezzi su trovaprezzi.it")
-                seen_links: set[str] = set()
-
-                for link_tag in product_links:
-                    try:
-                        href = str(link_tag.get("href", "") or "")
-                        if not href:
-                            continue
-                        link = href if href.startswith("http") else urljoin("https://www.trovaprezzi.it", href)
-                        if link in seen_links:
-                            continue
-                        seen_links.add(link)
-
-                        # Trova il blocco più vicino che rappresenta la riga prodotto/offerta
-                        item = link_tag.find_parent(["li", "article", "div", "section"])
-                        if item is None:
-                            continue
-
-                        # ----- Nome prodotto -----
-                        nome_tag = (
-                            item.select_one("h3")
-                            or item.select_one("h2")
-                            or item.select_one("[class*='name']")
-                            or item.select_one("[class*='title']")
-                            or item.select_one("[class*='product-name']")
-                        )
-                        nome = nome_tag.get_text(strip=True) if nome_tag else ""
-                        if not nome:
-                            continue
-
-                        # ----- Prezzo -----
-                        prezzo_tag = (
-                            item.select_one(".price")
-                            or item.select_one(".prezzo")
-                            or item.select_one("[class*='price']")
-                            or item.select_one("[class*='Price']")
-                        )
-                        if prezzo_tag:
-                            prezzo = parse_price(prezzo_tag.get_text(strip=True))
-                        else:
-                            blocco_txt = item.get_text(" ", strip=True)
-                            raw_prices = re.findall(r"\d{1,3}(?:[\.\s]\d{3})*,\d{2}\s*€", blocco_txt)
-                            parsed_prices = [parse_price(p) for p in raw_prices]
-                            valid_prices = [p for p in parsed_prices if p != float("inf") and p >= 30]
-                            prezzo = min(valid_prices) if valid_prices else float("inf")
-
-                        if prezzo == float("inf"):
-                            continue
-
-                        # ----- Negozio -----
-                        negozio_tag = item.select_one("a[href*='/negozi/']")
-                        if not negozio_tag:
-                            negozio_tag = (
-                                item.select_one(".merchant")
-                                or item.select_one(".store-name")
-                                or item.select_one("[class*='merchant']")
-                                or item.select_one("[class*='seller']")
-                            )
-                        negozio = negozio_tag.get_text(strip=True) if negozio_tag else "Vari negozi"
-
-                        # ----- Filtri -----
-                        if not is_relevant(nome, query_tokens):
-                            continue
-                        if budget_max is not None and prezzo > budget_max:
-                            continue
-
-                        risultati.append(
-                            Offerta(
-                                nome=nome,
-                                prezzo=prezzo,
-                                negozio=negozio,
-                                link=link,
-                                fonte="trovaprezzi.it",
-                            )
-                        )
-
-                    except (AttributeError, TypeError):
-                        continue
-
-                if risultati:
-                    break
-
-            except requests.HTTPError as exc:
-                status = exc.response.status_code if exc.response is not None else "?"
-                print(f"    ⚠️  trovaprezzi.it: endpoint {idx} errore HTTP {status}, provo fallback…")
-            except Exception as exc:
-                print(f"    ⚠️  trovaprezzi.it: endpoint {idx} errore ({exc}), provo fallback…")
+                risultati.append(
+                    Offerta(
+                        nome=nome,
+                        prezzo=prezzo,
+                        negozio="Google Shopping",
+                        link=link,
+                        fonte="google_shopping",
+                        spedizione="n.d.",
+                    )
+                )
+            except (AttributeError, TypeError):
+                continue
 
         if not risultati:
-            print("    ⚠️  trovaprezzi.it: tutti gli endpoint falliti, fonte saltata.")
+            print("    ⚠️  Google Shopping: risultati vuoti dopo parsing, salto la fonte.")
 
     except requests.Timeout:
         print("    ❌ trovaprezzi.it: timeout raggiunto anche dopo i retry.")
@@ -663,6 +615,13 @@ def scrape_amazon(
                 # Rimuove parametri tracking Amazon (tutto dopo /ref=)
                 link = re.sub(r"/ref=.*", "", link)
 
+                # ----- Spedizione -----
+                spedizione = "n.d."
+                if card.select_one("i.a-icon-prime, span.a-icon-prime"):
+                    spedizione = "Prime ✅"
+                else:
+                    spedizione = _extract_shipping_from_text(card.get_text(" ", strip=True))
+
                 # ----- Filtri -----
                 if not is_relevant(nome, query_tokens):
                     continue
@@ -670,7 +629,7 @@ def scrape_amazon(
                     continue
 
                 risultati.append(Offerta(nome=nome, prezzo=prezzo, negozio=negozio,
-                                         link=link, fonte="amazon.it"))
+                                         link=link, fonte="amazon.it", spedizione=spedizione))
 
             except (AttributeError, TypeError):
                 continue
@@ -689,7 +648,7 @@ def scrape_amazon(
 
 
 # ===========================================================================
-# SCRAPER — ebay.it
+# SCRAPER — ebay.it (RSS pubblico)
 # ===========================================================================
 
 def scrape_ebay(
@@ -698,85 +657,84 @@ def scrape_ebay(
     query_tokens: list[str],
     condizione: str = "tutti",
 ) -> list[Offerta]:
-    """Scraper per eBay Italia con ordinamento prezzo crescente."""
-    base_url = f"https://www.ebay.it/sch/i.html?_nkw={quote_plus(query)}&_sop=15"
-    fallback_url = f"https://www.ebay.it/sch/i.html?_nkw={quote_plus(query)}&_sop=15&_ipg=60"
+    """Scraper eBay tramite feed RSS pubblico (senza API key)."""
+    condizione_code = ""
     if condizione == "nuovo":
-        base_url += "&LH_ItemCondition=1000"
-        fallback_url += "&LH_ItemCondition=1000"
+        condizione_code = "1000"
     elif condizione == "usato":
-        base_url += "&LH_ItemCondition=3000"
-        fallback_url += "&LH_ItemCondition=3000"
+        condizione_code = "3000"
+
+    url = (
+        "https://rss.ebay.it/ws/eBayISAPI.dll?ViewListingSearchResults"
+        f"&keywords={quote_plus(query)}"
+    )
+    if condizione_code:
+        url += f"&LH_ItemCondition={condizione_code}"
 
     print(f"\n🔍 Cerco su eBay.it: \"{query}\"")
     risultati: list[Offerta] = []
 
     try:
-        for attempt, endpoint in enumerate([base_url, fallback_url], start=1):
-            if attempt == 2:
-                # Delay esplicito prima del fallback con endpoint alternativo.
-                time.sleep(random.uniform(2.0, 3.0))
+        headers = get_headers()
+        headers["Referer"] = "https://www.ebay.it/"
 
-            headers = get_headers()
-            headers["Referer"] = "https://www.ebay.it/"
+        resp = fetch_with_retry(url, headers)
+        resp.raise_for_status()
 
-            resp = fetch_with_retry(endpoint, headers)
-            resp.raise_for_status()
+        root = ET.fromstring(resp.content)
+        items = root.findall(".//item")
+        if not items:
+            print("    ⚠️  eBay RSS: nessun item nel feed, salto la fonte.")
+            return risultati
 
-            soup = BeautifulSoup(resp.text, "html.parser")
-            page_title = (soup.title.string or "") if soup.title else ""
-            anti_bot = any(
-                kw in page_title.lower()
-                for kw in ("ci scusiamo per l'interruzione", "captcha", "robot", "challenge")
+        for item in items:
+            title = (item.findtext("title") or "").strip()
+            link = (item.findtext("link") or "").strip()
+            description = (item.findtext("description") or "").strip()
+            if not title or not link:
+                continue
+
+            price_match = re.search(r"€\s*\d{1,3}(?:[\.\s]\d{3})*(?:,\d{2})?", f"{title} {description}")
+            if not price_match:
+                continue
+
+            prezzo = parse_price(price_match.group(0))
+            if prezzo == float("inf"):
+                continue
+
+            if not is_relevant(title, query_tokens):
+                continue
+            if budget_max is not None and prezzo > budget_max:
+                continue
+
+            desc_lower = description.lower()
+            spedizione = "n.d."
+            if "spedizione gratuita" in desc_lower or "free shipping" in desc_lower:
+                spedizione = "Gratuita ✅"
+            else:
+                ship_match = re.search(
+                    r"(?:€\s*\d{1,3}(?:[\.\s]\d{3})*(?:,\d{2})?|EUR\s*\d{1,3}(?:[\.\s]\d{3})*(?:,\d{2})?)\s*(?:di\s+)?spedizione",
+                    description,
+                    flags=re.IGNORECASE,
+                )
+                if ship_match:
+                    ship_value = re.search(r"(?:€|EUR)\s*\d{1,3}(?:[\.\s]\d{3})*(?:,\d{2})?", ship_match.group(0), re.IGNORECASE)
+                    if ship_value:
+                        spedizione = ship_value.group(0).replace("EUR", "€").replace("  ", " ").strip()
+
+            risultati.append(
+                Offerta(
+                    nome=title,
+                    prezzo=prezzo,
+                    negozio="eBay.it",
+                    link=link,
+                    fonte="ebay.it",
+                    spedizione=spedizione,
+                )
             )
-            if anti_bot:
-                print(f"    ⚠️  eBay.it: anti-bot su endpoint {attempt}, provo fallback…")
-                continue
-
-            cards = soup.select(".s-item")
-            if not cards:
-                print(f"    ⚠️  eBay.it: nessuna card su endpoint {attempt}, provo fallback…")
-                continue
-
-            print(f"    ✅ Trovate {len(cards)} card grezze su eBay.it")
-
-            for card in cards:
-                try:
-                    title_tag = card.select_one(".s-item__title")
-                    price_tag = card.select_one(".s-item__price")
-                    link_tag = card.select_one("a.s-item__link[href]")
-                    if not title_tag or not price_tag or not link_tag:
-                        continue
-
-                    nome = title_tag.get_text(strip=True)
-                    if not nome or nome.lower() == "shop on ebay":
-                        continue
-
-                    prezzo = parse_price(price_tag.get_text(strip=True))
-                    if prezzo == float("inf"):
-                        continue
-
-                    href = str(link_tag.get("href", "") or "")
-                    if not href:
-                        continue
-                    link = href if href.startswith("http") else urljoin("https://www.ebay.it", href)
-
-                    if not is_relevant(nome, query_tokens):
-                        continue
-                    if budget_max is not None and prezzo > budget_max:
-                        continue
-
-                    risultati.append(
-                        Offerta(nome=nome, prezzo=prezzo, negozio="eBay.it", link=link, fonte="ebay.it")
-                    )
-                except (AttributeError, TypeError):
-                    continue
-
-            if risultati:
-                break
 
         if not risultati:
-            print("    ⚠️  eBay.it: fallback esauriti, fonte saltata.")
+            print("    ⚠️  eBay RSS: item trovati ma nessuno valido dopo i filtri.")
 
     except requests.Timeout:
         print("    ❌ eBay.it: timeout raggiunto anche dopo i retry.")
@@ -863,8 +821,10 @@ def scrape_vinted(
                 if budget_max is not None and prezzo > budget_max:
                     continue
 
+                spedizione = _extract_shipping_from_text(item.get_text(" ", strip=True))
+
                 risultati.append(
-                    Offerta(nome=nome, prezzo=prezzo, negozio="Vinted", link=link, fonte="vinted.it")
+                    Offerta(nome=nome, prezzo=prezzo, negozio="Vinted", link=link, fonte="vinted.it", spedizione=spedizione)
                 )
             except (AttributeError, TypeError):
                 continue
@@ -903,8 +863,10 @@ def scrape_vinted(
                     if budget_max is not None and prezzo > budget_max:
                         continue
 
+                    spedizione = _extract_shipping_from_text(title_attr)
+
                     risultati.append(
-                        Offerta(nome=nome, prezzo=prezzo, negozio="Vinted", link=link, fonte="vinted.it")
+                        Offerta(nome=nome, prezzo=prezzo, negozio="Vinted", link=link, fonte="vinted.it", spedizione=spedizione)
                     )
                 except (AttributeError, TypeError):
                     continue
@@ -950,18 +912,117 @@ def _deduplica(offerte: list[Offerta], soglia_pct: float = 0.05) -> list[Offerta
     return uniche
 
 
+def detect_category_and_questions(testo_utente: str) -> dict[str, object]:
+    """
+    Classifica la categoria e propone domande di chiarimento per la mini-chat.
+    """
+    fallback_questions: dict[str, list[str]] = {
+        "smartphone": [
+            "Hai un modello preciso in mente?",
+            "Quanti GB di storage minimo ti servono?",
+            "Hai una preferenza di colore?",
+        ],
+        "laptop": [
+            "Qual e l'uso principale (studio, ufficio, gaming, editing)?",
+            "RAM minima desiderata?",
+            "Preferisci un laptop leggero o va bene anche piu pesante?",
+        ],
+        "abbigliamento": [
+            "Che taglia cerchi?",
+            "Hai un colore preferito?",
+            "Materiale preferito (cotone, lana, sintetico...)?",
+        ],
+        "scarpe": [
+            "Che numero ti serve?",
+            "Colore preferito?",
+            "Uso principale: sportivo o casual?",
+        ],
+        "elettrodomestico": [
+            "Quale marca preferisci?",
+            "Che capacita/dimensione ti serve?",
+            "Ci sono funzioni indispensabili?",
+        ],
+        "altro": [
+            "Hai una marca o modello preferito?",
+            "Budget minimo e massimo?",
+            "Preferisci nuovo o usato?",
+        ],
+    }
+
+    testo = str(testo_utente or "").strip()
+    if not testo:
+        return {"categoria": "altro", "domande": fallback_questions["altro"]}
+
+    api_key = os.environ.get("GROQ_API_KEY", "").strip()
+    if not api_key or Groq is None:
+        lower = testo.lower()
+        if any(k in lower for k in ("iphone", "smartphone", "telefono", "android")):
+            categoria = "smartphone"
+        elif any(k in lower for k in ("laptop", "notebook", "pc", "macbook")):
+            categoria = "laptop"
+        elif any(k in lower for k in ("scarpe", "sneaker", "stivali", "sandali")):
+            categoria = "scarpe"
+        elif any(k in lower for k in ("maglia", "giacca", "pantaloni", "vestito", "abbigliamento")):
+            categoria = "abbigliamento"
+        elif any(k in lower for k in ("frigorifero", "lavatrice", "forno", "aspirapolvere")):
+            categoria = "elettrodomestico"
+        else:
+            categoria = "altro"
+        return {"categoria": categoria, "domande": fallback_questions[categoria]}
+
+    try:
+        client = Groq(api_key=api_key)
+        prompt = (
+            "Classifica il prodotto in una categoria tra: smartphone, laptop, abbigliamento, "
+            "scarpe, elettrodomestico, altro. Restituisci SOLO JSON con chiavi: "
+            "categoria (string), domande (array di 3 stringhe). "
+            "Le domande devono essere coerenti con la categoria."
+        )
+        completion = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": testo},
+            ],
+            temperature=0.1,
+        )
+        content = completion.choices[0].message.content if completion and completion.choices else ""
+        raw = str(content or "").strip()
+        json_match = re.search(r"\{.*\}", raw, flags=re.DOTALL)
+        payload = json.loads(json_match.group(0) if json_match else raw)
+        if not isinstance(payload, dict):
+            raise ValueError("Payload non valido")
+        categoria = str(payload.get("categoria", "altro") or "altro").strip().lower()
+        if categoria not in fallback_questions:
+            categoria = "altro"
+        domande_raw = payload.get("domande", [])
+        domande = [str(d).strip() for d in domande_raw if str(d).strip()]
+        if not domande:
+            domande = fallback_questions[categoria]
+        return {"categoria": categoria, "domande": domande[:3]}
+    except Exception:
+        return {"categoria": "altro", "domande": fallback_questions["altro"]}
+
+
 def parse_search_intent(risposta_utente: str) -> dict[str, object]:
     """
     Estrae intent di ricerca da testo libero usando AI.
 
     Output standard:
-      {"query": str, "prezzo_min": int, "prezzo_max": int, "condizione": str}
+      {
+        "query": str,
+        "prezzo_min": int,
+        "prezzo_max": int,
+        "condizione": str,
+        "filtri": dict[str, str]
+      }
     """
     default: dict[str, object] = {
         "query": str(risposta_utente or "").strip(),
         "prezzo_min": 0,
         "prezzo_max": 2000,
         "condizione": "tutti",
+        "filtri": {},
     }
 
     def _sanitize(payload: dict[str, object]) -> dict[str, object]:
@@ -969,6 +1030,7 @@ def parse_search_intent(risposta_utente: str) -> dict[str, object]:
         prezzo_min_raw = payload.get("prezzo_min", 0)
         prezzo_max_raw = payload.get("prezzo_max", 2000)
         condizione_raw = str(payload.get("condizione", "tutti") or "tutti").strip().lower()
+        filtri_raw = payload.get("filtri", {})
 
         try:
             prezzo_min = int(float(str(prezzo_min_raw)))
@@ -985,11 +1047,20 @@ def parse_search_intent(risposta_utente: str) -> dict[str, object]:
         if condizione_raw not in {"tutti", "nuovo", "usato"}:
             condizione_raw = "usato" if "usat" in condizione_raw else "tutti"
 
+        filtri: dict[str, str] = {}
+        if isinstance(filtri_raw, dict):
+            for k, v in filtri_raw.items():
+                key = str(k or "").strip().lower()
+                val = str(v or "").strip()
+                if key and val:
+                    filtri[key] = val
+
         return {
             "query": query,
             "prezzo_min": prezzo_min,
             "prezzo_max": prezzo_max,
             "condizione": condizione_raw,
+            "filtri": filtri,
         }
 
     testo = str(risposta_utente or "").strip()
@@ -998,7 +1069,6 @@ def parse_search_intent(risposta_utente: str) -> dict[str, object]:
 
     api_key = os.environ.get("GROQ_API_KEY", "").strip()
     if not api_key or Groq is None:
-        # Fallback locale minimo: mantiene query e prova a inferire budget/condizione.
         guess = dict(default)
         m_range = re.search(r"(\d{2,5})\s*[-a]\s*(\d{2,5})", testo.lower())
         if m_range:
@@ -1015,7 +1085,17 @@ def parse_search_intent(risposta_utente: str) -> dict[str, object]:
         elif "nuov" in lower:
             guess["condizione"] = "nuovo"
 
+        filtri_local: dict[str, str] = {}
+        if "rosa" in lower:
+            filtri_local["colore"] = "rosa"
+        if "lavanda" in lower:
+            filtri_local["colore"] = "lavanda"
+        storage_match = re.search(r"\b(\d{2,4})\s*gb\b", lower)
+        if storage_match:
+            filtri_local["storage"] = f"{storage_match.group(1)}gb"
+
         guess["query"] = testo
+        guess["filtri"] = filtri_local
         return _sanitize(guess)
 
     try:
@@ -1023,8 +1103,8 @@ def parse_search_intent(risposta_utente: str) -> dict[str, object]:
         system_prompt = (
             "Estrai un intent di ricerca shopping da testo utente in italiano. "
             "Rispondi SOLO con JSON valido senza markdown con chiavi: "
-            "query (string), prezzo_min (int), prezzo_max (int), condizione (tutti|nuovo|usato). "
-            "Se un campo manca, usa default: query='', prezzo_min=0, prezzo_max=2000, condizione='tutti'."
+            "query (string), prezzo_min (int), prezzo_max (int), condizione (tutti|nuovo|usato), "
+            "filtri (object con attributi non cercabili direttamente, es colore/storage/taglia)."
         )
         completion = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
@@ -1043,6 +1123,135 @@ def parse_search_intent(risposta_utente: str) -> dict[str, object]:
         return _sanitize(payload)
     except Exception:
         return _sanitize(default)
+
+
+def filtra_risultati_con_ai(risultati: list[Offerta], filtri: dict[str, str]) -> list[Offerta]:
+    """
+    Applica ranking AI ai risultati in base a filtri semantici non direttamente cercabili.
+
+    Regole:
+      - scarta score < 3
+      - ordina per score desc, poi prezzo asc
+    """
+    if not risultati or not filtri:
+        return risultati
+
+    api_key = os.environ.get("GROQ_API_KEY", "").strip()
+    scored: list[tuple[int, Offerta]] = []
+
+    if api_key and Groq is not None:
+        try:
+            client = Groq(api_key=api_key)
+            titoli = [f"{i+1}. {o.nome}" for i, o in enumerate(risultati)]
+            prompt = (
+                "Valuta la rilevanza 0-10 dei titoli rispetto ai filtri dati. "
+                "Considera sinonimi e varianti (es rosa ~ pink ~ lavanda quando plausibile). "
+                "Rispondi SOLO JSON: {\"scores\": [{\"idx\":1,\"score\":7}, ...]}"
+            )
+            completion = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {
+                        "role": "user",
+                        "content": f"Filtri: {json.dumps(filtri, ensure_ascii=False)}\nTitoli:\n" + "\n".join(titoli),
+                    },
+                ],
+                temperature=0,
+            )
+            content = completion.choices[0].message.content if completion and completion.choices else ""
+            raw = str(content or "").strip()
+            json_match = re.search(r"\{.*\}", raw, flags=re.DOTALL)
+            payload = json.loads(json_match.group(0) if json_match else raw)
+            scores_map: dict[int, int] = {}
+            for row in payload.get("scores", []):
+                idx = int(row.get("idx", 0)) - 1
+                score = int(float(str(row.get("score", 0))))
+                if 0 <= idx < len(risultati):
+                    scores_map[idx] = max(0, min(10, score))
+
+            for idx, offerta in enumerate(risultati):
+                scored.append((scores_map.get(idx, 0), offerta))
+        except Exception:
+            scored = []
+
+    if not scored:
+        # Fallback locale lessicale quando AI non disponibile.
+        filtri_values = [str(v).lower() for v in filtri.values()]
+        expanded_values: set[str] = set(filtri_values)
+        if "rosa" in expanded_values:
+            expanded_values.update({"pink", "lavanda"})
+        for offerta in risultati:
+            titolo = offerta.nome.lower()
+            hit = sum(1 for v in expanded_values if v and v in titolo)
+            score = min(10, hit * 4)
+            scored.append((score, offerta))
+
+    filtered = [(score, o) for score, o in scored if score >= 3]
+    filtered.sort(key=lambda x: (-x[0], x[1].prezzo))
+
+    # Alternative detection: suggerisce una variante diversa se costa >10% in meno.
+    keys_variante = {"colore", "storage", "variante"}
+    filtri_variante = {
+        str(k).strip().lower(): str(v).strip().lower()
+        for k, v in filtri.items()
+        if str(k).strip().lower() in keys_variante and str(v).strip()
+    }
+    if filtri_variante:
+        color_synonyms = {
+            "rosa": {"rosa", "pink", "lavanda", "rose"},
+            "nero": {"nero", "black", "graphite"},
+            "bianco": {"bianco", "white", "silver"},
+        }
+
+        for score, offerta in filtered:
+            offerta.alternativa = ""
+            if score < 7:
+                continue
+
+            titolo_ref = offerta.nome.lower()
+            best_alt: Optional[Offerta] = None
+            best_diff = 0.0
+            best_label = ""
+
+            for _, candidato in filtered:
+                if candidato is offerta:
+                    continue
+                if candidato.prezzo >= offerta.prezzo * 0.90:
+                    continue
+
+                titolo_cand = candidato.nome.lower()
+                variante_diversa = False
+                variante_label = ""
+
+                for key, value in filtri_variante.items():
+                    terms = color_synonyms.get(value, {value}) if key == "colore" else {value}
+                    ref_has_value = any(t in titolo_ref for t in terms)
+                    cand_has_value = any(t in titolo_cand for t in terms)
+                    if ref_has_value and not cand_has_value:
+                        variante_diversa = True
+                        if key == "colore":
+                            variante_label = "Versione con colore diverso"
+                        elif key == "storage":
+                            variante_label = "Versione con storage diverso"
+                        else:
+                            variante_label = "Versione alternativa"
+                        break
+
+                if not variante_diversa:
+                    continue
+
+                diff = offerta.prezzo - candidato.prezzo
+                if diff > best_diff:
+                    best_diff = diff
+                    best_alt = candidato
+                    best_label = variante_label
+
+            if best_alt and best_diff > 0:
+                delta_txt = f"€{best_diff:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                offerta.alternativa = f"💡 {best_label} costa {delta_txt} in meno"
+
+    return [o for _, o in filtered]
 
 
 # ===========================================================================
@@ -1081,12 +1290,13 @@ def export_to_csv(offerte: list[Offerta], filename: str = "offerte.csv") -> None
     Esporta i risultati in un file CSV.
     Usa pandas se disponibile, altrimenti usa il modulo csv stdlib.
     """
-    fieldnames = ["posizione", "nome", "prezzo_eur", "negozio", "fonte", "link"]
+    fieldnames = ["posizione", "nome", "prezzo_eur", "spedizione", "negozio", "fonte", "link"]
     rows = [
         {
             "posizione":  i,
             "nome":       o.nome,
             "prezzo_eur": f"{o.prezzo:.2f}",
+            "spedizione": o.spedizione,
             "negozio":    o.negozio,
             "fonte":      o.fonte,
             "link":       o.link,
@@ -1116,6 +1326,7 @@ def cerca_offerte(
     query: str,
     budget_max: Optional[float] = None,
     prezzo_min: float = 0,
+    filtri_ai: Optional[dict[str, str]] = None,
     top_n: int = 10,
     export_csv: bool = False,
     csv_filename: str = "offerte.csv",
@@ -1129,6 +1340,7 @@ def cerca_offerte(
         query:        Testo della ricerca (es. "notebook 14 pollici 16gb RAM").
         prezzo_min:   Prezzo minimo in euro (default: 0).
         budget_max:   Prezzo massimo in euro. None = nessun limite.
+        filtri_ai:    Filtri semantici post-scraping (es. colore, storage).
         top_n:        Quante offerte mostrare (default: 10).
         export_csv:   Se True, salva i risultati in un file CSV.
         csv_filename: Nome del file CSV di output (default: "offerte.csv").
@@ -1191,12 +1403,18 @@ def cerca_offerte(
     ]
     print(f"  🧹 Dopo filtro range prezzo: {len(offerte)}")
 
+    filtri_ai_effettivi = {k: v for k, v in (filtri_ai or {}).items() if str(k).strip() and str(v).strip()}
+    if filtri_ai_effettivi:
+        offerte = filtra_risultati_con_ai(offerte, filtri_ai_effettivi)
+        print(f"  🎯 Dopo filtro/ranking AI: {len(offerte)}")
+
     # Deduplicazione
     offerte = _deduplica(offerte)
     print(f"  🔄 Dopo deduplicazione: {len(offerte)} offerte uniche")
 
-    # Ordinamento per prezzo crescente
-    offerte.sort(key=lambda o: o.prezzo)
+    # Ordinamento finale: solo prezzo se non e stato applicato il ranking AI.
+    if not filtri_ai_effettivi:
+        offerte.sort(key=lambda o: o.prezzo)
 
     # Tronca a top_n
     offerte_top = offerte[:top_n]
@@ -1285,6 +1503,7 @@ if __name__ == "__main__":
         query        = args.query,
         budget_max   = args.budget,
         prezzo_min   = 0,
+        filtri_ai    = None,
         top_n        = args.top,
         export_csv   = (args.export == "csv"),
         csv_filename = args.output,
