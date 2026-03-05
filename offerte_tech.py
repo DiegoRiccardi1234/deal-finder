@@ -94,6 +94,12 @@ _ALIASES: dict[str, set[str]] = {
     "13":    {"13.0", "13\"", "13'", "13 pollici"},
 }
 
+_ACCESSORY_BLACKLIST = [
+    "cover", "custodia", "pellicola", "coque", "funda", "vetro",
+    "hülle", "handyhülle", "caricabatterie", "cavo", "protez",
+    "paillettes", "sticker", "dessins", "protections",
+]
+
 # Categorie statiche trovaprezzi utilizzabili con requests + BeautifulSoup.
 # Chiave: token query, valore: path categoria valido sul sito.
 CATEGORIE_TROVAPREZZI: dict[str, str] = {
@@ -231,6 +237,21 @@ def is_relevant(nome: str, query_tokens: list[str]) -> bool:
         if not any(v in nome_lower for v in varianti):
             return False
     return True
+
+
+def is_accessory_mismatch(nome: str, query_originale: str) -> bool:
+    """
+    Scarta accessori quando la query non li richiede esplicitamente.
+
+    Regola: se il titolo contiene una keyword blacklist ma la query originale
+    non contiene la stessa keyword, il risultato viene escluso.
+    """
+    nome_lower = nome.lower()
+    query_lower = query_originale.lower()
+    for keyword in _ACCESSORY_BLACKLIST:
+        if keyword in nome_lower and keyword not in query_lower:
+            return True
+    return False
 
 
 def _random_delay() -> None:
@@ -967,6 +988,7 @@ def export_to_csv(offerte: list[Offerta], filename: str = "offerte.csv") -> None
 def cerca_offerte(
     query: str,
     budget_max: Optional[float] = None,
+    prezzo_min: float = 0,
     top_n: int = 10,
     export_csv: bool = False,
     csv_filename: str = "offerte.csv",
@@ -978,6 +1000,7 @@ def cerca_offerte(
 
     Args:
         query:        Testo della ricerca (es. "notebook 14 pollici 16gb RAM").
+        prezzo_min:   Prezzo minimo in euro (default: 0).
         budget_max:   Prezzo massimo in euro. None = nessun limite.
         top_n:        Quante offerte mostrare (default: 10).
         export_csv:   Se True, salva i risultati in un file CSV.
@@ -992,8 +1015,11 @@ def cerca_offerte(
         print("❌ La query di ricerca non può essere vuota.")
         return []
 
+    prezzo_min = max(0.0, float(prezzo_min))
+
     print(f"\n{'=' * 70}")
     print(f"  🚀 Avvio ricerca: \"{query}\"")
+    print(f"  💵 Prezzo min: € {prezzo_min:.2f}")
     if budget_max is not None:
         print(f"  💵 Budget max: € {budget_max:.2f}")
     print(f"  🏷️  Condizione: {condizione}")
@@ -1029,6 +1055,15 @@ def cerca_offerte(
                 print(f"    ⚠️  Una fonte ha generato un errore inatteso: {exc}")
 
     print(f"\n  📥 Totale risultati grezzi (post-filtro): {len(offerte)}")
+
+    # Filtro finale relevance + anti-accessori + range prezzo
+    offerte = [
+        o for o in offerte
+        if not is_accessory_mismatch(o.nome, query)
+        and o.prezzo >= prezzo_min
+        and (budget_max is None or o.prezzo <= budget_max)
+    ]
+    print(f"  🧹 Dopo filtro anti-accessori/range prezzo: {len(offerte)}")
 
     # Deduplicazione
     offerte = _deduplica(offerte)
@@ -1123,6 +1158,7 @@ if __name__ == "__main__":
     cerca_offerte(
         query        = args.query,
         budget_max   = args.budget,
+        prezzo_min   = 0,
         top_n        = args.top,
         export_csv   = (args.export == "csv"),
         csv_filename = args.output,

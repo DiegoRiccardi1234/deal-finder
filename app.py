@@ -73,8 +73,10 @@ if "ricerca_effettuata" not in st.session_state:
     st.session_state["ricerca_effettuata"] = False
 if "condizione" not in st.session_state:
     st.session_state["condizione"] = "tutti"
-if "ultimo_budget" not in st.session_state:
-    st.session_state["ultimo_budget"] = 800
+if "ultimo_prezzo_min" not in st.session_state:
+    st.session_state["ultimo_prezzo_min"] = 0
+if "ultimo_prezzo_max" not in st.session_state:
+    st.session_state["ultimo_prezzo_max"] = 2000
 if "ultimo_top_n" not in st.session_state:
     st.session_state["ultimo_top_n"] = 10
 if "fonti_selezionate" not in st.session_state:
@@ -112,9 +114,19 @@ def _get_groq_api_key() -> str:
     return key.strip()
 
 
-def _build_results_summary(query: str, budget: float | None, offerte: list[Offerta]) -> str:
+def _build_results_summary(
+    query: str,
+    prezzo_min: float,
+    prezzo_max: float,
+    offerte: list[Offerta],
+) -> str:
     """Costruisce il messaggio iniziale con elenco risultati per il prompt AI."""
-    budget_txt = "nessun limite" if budget is None else f"€{budget:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    budget_txt = (
+        f"da €{prezzo_min:,.2f} a €{prezzo_max:,.2f}"
+        .replace(",", "X")
+        .replace(".", ",")
+        .replace("X", ".")
+    )
     righe = []
     for i, o in enumerate(offerte, start=1):
         prezzo_txt = f"€{o.prezzo:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -220,15 +232,17 @@ with col_query:
     ) or ""
 
 with col_budget:
-    budget_input = st.slider(
-        "💶 Budget massimo (€)",
+    prezzo_min, prezzo_max = st.slider(
+        "💶 Budget (€)",
         min_value=0,
         max_value=3000,
-        value=int(st.session_state.get("ultimo_budget", 800)),
-        step=50,
-        help="Filtra i prodotti oltre questo prezzo. Imposta 0 per nessun limite.",
+        value=(
+            int(st.session_state.get("ultimo_prezzo_min", 0)),
+            int(st.session_state.get("ultimo_prezzo_max", 2000)),
+        ),
+        step=10,
+        format="€%d",
     )
-    budget_max = float(budget_input) if budget_input > 0 else None
 
 with col_top:
     top_n_input = st.number_input(
@@ -284,7 +298,8 @@ if avvia_ricerca:
         st.session_state["risultati"]            = []
         st.session_state["log_ricerca"]          = ""
         st.session_state["condizione"]           = condizione
-        st.session_state["ultimo_budget"]        = int(budget_input)
+        st.session_state["ultimo_prezzo_min"]    = int(prezzo_min)
+        st.session_state["ultimo_prezzo_max"]    = int(prezzo_max)
         st.session_state["ultimo_top_n"]         = int(top_n_input)
         st.session_state["fonti_selezionate"]    = fonti_selezionate
         st.session_state["messaggi_chat"]        = []
@@ -300,7 +315,8 @@ if avvia_ricerca:
                 with contextlib.redirect_stdout(log_buffer):
                     risultati = cerca_offerte(
                         query        = query_input.strip(),
-                        budget_max   = budget_max,
+                        budget_max   = float(prezzo_max),
+                        prezzo_min   = float(prezzo_min),
                         top_n        = int(top_n_input),
                         export_csv   = False,
                         condizione   = condizione,
@@ -431,7 +447,8 @@ if st.session_state.get("ricerca_effettuata", False):
                     st.session_state["intro_chat_tentato"] = True
                     st.session_state["contesto_chat"] = _build_results_summary(
                         st.session_state.get("ultima_query", ""),
-                        budget_max,
+                        float(st.session_state.get("ultimo_prezzo_min", 0)),
+                        float(st.session_state.get("ultimo_prezzo_max", 2000)),
                         offerte,
                     )
                     with st.spinner("🤖 L'AI sta analizzando..."):
