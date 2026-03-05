@@ -77,6 +77,8 @@ if "ultimo_budget" not in st.session_state:
     st.session_state["ultimo_budget"] = 800
 if "ultimo_top_n" not in st.session_state:
     st.session_state["ultimo_top_n"] = 10
+if "fonti_selezionate" not in st.session_state:
+    st.session_state["fonti_selezionate"] = ["Amazon", "eBay", "Vinted", "Trovaprezzi"]
 if "messaggi_chat" not in st.session_state:
     st.session_state["messaggi_chat"] = []
 if "chat_attiva" not in st.session_state:
@@ -197,7 +199,7 @@ def _offerte_to_records(offerte: list[Offerta]) -> list[dict]:
 # ===========================================================================
 st.title("🛒 Offerte Tech Italia")
 st.caption(
-    "Cerca prodotti tech su **trovaprezzi.it** e **Amazon.it** · "
+    "Cerca prodotti tech su **trovaprezzi.it**, **Amazon.it**, **eBay.it** e **Vinted.it** · "
     "Risultati ordinati per prezzo crescente"
 )
 st.divider()
@@ -213,6 +215,8 @@ with col_query:
         placeholder="es. notebook 14 pollici 16gb",
         help="Inserisci i termini chiave separati da spazio.",
         value=st.session_state.get("ultima_query", ""),
+        key="query_input",
+        on_change=lambda: st.session_state.update({"ultima_query": st.session_state.get("query_input", "")}),
     ) or ""
 
 with col_budget:
@@ -244,6 +248,20 @@ condizione_ui = st.radio(
 )
 condizione = condizione_ui.lower()
 
+fonti_disponibili = ["Tutte", "Amazon", "eBay", "Vinted", "Trovaprezzi"]
+fonti_selezionate = st.multiselect(
+    "🌐 Fonti da consultare",
+    fonti_disponibili[1:],
+    default=st.session_state.get("fonti_selezionate", fonti_disponibili[1:]),
+)
+fonti_map = {
+    "Amazon": "amazon",
+    "eBay": "ebay",
+    "Vinted": "vinted",
+    "Trovaprezzi": "trovaprezzi",
+}
+fonti_backend = [fonti_map[f] for f in fonti_selezionate if f in fonti_map]
+
 # Bottone di ricerca centrato
 _, col_btn, _ = st.columns([3, 2, 3])
 with col_btn:
@@ -268,6 +286,7 @@ if avvia_ricerca:
         st.session_state["condizione"]           = condizione
         st.session_state["ultimo_budget"]        = int(budget_input)
         st.session_state["ultimo_top_n"]         = int(top_n_input)
+        st.session_state["fonti_selezionate"]    = fonti_selezionate
         st.session_state["messaggi_chat"]        = []
         st.session_state["chat_attiva"]          = False
         st.session_state["intro_chat_tentato"]   = False
@@ -276,7 +295,7 @@ if avvia_ricerca:
         # Cattura i print() interni di cerca_offerte() senza mostrarli nel terminale
         log_buffer = io.StringIO()
 
-        with st.spinner("⏳ Sto cercando su trovaprezzi.it e Amazon.it…"):
+        with st.spinner("⏳ Sto cercando sulle fonti selezionate…"):
             try:
                 with contextlib.redirect_stdout(log_buffer):
                     risultati = cerca_offerte(
@@ -285,6 +304,7 @@ if avvia_ricerca:
                         top_n        = int(top_n_input),
                         export_csv   = False,
                         condizione   = condizione,
+                        fonti        = fonti_backend,
                     )
                 st.session_state["risultati"]   = risultati
                 st.session_state["log_ricerca"] = log_buffer.getvalue()

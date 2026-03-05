@@ -23,6 +23,7 @@ import random
 import re
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Optional
 from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
@@ -69,6 +70,7 @@ _STOPWORDS = {
     # Articoli e preposizioni italiane
     "e", "da", "con", "per", "di", "a", "in", "il", "la", "i", "le",
     "un", "una", "del", "degli", "su", "al", "dal",
+    "usato", "nuovo",
     # Unità di misura — il numero prima di esse è il vero token di filtro
     "pollici", "inch", "inches", "ghz", "mhz", "hz", "watt", "wh",
     "ampere", "volt", "pixel", "megapixel", "mp",
@@ -424,7 +426,14 @@ def scrape_trovaprezzi(
                     continue
 
                 # ----- Nome prodotto -----
-                nome = link_tag.get_text(strip=True) or str(link_tag.get("title", "") or "")
+                nome_tag = (
+                    item.select_one("h3")
+                    or item.select_one("h2")
+                    or item.select_one("[class*='name']")
+                    or item.select_one("[class*='title']")
+                    or item.select_one("[class*='product-name']")
+                )
+                nome = nome_tag.get_text(strip=True) if nome_tag else ""
                 if not nome:
                     continue
 
@@ -515,10 +524,28 @@ def scrape_amazon(
     risultati: list[Offerta] = []
 
     try:
-        headers           = get_headers()
-        headers["Referer"] = "https://www.amazon.it/"
+        base_headers = get_headers()
+        base_headers["sec-ch-ua"] = '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"'
+        base_headers["sec-ch-ua-mobile"] = "?0"
+        base_headers["sec-ch-ua-platform"] = '"Windows"'
+        base_headers["sec-fetch-dest"] = "document"
+        base_headers["sec-fetch-mode"] = "navigate"
+        base_headers["sec-fetch-site"] = "none"
+        base_headers["sec-fetch-user"] = "?1"
+        base_headers["Cache-Control"] = "max-age=0"
 
-        resp = fetch_with_retry(url, headers)
+        with requests.Session() as session:
+            home_headers = dict(base_headers)
+            home_headers["Referer"] = "https://www.amazon.it/"
+            _ = fetch_with_retry("https://www.amazon.it", home_headers, session=session)
+
+            # Delay umano tra apertura homepage e ricerca per ridurre blocchi anti-bot
+            time.sleep(random.uniform(2.0, 3.0))
+
+            search_headers = dict(base_headers)
+            search_headers["Referer"] = "https://www.amazon.it/"
+
+            resp = fetch_with_retry(url, search_headers, session=session)
         resp.raise_for_status()
 
         soup = BeautifulSoup(resp.text, "html.parser")
@@ -627,6 +654,222 @@ def scrape_amazon(
 
 
 # ===========================================================================
+# SCRAPER — ebay.it
+# ===========================================================================
+
+def scrape_ebay(
+    query: str,
+    budget_max: Optional[float],
+    query_tokens: list[str],
+    condizione: str = "tutti",
+) -> list[Offerta]:
+    """Scraper per eBay Italia con ordinamento prezzo crescente."""
+    url = f"https://www.ebay.it/sch/i.html?_nkw={quote_plus(query)}&_sop=15"
+    if condizione == "nuovo":
+        url += "&LH_ItemCondition=1000"
+    elif condizione == "usato":
+        url += "&LH_ItemCondition=3000"
+
+    print(f"\n🔍 Cerco su eBay.it: \"{query}\"")
+    risultati: list[Offerta] = []
+
+    try:
+        headers = get_headers()
+        headers["Referer"] = "https://www.ebay.it/"
+
+        resp = fetch_with_retry(url, headers)
+        resp.raise_for_status()
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+        page_title = (soup.title.string or "") if soup.title else ""
+        if "ci scusiamo per l'interruzione" in page_title.lower():
+            print("    ⚠️  eBay.it: pagina anti-bot/interruzione, salto la fonte.")
+            return risultati
+
+        cards = soup.select(".s-item")
+        if not cards:
+            print("    ⚠️  Nessun prodotto trovato su eBay — selettore cambiato o blocco anti-bot.")
+            return risultati
+
+        print(f"    ✅ Trovate {len(cards)} card grezze su eBay.it")
+
+        for card in cards:
+            try:
+                title_tag = card.select_one(".s-item__title")
+                price_tag = card.select_one(".s-item__price")
+                link_tag = card.select_one("a.s-item__link[href]")
+                if not title_tag or not price_tag or not link_tag:
+                    continue
+
+                nome = title_tag.get_text(strip=True)
+                if not nome or nome.lower() == "shop on ebay":
+                    continue
+
+                prezzo = parse_price(price_tag.get_text(strip=True))
+                if prezzo == float("inf"):
+                    continue
+
+                href = str(link_tag.get("href", "") or "")
+                if not href:
+                    continue
+                link = href if href.startswith("http") else urljoin("https://www.ebay.it", href)
+
+                if not is_relevant(nome, query_tokens):
+                    continue
+                if budget_max is not None and prezzo > budget_max:
+                    continue
+
+                risultati.append(
+                    Offerta(nome=nome, prezzo=prezzo, negozio="eBay.it", link=link, fonte="ebay.it")
+                )
+            except (AttributeError, TypeError):
+                continue
+
+    except requests.Timeout:
+        print("    ❌ eBay.it: timeout raggiunto anche dopo i retry.")
+    except requests.ConnectionError:
+        print("    ❌ eBay.it: impossibile connettersi al sito.")
+    except requests.HTTPError as exc:
+        print(f"    ❌ eBay.it: errore HTTP {exc.response.status_code}.")
+    except Exception as exc:
+        print(f"    ❌ eBay.it: errore inatteso → {exc}")
+
+    _random_delay()
+    return risultati
+
+
+# ===========================================================================
+# SCRAPER — vinted.it
+# ===========================================================================
+
+def scrape_vinted(
+    query: str,
+    budget_max: Optional[float],
+    query_tokens: list[str],
+    condizione: str = "tutti",
+) -> list[Offerta]:
+    """Scraper per Vinted Italia (catalog ordinato per prezzo crescente)."""
+    if condizione == "nuovo":
+        print("\nℹ️ Vinted mostra solo articoli usati")
+        return []
+
+    url = f"https://www.vinted.it/catalog?search_text={quote_plus(query)}&order=price_low_to_high"
+    print(f"\n🔍 Cerco su Vinted.it: \"{query}\"")
+
+    risultati: list[Offerta] = []
+    try:
+        headers = get_headers()
+        headers["Referer"] = "https://www.vinted.it/"
+
+        resp = fetch_with_retry(url, headers)
+        resp.raise_for_status()
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+        items = soup.select('[data-testid="grid-item"]')
+        if not items:
+            print("    ⚠️  Nessun prodotto trovato su Vinted — possibile blocco o layout cambiato.")
+            return risultati
+
+        print(f"    ✅ Trovati {len(items)} elementi grezzi su Vinted.it")
+
+        for item in items:
+            try:
+                nome_tag = (
+                    item.select_one('[data-testid$="--description-title"]')
+                    or item.select_one('[data-testid="description-title"]')
+                )
+                prezzo_tag = item.select_one('[data-testid="price-text"]')
+                link_tag = item.select_one("a[href]")
+                if not prezzo_tag or not link_tag:
+                    continue
+
+                nome = nome_tag.get_text(strip=True) if nome_tag else ""
+                if not nome or nome.lower() in {"rimosso!", "removed"}:
+                    nome = str(link_tag.get("title", "") or "")
+                if not nome:
+                    img_tag = item.select_one("img")
+                    nome = str(img_tag.get("alt", "") or "") if img_tag else ""
+                if not nome:
+                    continue
+
+                prezzo_raw = prezzo_tag.get_text(" ", strip=True)
+                m = re.search(r"\d{1,3}(?:[\.\s]\d{3})*,\d{2}|\d+(?:\.\d{2})?", prezzo_raw)
+                if not m:
+                    continue
+                prezzo = parse_price(m.group(0))
+                if prezzo == float("inf"):
+                    continue
+
+                href = str(link_tag.get("href", "") or "")
+                if not href:
+                    continue
+                link = href if href.startswith("http") else urljoin("https://www.vinted.it", href)
+
+                if not is_relevant(nome, query_tokens):
+                    continue
+                if budget_max is not None and prezzo > budget_max:
+                    continue
+
+                risultati.append(
+                    Offerta(nome=nome, prezzo=prezzo, negozio="Vinted", link=link, fonte="vinted.it")
+                )
+            except (AttributeError, TypeError):
+                continue
+
+        # Fallback: su alcune pagine Vinted i campi prezzo/titolo sono nel title del link.
+        if not risultati:
+            item_links = soup.select('a[href*="/items/"]')
+            seen: set[str] = set()
+            for a_tag in item_links:
+                try:
+                    href = str(a_tag.get("href", "") or "")
+                    if not href:
+                        continue
+                    link = href if href.startswith("http") else urljoin("https://www.vinted.it", href)
+                    if link in seen:
+                        continue
+                    seen.add(link)
+
+                    title_attr = str(a_tag.get("title", "") or "")
+                    if not title_attr:
+                        continue
+
+                    nome = title_attr.split(", brand:")[0].strip()
+                    if not nome:
+                        continue
+
+                    price_match = re.search(r"\d+[\.,]\d{2}", title_attr)
+                    if not price_match:
+                        continue
+                    prezzo = parse_price(price_match.group(0))
+                    if prezzo == float("inf"):
+                        continue
+
+                    if not is_relevant(nome, query_tokens):
+                        continue
+                    if budget_max is not None and prezzo > budget_max:
+                        continue
+
+                    risultati.append(
+                        Offerta(nome=nome, prezzo=prezzo, negozio="Vinted", link=link, fonte="vinted.it")
+                    )
+                except (AttributeError, TypeError):
+                    continue
+
+    except requests.Timeout:
+        print("    ❌ Vinted.it: timeout raggiunto anche dopo i retry.")
+    except requests.ConnectionError:
+        print("    ❌ Vinted.it: impossibile connettersi al sito.")
+    except requests.HTTPError as exc:
+        print(f"    ❌ Vinted.it: errore HTTP {exc.response.status_code}.")
+    except Exception as exc:
+        print(f"    ❌ Vinted.it: errore inatteso → {exc}")
+
+    _random_delay()
+    return risultati
+
+
+# ===========================================================================
 # DEDUPLICAZIONE
 # ===========================================================================
 
@@ -728,6 +971,7 @@ def cerca_offerte(
     export_csv: bool = False,
     csv_filename: str = "offerte.csv",
     condizione: str = "tutti",
+    fonti: Optional[list[str]] = None,
 ) -> list[Offerta]:
     """
     Cerca offerte tech su trovaprezzi.it e amazon.it.
@@ -739,6 +983,7 @@ def cerca_offerte(
         export_csv:   Se True, salva i risultati in un file CSV.
         csv_filename: Nome del file CSV di output (default: "offerte.csv").
         condizione:   Filtro stato prodotto Amazon: "tutti", "nuovo", "usato".
+        fonti:        Fonti da usare (amazon, ebay, vinted, trovaprezzi). None = tutte.
 
     Returns:
         Lista di Offerta ordinata per prezzo crescente (max top_n elementi).
@@ -759,10 +1004,29 @@ def cerca_offerte(
     query_tokens = tokenize_query(query)
     print(f"\n  🔑 Token di ricerca: {query_tokens}")
 
-    # Lancio scraper
+    fonti_norm = {f.strip().lower() for f in (fonti or []) if str(f).strip()}
+    if not fonti_norm:
+        fonti_norm = {"amazon", "ebay", "vinted", "trovaprezzi"}
+    print(f"  🌐 Fonti attive: {', '.join(sorted(fonti_norm))}")
+
+    # Lancio scraper in parallelo sulle fonti selezionate
     offerte: list[Offerta] = []
-    offerte += scrape_trovaprezzi(query, budget_max, query_tokens)
-    offerte += scrape_amazon(query, budget_max, query_tokens, condizione=condizione)
+    jobs = []
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        if "trovaprezzi" in fonti_norm:
+            jobs.append(executor.submit(scrape_trovaprezzi, query, budget_max, query_tokens))
+        if "amazon" in fonti_norm:
+            jobs.append(executor.submit(scrape_amazon, query, budget_max, query_tokens, condizione))
+        if "ebay" in fonti_norm:
+            jobs.append(executor.submit(scrape_ebay, query, budget_max, query_tokens, condizione))
+        if "vinted" in fonti_norm:
+            jobs.append(executor.submit(scrape_vinted, query, budget_max, query_tokens, condizione))
+
+        for future in as_completed(jobs):
+            try:
+                offerte += future.result()
+            except Exception as exc:
+                print(f"    ⚠️  Una fonte ha generato un errore inatteso: {exc}")
 
     print(f"\n  📥 Totale risultati grezzi (post-filtro): {len(offerte)}")
 
@@ -829,6 +1093,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Filtro condizione prodotto Amazon (default: tutti)",
     )
     parser.add_argument(
+        "--fonti",
+        nargs="+",
+        choices=["amazon", "ebay", "vinted", "trovaprezzi"],
+        default=None,
+        metavar="FONTE",
+        help="Seleziona le fonti da consultare (default: tutte)",
+    )
+    parser.add_argument(
         "--export",
         choices=["csv"],
         default=None,
@@ -855,4 +1127,5 @@ if __name__ == "__main__":
         export_csv   = (args.export == "csv"),
         csv_filename = args.output,
         condizione   = args.condizione,
+        fonti        = args.fonti,
     )

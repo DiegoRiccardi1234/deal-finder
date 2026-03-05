@@ -11,8 +11,8 @@
 - Il progetto ha due entrypoint:
   - `offerte_tech.py`: libreria + CLI (`cerca_offerte` e parser argparse).
   - `app.py`: UI Streamlit che wrappa `cerca_offerte`.
-- `cerca_offerte(query, budget_max, top_n, export_csv, csv_filename)` e` il punto centrale del flusso:
-  tokenizzazione query -> scraping trovaprezzi + amazon -> filtro rilevanza/budget -> deduplica -> ordinamento.
+- `cerca_offerte(query, budget_max, top_n, export_csv, csv_filename, condizione, fonti)` e` il punto centrale del flusso:
+  tokenizzazione query -> scraping trovaprezzi + amazon + ebay + vinted -> filtro rilevanza/budget -> deduplica -> ordinamento.
 - Ogni fonte di scraping va implementata in funzione separata (`scrape_<fonte>`), con parsing e gestione errori isolati.
 
 ## Build and Test
@@ -36,6 +36,8 @@
 - Gestisci sempre i casi:
   - timeout, connessione assente, HTTP error, selettori HTML cambiati, pagina CAPTCHA/robot check
 - Se i selettori CSS cambiano, aggiorna solo la funzione della fonte interessata senza impattare le altre.
+- Fonti supportate: `trovaprezzi.it`, `amazon.it`, `ebay.it`, `vinted.it`.
+- `cerca_offerte` deve rispettare il filtro `fonti` (selezione esplicita delle fonti) e `condizione`.
 
 ## Data Conventions
 - Il prezzo va normalizzato a `float` (supporto formato italiano `1.299,00` e varianti).

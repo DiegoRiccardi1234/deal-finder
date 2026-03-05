@@ -1,7 +1,7 @@
 # Offerte Tech Italia
 
 Tool Python per cercare offerte di prodotti tech in Italia, con:
-- scraper multi-fonte (`trovaprezzi.it` + `amazon.it`),
+- scraper multi-fonte (`trovaprezzi.it` + `amazon.it` + `ebay.it` + `vinted.it`),
 - filtro per query e budget,
 - ordinamento per prezzo,
 - interfaccia web Streamlit,
@@ -105,6 +105,7 @@ Parametri principali:
 - `-b, --budget` (opzionale): budget massimo in euro
 - `-n, --top` (opzionale): numero massimo risultati (default 10)
 - `--condizione` (opzionale): filtro condizione Amazon (`tutti`, `nuovo`, `usato`; default `tutti`)
+- `--fonti` (opzionale): lista fonti da usare (`amazon`, `ebay`, `vinted`, `trovaprezzi`)
 - `--export csv` (opzionale): abilita export CSV
 - `--output` (opzionale): nome file CSV
 
@@ -113,7 +114,12 @@ Esempi con condizione:
 ```powershell
 python offerte_tech.py -q "notebook 14 pollici 16gb" -b 800 --condizione nuovo -n 5
 python offerte_tech.py -q "iphone 17" --condizione usato -n 10
+python offerte_tech.py -q "iphone usato" --fonti ebay vinted -n 5
 ```
+
+Note fonti:
+- Vinted mostra solo articoli usati: con `--condizione nuovo` la fonte viene saltata.
+- Se `--fonti` non e specificato, vengono usate tutte le fonti disponibili.
 
 ## Categorie trovaprezzi supportate (auto-mapping da query)
 - `notebook`, `laptop` -> `notebook/offerte/notebook`
