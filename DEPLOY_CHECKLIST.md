@@ -1,0 +1,8 @@
+- [ ] Repo GitHub creato
+- [ ] File caricati: app.py, offerte_tech.py, requirements.txt, README.md
+- [ ] .streamlit/secrets.toml NON presente nel repo
+- [ ] GROQ_API_KEY aggiunta nei Secrets su share.streamlit.io (Settings → Secrets)
+- [ ] App selezionata: app.py
+- [ ] Deploy completato e URL funzionante
+- [ ] Test ricerca "notebook" sul sito deployato
+- [ ] Test chat AI sul sito deployato
