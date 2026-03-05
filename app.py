@@ -31,7 +31,7 @@ st.set_page_config(
 # Import modulo scraper locale
 # ---------------------------------------------------------------------------
 try:
-    from offerte_tech import Offerta, cerca_offerte
+    from offerte_tech import Offerta, cerca_offerte, parse_search_intent
 except ImportError as _e:
     st.error(
         f"❌ Impossibile importare `offerte_tech.py`: {_e}\n\n"
@@ -69,6 +69,8 @@ if "log_ricerca" not in st.session_state:
     st.session_state["log_ricerca"] = ""
 if "ultima_query" not in st.session_state:
     st.session_state["ultima_query"] = ""
+if "query_input" not in st.session_state:
+    st.session_state["query_input"] = st.session_state.get("ultima_query", "")
 if "ricerca_effettuata" not in st.session_state:
     st.session_state["ricerca_effettuata"] = False
 if "condizione" not in st.session_state:
@@ -89,6 +91,14 @@ if "intro_chat_tentato" not in st.session_state:
     st.session_state["intro_chat_tentato"] = False
 if "contesto_chat" not in st.session_state:
     st.session_state["contesto_chat"] = ""
+if "assist_mode" not in st.session_state:
+    st.session_state["assist_mode"] = False
+if "assist_turni" not in st.session_state:
+    st.session_state["assist_turni"] = 0
+if "assist_chat" not in st.session_state:
+    st.session_state["assist_chat"] = []
+if "assist_confirm" not in st.session_state:
+    st.session_state["assist_confirm"] = ""
 
 SYSTEM_PROMPT_AI = (
     "Sei un assistente esperto di tecnologia che aiuta gli utenti a scegliere "
@@ -99,6 +109,12 @@ SYSTEM_PROMPT_AI = (
     "delle specifiche tecniche dei modelli elencati per rispondere. Per schede video, "
     "CPU, laptop e componenti hardware, sei autorizzato a basarti sui benchmark e "
     "specifiche tecniche che conosci per dare consigli precisi e dettagliati."
+)
+
+SYSTEM_PROMPT_RICERCA_ASSISTITA = (
+    "Sei un assistente che aiuta a costruire una query shopping tech. "
+    "Fai UNA sola domanda breve per volta in italiano. "
+    "Nelle prime 3 interazioni raccogli: prodotto/modello desiderato, budget min/max, condizione (nuovo/usato/tutti)."
 )
 
 
@@ -145,13 +161,14 @@ def _call_groq_chat(
     user_messages: list[dict[str, str]],
     api_key: str,
     contesto_iniziale: str = "",
+    system_prompt: str = SYSTEM_PROMPT_AI,
 ) -> str:
     """Invia la chat a Groq e ritorna il testo risposta assistant."""
     if Groq is None:
         raise RuntimeError("Pacchetto groq non installato. Esegui: pip install groq")
 
     client = Groq(api_key=api_key)
-    payload = [{"role": "system", "content": SYSTEM_PROMPT_AI}]
+    payload = [{"role": "system", "content": system_prompt}]
     if contesto_iniziale.strip():
         payload.append({"role": "user", "content": contesto_iniziale})
     payload += user_messages
@@ -217,6 +234,92 @@ st.caption(
 st.divider()
 
 # ===========================================================================
+# RICERCA ASSISTITA AI
+# ===========================================================================
+ai_key = _get_groq_api_key()
+if st.button("🤖 Aiutami a cercare", width="content"):
+    st.session_state["assist_mode"] = True
+    st.session_state["assist_turni"] = 0
+    st.session_state["assist_chat"] = [
+        {
+            "role": "assistant",
+            "content": "Cosa stai cercando? Descrivimi prodotto e uso principale in modo libero.",
+        }
+    ]
+
+if st.session_state.get("assist_confirm", ""):
+    st.success(st.session_state.get("assist_confirm", ""))
+
+if st.session_state.get("assist_mode", False):
+    if not ai_key:
+        st.info("💡 Per usare la ricerca assistita imposta GROQ_API_KEY in secrets o variabile ambiente.")
+    else:
+        with st.container(border=True):
+            st.subheader("🤖 Ricerca assistita (max 3 turni)")
+            for msg in st.session_state.get("assist_chat", []):
+                role = "assistant" if msg.get("role") == "assistant" else "user"
+                with st.chat_message(role):
+                    st.write(msg.get("content", ""))
+
+            if st.session_state.get("assist_turni", 0) < 3:
+                input_assist = st.chat_input(
+                    "Rispondi alla domanda dell'assistente...",
+                    key="assist_chat_input",
+                )
+                if input_assist:
+                    st.session_state["assist_chat"].append({"role": "user", "content": input_assist})
+                    st.session_state["assist_turni"] = int(st.session_state.get("assist_turni", 0)) + 1
+
+                    if st.session_state["assist_turni"] < 3:
+                        with st.spinner("🤖 Sto preparando la prossima domanda..."):
+                            try:
+                                prossima = _call_groq_chat(
+                                    st.session_state.get("assist_chat", []),
+                                    ai_key,
+                                    system_prompt=SYSTEM_PROMPT_RICERCA_ASSISTITA,
+                                )
+                                if not prossima:
+                                    prossima = "Perfetto. Qual e il tuo budget minimo e massimo?"
+                            except Exception:
+                                prossima = "Perfetto. Indicami budget minimo/massimo e se preferisci nuovo o usato."
+
+                        st.session_state["assist_chat"].append({"role": "assistant", "content": prossima})
+                        st.rerun()
+                    else:
+                        transcript = "\n".join(
+                            m.get("content", "")
+                            for m in st.session_state.get("assist_chat", [])
+                            if m.get("role") == "user"
+                        )
+
+                        if ai_key:
+                            os.environ["GROQ_API_KEY"] = ai_key
+
+                        intent = parse_search_intent(transcript)
+                        query_ai = str(intent.get("query", "") or "").strip()
+                        prezzo_min_ai = int(intent.get("prezzo_min", 0) or 0)
+                        prezzo_max_ai = int(intent.get("prezzo_max", 2000) or 2000)
+                        condizione_ai = str(intent.get("condizione", "tutti") or "tutti").strip().lower()
+                        if condizione_ai not in {"tutti", "nuovo", "usato"}:
+                            condizione_ai = "tutti"
+
+                        prezzo_min_ai = max(0, min(prezzo_min_ai, 3000))
+                        prezzo_max_ai = max(prezzo_min_ai, min(prezzo_max_ai, 3000))
+
+                        st.session_state["query_input"] = query_ai
+                        st.session_state["ultima_query"] = query_ai
+                        st.session_state["ultimo_prezzo_min"] = prezzo_min_ai
+                        st.session_state["ultimo_prezzo_max"] = prezzo_max_ai
+                        st.session_state["condizione"] = condizione_ai
+                        st.session_state["assist_mode"] = False
+                        st.session_state["assist_confirm"] = (
+                            "✅ Campi compilati: "
+                            f"query='{query_ai}', prezzo_min={prezzo_min_ai}, prezzo_max={prezzo_max_ai}, condizione={condizione_ai}. "
+                            "Controlla e premi Cerca offerte."
+                        )
+                        st.rerun()
+
+# ===========================================================================
 # PANNELLO DI RICERCA  (3 colonne: query | budget | top_n)
 # ===========================================================================
 col_query, col_budget, col_top = st.columns([4, 2, 1], gap="medium")
@@ -226,7 +329,6 @@ with col_query:
         "🔎 Prodotto da cercare",
         placeholder="es. notebook 14 pollici 16gb",
         help="Inserisci i termini chiave separati da spazio.",
-        value=st.session_state.get("ultima_query", ""),
         key="query_input",
         on_change=lambda: st.session_state.update({"ultima_query": st.session_state.get("query_input", "")}),
     ) or ""
@@ -353,7 +455,7 @@ if st.session_state.get("ricerca_effettuata", False):
         st.warning(
             "⚠️ **Nessuna offerta trovata** per la query corrente.\n\n"
             "Prova a:\n"
-            "- 🔼 Aumentare il budget massimo\n"
+            "- 🔼 Allargare il range budget\n"
             "- ✏️ Usare termini più generici (es. rimuovi il numero di pollici)\n"
             "- 🔄 Verificare la tua connessione internet\n"
             "- ⏱️ Attendere qualche secondo e riprovare (possibile blocco anti-bot)"
@@ -480,7 +582,10 @@ if st.session_state.get("ricerca_effettuata", False):
 
                 user_prompt = st.chat_input(
                     "Fai una domanda sui prodotti trovati...",
-                    disabled=not st.session_state.get("chat_attiva", False),
+                    disabled=(
+                        not st.session_state.get("chat_attiva", False)
+                        or st.session_state.get("assist_mode", False)
+                    ),
                 )
                 if user_prompt and st.session_state.get("chat_attiva", False):
                     st.session_state["messaggi_chat"].append({"role": "user", "content": user_prompt})
