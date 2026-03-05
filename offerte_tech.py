@@ -189,19 +189,26 @@ def parse_price(text: str) -> float:
     if not text:
         return float("inf")
 
-    # Normalizza: rimuove simboli valuta e spazi extra
-    text = text.replace("€", "").replace("EUR", "").strip()
+    # Normalizza: converte in stringa e pulisce simboli/rumore comuni.
+    text = str(text)
+    text = text.replace("\u00a0", " ").replace("\u202f", " ")
+    text = text.replace("EUR", "").replace("€", "").strip()
+    text = re.sub(r"[()\[\]]", "", text)
+    text = re.sub(r"\s+", " ", text)
 
     # In caso di range (es. "100,00 - 200,00"), prende il primo valore
     parts = re.split(r"\s*[-–]\s*", text)
     text = parts[0].strip()
 
+    # Mantiene solo cifre e separatori decimali/migliaia
+    text = re.sub(r"[^\d,\.]", "", text)
+
+    if not text:
+        return float("inf")
+
     # Formato europeo: 1.299,00 → togli i punti migliaia, sostituisci virgola decimale
-    if re.search(r"\d\.\d{3},", text):
+    if "," in text:
         text = text.replace(".", "").replace(",", ".")
-    elif "," in text and "." not in text:
-        # Solo virgola (es. "129,99")
-        text = text.replace(",", ".")
     elif "." in text and "," not in text:
         # Potrebbe essere già in formato anglosassone (es. "129.99") o migliaia (es. "1.299")
         dot_parts = text.split(".")
@@ -918,19 +925,19 @@ def detect_category_and_questions(testo_utente: str) -> dict[str, object]:
     """
     fallback_questions: dict[str, list[str]] = {
         "smartphone": [
-            "Hai un modello preciso in mente?",
-            "Quanti GB di storage minimo ti servono?",
-            "Hai una preferenza di colore?",
+            "Hai preferenze di colore?",
+            "Quanto storage ti serve? (128GB, 256GB, 512GB)",
+            "Vuoi un modello Pro o standard?",
         ],
         "laptop": [
-            "Qual e l'uso principale (studio, ufficio, gaming, editing)?",
-            "RAM minima desiderata?",
-            "Preferisci un laptop leggero o va bene anche piu pesante?",
+            "Qual e l'uso principale? (studio, ufficio, gaming, editing)",
+            "Hai preferenze su RAM o storage?",
+            "Preferisci una variante leggera o standard?",
         ],
         "abbigliamento": [
             "Che taglia cerchi?",
             "Hai un colore preferito?",
-            "Materiale preferito (cotone, lana, sintetico...)?",
+            "Hai preferenze su variante/materiale?",
         ],
         "scarpe": [
             "Che numero ti serve?",
@@ -938,12 +945,12 @@ def detect_category_and_questions(testo_utente: str) -> dict[str, object]:
             "Uso principale: sportivo o casual?",
         ],
         "elettrodomestico": [
-            "Quale marca preferisci?",
-            "Che capacita/dimensione ti serve?",
-            "Ci sono funzioni indispensabili?",
+            "Hai preferenze di marca o variante?",
+            "Hai limiti di dimensione/capacita?",
+            "Qual e l'uso principale?",
         ],
         "altro": [
-            "Hai una marca o modello preferito?",
+            "Hai preferenze di colore/storage/variante?",
             "Budget minimo e massimo?",
             "Preferisci nuovo o usato?",
         ],
@@ -951,7 +958,20 @@ def detect_category_and_questions(testo_utente: str) -> dict[str, object]:
 
     testo = str(testo_utente or "").strip()
     if not testo:
-        return {"categoria": "altro", "domande": fallback_questions["altro"]}
+        return {
+            "categoria": "altro",
+            "domande": fallback_questions["altro"],
+            "preferenze_chiare": False,
+            "intent_precompilato": {},
+        }
+
+    # Se la prima frase contiene gia preferenze chiare, evita domande extra.
+    intent_pre = parse_search_intent(testo)
+    filtri_pre = intent_pre.get("filtri", {}) if isinstance(intent_pre, dict) else {}
+    filtri_keys = {str(k).strip().lower() for k in filtri_pre.keys()} if isinstance(filtri_pre, dict) else set()
+    preferenze_chiare = bool(intent_pre.get("query", "").strip()) and bool(
+        filtri_keys.intersection({"colore", "storage", "variante"})
+    )
 
     api_key = os.environ.get("GROQ_API_KEY", "").strip()
     if not api_key or Groq is None:
@@ -968,15 +988,20 @@ def detect_category_and_questions(testo_utente: str) -> dict[str, object]:
             categoria = "elettrodomestico"
         else:
             categoria = "altro"
-        return {"categoria": categoria, "domande": fallback_questions[categoria]}
+        return {
+            "categoria": categoria,
+            "domande": [] if preferenze_chiare else fallback_questions[categoria],
+            "preferenze_chiare": preferenze_chiare,
+            "intent_precompilato": intent_pre if preferenze_chiare else {},
+        }
 
     try:
         client = Groq(api_key=api_key)
         prompt = (
             "Classifica il prodotto in una categoria tra: smartphone, laptop, abbigliamento, "
             "scarpe, elettrodomestico, altro. Restituisci SOLO JSON con chiavi: "
-            "categoria (string), domande (array di 3 stringhe). "
-            "Le domande devono essere coerenti con la categoria."
+            "categoria (string), domande (array di max 3 stringhe focalizzate su preferenze utente: colore, storage, variante, uso). "
+            "NON fare domande su specifiche tecniche del prodotto (es megapixel, batteria)."
         )
         completion = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
@@ -999,9 +1024,19 @@ def detect_category_and_questions(testo_utente: str) -> dict[str, object]:
         domande = [str(d).strip() for d in domande_raw if str(d).strip()]
         if not domande:
             domande = fallback_questions[categoria]
-        return {"categoria": categoria, "domande": domande[:3]}
+        return {
+            "categoria": categoria,
+            "domande": [] if preferenze_chiare else domande[:3],
+            "preferenze_chiare": preferenze_chiare,
+            "intent_precompilato": intent_pre if preferenze_chiare else {},
+        }
     except Exception:
-        return {"categoria": "altro", "domande": fallback_questions["altro"]}
+        return {
+            "categoria": "altro",
+            "domande": [] if preferenze_chiare else fallback_questions["altro"],
+            "preferenze_chiare": preferenze_chiare,
+            "intent_precompilato": intent_pre if preferenze_chiare else {},
+        }
 
 
 def parse_search_intent(risposta_utente: str) -> dict[str, object]:

@@ -112,6 +112,8 @@ if "filtri_ai" not in st.session_state:
     st.session_state["filtri_ai"] = {}
 if "filtri_ai_ultima_ricerca" not in st.session_state:
     st.session_state["filtri_ai_ultima_ricerca"] = {}
+if "_assist_chat_pending_reset" not in st.session_state:
+    st.session_state["_assist_chat_pending_reset"] = False
 
 SYSTEM_PROMPT_AI = (
     "Sei un assistente esperto di tecnologia che aiuta gli utenti a scegliere "
@@ -268,6 +270,7 @@ if st.button("🤖 Aiutami a cercare", width="content"):
     st.session_state["assist_categoria"] = "altro"
     st.session_state["assist_domande"] = []
     st.session_state["filtri_ai"] = {}
+    st.session_state["_assist_chat_pending_reset"] = True
     st.session_state["assist_chat"] = [
         {
             "role": "assistant",
@@ -290,9 +293,13 @@ if st.session_state.get("assist_mode", False):
                     st.write(msg.get("content", ""))
 
             if st.session_state.get("assist_turni", 0) < 3:
+                if st.session_state.get("_assist_chat_pending_reset", False):
+                    st.session_state["assist_chat_raw_input"] = ""
+                    st.session_state["_assist_chat_pending_reset"] = False
+
                 input_assist = st.text_input(
                     "Rispondi alla domanda dell'assistente",
-                    key="assist_chat_input_text",
+                    key="assist_chat_raw_input",
                 ).strip()
                 invia_assist = st.button("Invia risposta", key="assist_send_btn", width="content")
                 if invia_assist and input_assist:
@@ -308,6 +315,43 @@ if st.session_state.get("assist_mode", False):
                             st.session_state["assist_categoria"] = categoria
                             st.session_state["assist_domande"] = domande
 
+                            if bool(category_info.get("preferenze_chiare", False)):
+                                intent = category_info.get("intent_precompilato", {})
+                                if not isinstance(intent, dict) or not intent:
+                                    intent = parse_search_intent(input_assist)
+
+                                query_ai = str(intent.get("query", "") or "").strip()
+                                prezzo_min_ai = int(intent.get("prezzo_min", 0) or 0)
+                                prezzo_max_ai = int(intent.get("prezzo_max", 2000) or 2000)
+                                condizione_ai = str(intent.get("condizione", "tutti") or "tutti").strip().lower()
+                                filtri_ai = intent.get("filtri", {})
+                                if not isinstance(filtri_ai, dict):
+                                    filtri_ai = {}
+                                if condizione_ai not in {"tutti", "nuovo", "usato"}:
+                                    condizione_ai = "tutti"
+
+                                prezzo_min_ai = max(0, min(prezzo_min_ai, 3000))
+                                prezzo_max_ai = max(prezzo_min_ai, min(prezzo_max_ai, 3000))
+
+                                st.session_state["query_input"] = query_ai
+                                st.session_state["ultima_query"] = query_ai
+                                st.session_state["ultimo_prezzo_min"] = prezzo_min_ai
+                                st.session_state["ultimo_prezzo_max"] = prezzo_max_ai
+                                st.session_state["condizione"] = condizione_ai
+                                st.session_state["filtri_ai"] = {
+                                    str(k).strip(): str(v).strip()
+                                    for k, v in filtri_ai.items()
+                                    if str(k).strip() and str(v).strip()
+                                }
+                                st.session_state["assist_mode"] = False
+                                st.session_state["_assist_chat_pending_reset"] = True
+                                st.session_state["assist_confirm"] = (
+                                    "✅ Preferenze gia chiare: campi compilati automaticamente. "
+                                    f"query='{query_ai}', prezzo_min={prezzo_min_ai}, prezzo_max={prezzo_max_ai}, condizione={condizione_ai}. "
+                                    "Controlla e premi Cerca offerte."
+                                )
+                                st.rerun()
+
                         domande = st.session_state.get("assist_domande", [])
                         idx = int(st.session_state["assist_turni"]) - 1
                         if idx < len(domande):
@@ -316,7 +360,7 @@ if st.session_state.get("assist_mode", False):
                             prossima = "Indicami budget e preferenza tra nuovo/usato."
 
                         st.session_state["assist_chat"].append({"role": "assistant", "content": prossima})
-                        st.session_state["assist_chat_input_text"] = ""
+                        st.session_state["_assist_chat_pending_reset"] = True
                         st.rerun()
                     else:
                         transcript = "\n".join(
@@ -353,7 +397,7 @@ if st.session_state.get("assist_mode", False):
                             if str(k).strip() and str(v).strip()
                         }
                         st.session_state["assist_mode"] = False
-                        st.session_state["assist_chat_input_text"] = ""
+                        st.session_state["_assist_chat_pending_reset"] = True
                         st.session_state["assist_confirm"] = (
                             "✅ Campi compilati: "
                             f"query='{query_ai}', prezzo_min={prezzo_min_ai}, prezzo_max={prezzo_max_ai}, condizione={condizione_ai}. "
