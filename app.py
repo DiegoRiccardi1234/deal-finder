@@ -52,11 +52,13 @@ st.markdown(
             --line: rgba(31, 36, 48, 0.12);
             --shadow: 0 18px 48px rgba(75, 48, 30, 0.12);
             --radius: 22px;
+            --text-adaptive: var(--text-color, #1f2430);
+            --caption-adaptive: var(--text-color, #6b6f76);
         }
 
         html, body, [class*="css"] {
             font-family: 'Manrope', sans-serif;
-            color: var(--ink);
+            color: var(--text-adaptive);
         }
 
         [data-testid="stAppViewContainer"] {
@@ -114,7 +116,7 @@ st.markdown(
         .hero-copy {
             max-width: 52rem;
             margin-top: 0.95rem;
-            color: var(--muted);
+            color: var(--caption-adaptive);
             font-size: 1rem;
             line-height: 1.7;
         }
@@ -133,7 +135,7 @@ st.markdown(
             padding: 1rem 1.1rem;
             border-radius: 20px;
             background: rgba(31, 36, 48, 0.92);
-            color: #fff8ef;
+            color: var(--background-color, #fff8ef);
             box-shadow: 0 16px 30px rgba(31, 36, 48, 0.16);
         }
 
@@ -166,7 +168,7 @@ st.markdown(
 
         .section-heading p {
             margin: 0.3rem 0 0 0;
-            color: var(--muted);
+            color: var(--caption-adaptive);
             font-size: 0.95rem;
         }
 
@@ -181,7 +183,7 @@ st.markdown(
             padding: 0.42rem 0.72rem;
             border-radius: 999px;
             background: rgba(196, 92, 45, 0.1);
-            color: var(--accent-dark);
+            color: var(--text-adaptive);
             font-size: 0.84rem;
             font-weight: 700;
         }
@@ -201,13 +203,13 @@ st.markdown(
 
         .spec-card p {
             margin: 0.2rem 0;
-            color: var(--muted);
+            color: var(--caption-adaptive);
             font-size: 0.9rem;
             line-height: 1.5;
         }
 
         .spec-card strong {
-            color: var(--ink);
+            color: var(--text-adaptive);
         }
 
         [data-testid="stChatMessage"] {
@@ -232,6 +234,14 @@ st.markdown(
         [data-testid="stMetricValue"] {
             color: var(--accent-dark);
             font-size: 1.58rem;
+        }
+
+        [data-testid="stMetricLabel"],
+        [data-testid="stCaptionContainer"],
+        label,
+        .stMarkdown p,
+        .stMarkdown span {
+            color: var(--text-adaptive);
         }
 
         [data-testid="stDataFrame"] {
@@ -265,6 +275,40 @@ st.markdown(
             color: white;
         }
 
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #131313;
+                --panel: rgba(30, 30, 30, 0.9);
+                --panel-strong: rgba(36, 36, 36, 0.94);
+                --ink: #f0f0f0;
+                --muted: #d8d8d8;
+                --line: rgba(255, 255, 255, 0.14);
+                --text-adaptive: var(--text-color, #f0f0f0);
+                --caption-adaptive: var(--text-color, #d8d8d8);
+            }
+
+            .stChatMessage p, .stChatMessage span,
+            .stMarkdown p, label, .stCaption,
+            [data-testid="stMetricLabel"], [data-testid="stMetricValue"] {
+                color: #f0f0f0 !important;
+            }
+
+            .stTextInput input, .stNumberInput input {
+                color: #f0f0f0 !important;
+                background-color: #2b2b2b !important;
+            }
+
+            [data-testid="stChatMessage"] {
+                background: rgba(32, 32, 32, 0.95);
+                border-color: rgba(255, 255, 255, 0.1);
+            }
+
+            .hero-note {
+                background: rgba(20, 20, 20, 0.92);
+                color: #f0f0f0;
+            }
+        }
+
         @media (max-width: 900px) {
             .hero-grid {
                 grid-template-columns: 1fr;
@@ -287,6 +331,7 @@ def _init_state() -> None:
         "log_ricerca": "",
         "ultima_query": "",
         "query_input": "",
+        "_query_prefilled": "",
         "ricerca_effettuata": False,
         "condizione": "tutti",
         "ultimo_prezzo_min": 0,
@@ -368,7 +413,10 @@ def _extract_json_object(raw: str) -> dict[str, Any]:
 
 def _infer_categoria_from_query(query: str) -> str:
     lower = str(query or "").lower()
-    if any(token in lower for token in ("notebook", "laptop", "smartphone", "iphone", "monitor", "ssd", "gpu", "tablet", "pc")):
+    if any(token in lower for token in (
+        "notebook", "laptop", "smartphone", "telefono", "cellulare", "iphone", "monitor",
+        "ssd", "gpu", "tablet", "pc", "cuffie", "smartwatch", "fotocamera", "console"
+    )):
         return "tech"
     if any(token in lower for token in ("giacca", "maglia", "vestito", "felpa", "scarpe", "sneaker", "pantaloni", "camicia")):
         return "abbigliamento"
@@ -376,7 +424,12 @@ def _infer_categoria_from_query(query: str) -> str:
 
 
 def _sanitize_presearch_payload(payload: dict[str, Any], transcript: str) -> dict[str, Any]:
-    query = str(payload.get("query", "") or "").strip() or transcript.strip()
+    raw_query = str(payload.get("query", "") or "").strip()
+    query = " ".join(raw_query.split())
+    if not query:
+        intent = parse_search_intent(transcript)
+        query = str(intent.get("query", "") or "").strip()
+    query = " ".join(query.split()[:5])
     categoria = str(payload.get("categoria", "altro") or "altro").strip().lower()
     if categoria not in {"tech", "abbigliamento", "altro"}:
         categoria = _infer_categoria_from_query(query)
@@ -444,7 +497,7 @@ def _apply_presearch_result(result: dict[str, Any]) -> None:
     st.session_state["budget_max"] = sanitized["budget_max"]
     st.session_state["categoria"] = sanitized["categoria"]
     st.session_state["presearch_ready"] = True
-    st.session_state["query_input"] = sanitized["query"]
+    st.session_state["_query_prefilled"] = sanitized["query"]
     st.session_state["ultima_query"] = sanitized["query"]
     st.session_state["price_min_input"] = sanitized["prezzo_min"]
     st.session_state["budget_max_input"] = sanitized["budget_max"]
@@ -466,12 +519,13 @@ def _presearch_fallback() -> dict[str, Any]:
         return {"pronto": False, "domanda": "Qual e il budget ideale oppure il range di prezzo che vuoi rispettare?"}
 
     intent = parse_search_intent(transcript)
+    query = str(intent.get("query", "") or transcript).strip()
     return {
         "pronto": True,
-        "query": str(intent.get("query", transcript) or transcript),
+        "query": " ".join(query.split()[:5]),
         "prezzo_min": int(intent.get("prezzo_min", 0) or 0),
         "budget_max": int(intent.get("prezzo_max", 800) or 800),
-        "categoria": _infer_categoria_from_query(str(intent.get("query", transcript) or transcript)),
+        "categoria": _infer_categoria_from_query(query),
     }
 
 
@@ -489,6 +543,13 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
     preferenze["trascrizione"] = transcript
     st.session_state["preferenze_utente"] = preferenze
 
+    history_text = "\n".join(
+        [
+            f"{'Assistente' if message.get('role') == 'assistant' else 'Utente'}: {message.get('content', '')}"
+            for message in st.session_state.get("presearch_messages", [])
+        ]
+    )
+
     client = _get_cerebras_client(api_key)
     result: dict[str, Any]
 
@@ -496,15 +557,20 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
         result = _presearch_fallback()
     else:
         system_prompt = (
-            f"Sei un assistente shopping esperto italiano. L'utente cerca: '{cleaned}'.\n"
+            "Sei un assistente shopping esperto italiano.\n"
+            "Categoria tech include: smartphone, telefono, cellulare, laptop, notebook, tablet, PC, monitor, SSD, cuffie, smartwatch, fotocamera, console. "
+            "Se l'utente menziona uno di questi, usa sempre categoria tech.\n"
             "1. Identifica la categoria: tech / abbigliamento / altro\n"
             "2. Elenca mentalmente TUTTE le variabili che servono per trovare il prodotto giusto per quella categoria\n"
             "3. Identifica quali variabili l'utente NON ha ancora specificato\n"
             "4. Fai UNA SOLA domanda che copre la variabile piu importante mancante\n"
             "5. Dopo max 4 domande, anche se mancano info, genera la query finale\n"
+            "Il campo 'query' deve essere una query di ricerca sintetica di max 5 parole, adatta a un motore di ricerca e-commerce. "
+            "NON includere il budget nel campo query.\n"
             "Rispondi SOLO in JSON valido:\n"
             "- Se servono ancora info: {\"domanda\": \"...\", \"pronto\": false}\n"
-            "- Se hai abbastanza info: {\"pronto\": true, \"query\": \"...\", \"prezzo_min\": N, \"budget_max\": N, \"categoria\": \"tech|abbigliamento|altro\"}"
+            "- Se hai abbastanza info: {\"pronto\": true, \"query\": \"...\", \"prezzo_min\": N, \"budget_max\": N, \"categoria\": \"tech|abbigliamento|altro\"}\n"
+            f"Cronologia conversazione finora:\n{history_text}\n\nNuovo messaggio utente: {cleaned}"
         )
         user_payload = {
             "messaggi_utente": messaggi,
@@ -700,7 +766,7 @@ def _run_search(
 ) -> None:
     st.session_state["ricerca_effettuata"] = True
     st.session_state["ultima_query"] = query
-    st.session_state["query_input"] = query
+    st.session_state["_query_prefilled"] = query
     st.session_state["ultimo_prezzo_min"] = int(prezzo_min)
     st.session_state["ultimo_prezzo_max"] = int(budget_max)
     st.session_state["ultimo_top_n"] = int(top_n)
@@ -829,7 +895,7 @@ with search_col:
     query_input = st.text_input(
         "Query prodotto",
         placeholder="es. notebook 14 pollici 16gb",
-        key="query_input",
+        value=st.session_state.get("_query_prefilled", ""),
     ).strip()
 
     price_cols = st.columns(2, gap="medium")
