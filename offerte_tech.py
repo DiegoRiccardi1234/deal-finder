@@ -155,6 +155,7 @@ class Offerta:
     fonte:   str = field(default="")
     spedizione: str = field(default="n.d.")
     alternativa: str = field(default="")
+    specs: dict[str, object] = field(default_factory=dict)
 
     def __str__(self) -> str:
         nome_corto = self.nome[:62] + "…" if len(self.nome) > 63 else self.nome
@@ -238,11 +239,26 @@ def parse_price(text: str) -> Optional[float]:
     parts = re.split(r"\s*[-–]\s*", text)
     text = parts[0].strip()
 
+    # Estrae il primo frammento numerico plausibile da testo rumoroso.
+    number_match = re.search(
+        r"\d{1,3}(?:[\.\s]\d{3})+(?:[\.,]\d{2})?|\d+(?:[\.,]\d{2})?",
+        text,
+    )
+    if number_match:
+        text = number_match.group(0)
+
     # Mantiene solo cifre e separatori decimali/migliaia
     text = re.sub(r"[^\d,\.]", "", text)
 
     if not text:
         return None
+
+    if text.count(".") > 1 and "," not in text:
+        parts = [part for part in text.split(".") if part]
+        if len(parts) >= 2 and len(parts[-1]) == 2:
+            text = "".join(parts[:-1]) + "." + parts[-1]
+        else:
+            text = "".join(parts)
 
     # Formato europeo: 1.299,00 → togli i punti migliaia, sostituisci virgola decimale
     if "," in text:
@@ -261,6 +277,124 @@ def parse_price(text: str) -> Optional[float]:
         return val if val > 0 else None
     except ValueError:
         return None
+
+
+def _within_price_range(prezzo: float, prezzo_min: float, budget_max: Optional[float]) -> bool:
+    """Verifica che il prezzo rientri nel range configurato."""
+    return prezzo >= max(0.0, float(prezzo_min)) and (budget_max is None or prezzo <= budget_max)
+
+
+def _normalize_category(categoria: str) -> str:
+    """Normalizza categorie granulari verso tech / abbigliamento / altro."""
+    categoria_norm = str(categoria or "").strip().lower()
+    if categoria_norm in {"tech", "smartphone", "laptop", "tablet", "monitor", "console", "pc"}:
+        return "tech"
+    if categoria_norm in {"abbigliamento", "scarpe", "moda"}:
+        return "abbigliamento"
+    return "altro"
+
+
+def _extract_json_object(raw: str) -> dict[str, object]:
+    """Estrae un oggetto JSON da una stringa e ritorna un dict vuoto su errore."""
+    text = str(raw or "").strip()
+    if not text:
+        return {}
+    try:
+        payload = json.loads(text)
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        match = re.search(r"\{.*\}", text, flags=re.DOTALL)
+        if not match:
+            return {}
+        try:
+            payload = json.loads(match.group(0))
+            return payload if isinstance(payload, dict) else {}
+        except Exception:
+            return {}
+
+
+def _extract_clothing_specs(nome_prodotto: str) -> dict[str, object]:
+    """Estrae specifiche base da titoli abbigliamento senza usare AI."""
+    nome = str(nome_prodotto or "").strip()
+    lower_name = nome.lower()
+
+    brand_match = re.search(r"\b([A-Z][A-Za-z0-9'&-]+)\b", nome)
+    size_match = re.search(r"\b(?:XXS|XS|S|M|L|XL|XXL|36|37|38|39|40|41|42|43|44|45|46|47|48|49|50)\b", nome, flags=re.IGNORECASE)
+
+    materiale = None
+    for candidate in ("cotone", "poliestere", "lana", "pelle"):
+        if candidate in lower_name:
+            materiale = candidate
+            break
+
+    genere = None
+    if any(token in lower_name for token in ("uomo", "men", "man")):
+        genere = "uomo"
+    elif any(token in lower_name for token in ("donna", "women", "woman")):
+        genere = "donna"
+    elif any(token in lower_name for token in ("unisex", "kids", "bambino", "bambina")):
+        genere = "unisex"
+
+    return {
+        "brand": brand_match.group(1) if brand_match else None,
+        "taglia": size_match.group(0).upper() if size_match else None,
+        "materiale": materiale,
+        "genere": genere,
+    }
+
+
+def fetch_specs_ai(
+    offerte: list[Offerta],
+    categoria: str,
+    cerebras_client: Optional[object],
+) -> list[Offerta]:
+    """Arricchisce le offerte con specs in parallelo in base alla categoria."""
+    if not offerte:
+        return offerte
+
+    categoria_norm = _normalize_category(categoria)
+    if categoria_norm == "altro":
+        for offerta in offerte:
+            offerta.specs = {}
+        return offerte
+
+    if categoria_norm == "abbigliamento":
+        for offerta in offerte:
+            offerta.specs = _extract_clothing_specs(offerta.nome)
+        return offerte
+
+    if cerebras_client is None:
+        for offerta in offerte:
+            offerta.specs = {}
+        return offerte
+
+    def _fetch_single_specs(offerta: Offerta) -> tuple[Offerta, dict[str, object]]:
+        prompt = (
+            f"Sei un database di schede tecniche. Per '{offerta.nome}' restituisci SOLO un JSON con: "
+            "display, processore, ram, storage, batteria, fotocamera, peso, os. "
+            "Campi sconosciuti: null. Solo JSON, nessun testo extra."
+        )
+        try:
+            completion = cerebras_client.chat.completions.create(
+                model="openai/gpt-oss-120b",
+                messages=[
+                    {"role": "system", "content": prompt},
+                ],
+                temperature=0,
+            )
+            content = completion.choices[0].message.content if completion and completion.choices else ""
+            specs = _extract_json_object(str(content or ""))
+            return offerta, specs
+        except Exception:
+            return offerta, {}
+
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(_fetch_single_specs, offerta) for offerta in offerte]
+        for future in as_completed(futures):
+            offerta, specs = future.result()
+            offerta.specs = specs if isinstance(specs, dict) else {}
+
+    return offerte
 
 
 def _extract_shipping_from_text(text: str) -> str:
@@ -426,6 +560,7 @@ def fetch_with_retry(
 
 def scrape_trovaprezzi(
     query: str,
+    prezzo_min: float,
     budget_max: Optional[float],
     query_tokens: list[str],
 ) -> list[Offerta]:
@@ -494,7 +629,7 @@ def scrape_trovaprezzi(
 
                 if not is_relevant(nome, query_tokens):
                     continue
-                if budget_max is not None and prezzo > budget_max:
+                if not _within_price_range(prezzo, prezzo_min, budget_max):
                     continue
 
                 risultati.append(
@@ -532,6 +667,7 @@ def scrape_trovaprezzi(
 
 def scrape_amazon(
     query: str,
+    prezzo_min: float,
     budget_max: Optional[float],
     query_tokens: list[str],
     condizione: str = "tutti",
@@ -619,7 +755,9 @@ def scrape_amazon(
                     intero_tag    = card.select_one(".a-price-whole")
                     decimale_tag  = card.select_one(".a-price-fraction")
                     if intero_tag and decimale_tag:
-                        prezzo_raw = f"{intero_tag.get_text(strip=True)}.{decimale_tag.get_text(strip=True)}"
+                        intero = intero_tag.get_text(strip=True).replace(".", "").replace(",", "")
+                        decimale = decimale_tag.get_text(strip=True)
+                        prezzo_raw = f"{intero},{decimale}"
                     else:
                         continue  # Nessun prezzo trovato
 
@@ -671,7 +809,7 @@ def scrape_amazon(
                 # ----- Filtri -----
                 if not is_relevant(nome, query_tokens):
                     continue
-                if budget_max is not None and prezzo > budget_max:
+                if not _within_price_range(prezzo, prezzo_min, budget_max):
                     continue
 
                 risultati.append(Offerta(nome=nome, prezzo=prezzo, negozio=negozio,
@@ -699,6 +837,7 @@ def scrape_amazon(
 
 def scrape_ebay(
     query: str,
+    prezzo_min: float,
     budget_max: Optional[float],
     query_tokens: list[str],
     condizione: str = "tutti",
@@ -805,7 +944,7 @@ def scrape_ebay(
                 # ----- Filtri -----
                 if not is_relevant(nome, query_tokens):
                     continue
-                if budget_max is not None and prezzo > budget_max:
+                if not _within_price_range(prezzo, prezzo_min, budget_max):
                     continue
 
                 risultati.append(
@@ -842,6 +981,7 @@ def scrape_ebay(
 
 def scrape_vinted(
     query: str,
+    prezzo_min: float,
     budget_max: Optional[float],
     query_tokens: list[str],
     condizione: str = "tutti",
@@ -905,7 +1045,7 @@ def scrape_vinted(
 
                 if not is_relevant(nome, query_tokens):
                     continue
-                if budget_max is not None and prezzo > budget_max:
+                if not _within_price_range(prezzo, prezzo_min, budget_max):
                     continue
 
                 spedizione = _extract_shipping_from_text(item.get_text(" ", strip=True))
@@ -947,7 +1087,7 @@ def scrape_vinted(
 
                     if not is_relevant(nome, query_tokens):
                         continue
-                    if budget_max is not None and prezzo > budget_max:
+                    if not _within_price_range(prezzo, prezzo_min, budget_max):
                         continue
 
                     spedizione = _extract_shipping_from_text(title_attr)
@@ -1066,13 +1206,13 @@ def detect_category_and_questions(testo_utente: str) -> dict[str, object]:
         questions: list[str] = []
         if categoria == "smartphone":
             if is_apple_phone and not has_storage:
-                questions.append("Quanto storage ti serve? (128GB, 256GB, 512GB)")
+                questions.append("Quanti GB di storage preferisci?")
             if is_apple_phone and not has_variant:
                 questions.append("Preferisci il modello standard o Pro?")
             if not is_apple_phone and not has_color:
                 questions.append("Hai preferenze di colore?")
             if not is_apple_phone and not has_storage:
-                questions.append("Quanto storage ti serve? (128GB, 256GB, 512GB)")
+                questions.append("Quanti GB di storage preferisci?")
             preferenze_ok = (has_storage and has_variant) if is_apple_phone else (has_storage or has_color)
             return questions[:2], preferenze_ok
 
@@ -1508,6 +1648,8 @@ def cerca_offerte(
     csv_filename: str = "offerte.csv",
     condizione: str = "tutti",
     fonti: Optional[list[str]] = None,
+    categoria: str = "altro",
+    cerebras_client: Optional[object] = None,
 ) -> list[Offerta]:
     """
     Cerca offerte tech su trovaprezzi.it e amazon.it.
@@ -1522,6 +1664,8 @@ def cerca_offerte(
         csv_filename: Nome del file CSV di output (default: "offerte.csv").
         condizione:   Filtro stato prodotto Amazon: "tutti", "nuovo", "usato".
         fonti:        Fonti da usare (amazon, ebay, vinted, trovaprezzi). None = tutte.
+        categoria:    Categoria normalizzata (tech, abbigliamento, altro).
+        cerebras_client: Client Cerebras opzionale per l'arricchimento specs.
 
     Returns:
         Lista di Offerta ordinata per prezzo crescente (max top_n elementi).
@@ -1555,13 +1699,13 @@ def cerca_offerte(
     jobs = []
     with ThreadPoolExecutor(max_workers=4) as executor:
         if "trovaprezzi" in fonti_norm:
-            jobs.append(executor.submit(scrape_trovaprezzi, query, budget_max, query_tokens))
+            jobs.append(executor.submit(scrape_trovaprezzi, query, prezzo_min, budget_max, query_tokens))
         if "amazon" in fonti_norm:
-            jobs.append(executor.submit(scrape_amazon, query, budget_max, query_tokens, condizione))
+            jobs.append(executor.submit(scrape_amazon, query, prezzo_min, budget_max, query_tokens, condizione))
         if "ebay" in fonti_norm:
-            jobs.append(executor.submit(scrape_ebay, query, budget_max, query_tokens, condizione))
+            jobs.append(executor.submit(scrape_ebay, query, prezzo_min, budget_max, query_tokens, condizione))
         if "vinted" in fonti_norm:
-            jobs.append(executor.submit(scrape_vinted, query, budget_max, query_tokens, condizione))
+            jobs.append(executor.submit(scrape_vinted, query, prezzo_min, budget_max, query_tokens, condizione))
 
         for future in as_completed(jobs):
             try:
@@ -1594,6 +1738,9 @@ def cerca_offerte(
 
     # Tronca a top_n
     offerte_top = offerte[:top_n]
+
+    if offerte_top:
+        fetch_specs_ai(offerte_top, categoria, cerebras_client)
 
     # Output terminale
     print_results(offerte_top, query, budget_max, top_n)
@@ -1685,4 +1832,6 @@ if __name__ == "__main__":
         csv_filename = args.output,
         condizione   = args.condizione,
         fonti        = args.fonti,
+        categoria    = "altro",
+        cerebras_client = None,
     )
