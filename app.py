@@ -13,9 +13,9 @@ import os
 import streamlit as st
 
 try:
-    from groq import Groq
+    from cerebras.cloud.sdk import Cerebras
 except Exception:
-    Groq = None
+    Cerebras = None
 
 # ---------------------------------------------------------------------------
 # Configurazione pagina (deve essere la PRIMA chiamata Streamlit)
@@ -129,15 +129,15 @@ SYSTEM_PROMPT_AI = (
     "specifiche tecniche che conosci per dare consigli precisi e dettagliati."
 )
 
-def _get_groq_api_key() -> str:
+def _get_cerebras_api_key() -> str:
     """Legge la key da Streamlit secrets, con fallback variabile ambiente."""
     key = ""
     try:
-        key = str(st.secrets.get("GROQ_API_KEY", "") or "")
+        key = str(st.secrets.get("CEREBRAS_API_KEY", "") or "")
     except Exception:
         key = ""
     if not key.strip():
-        key = os.environ.get("GROQ_API_KEY", "")
+        key = os.environ.get("CEREBRAS_API_KEY", "")
     return key.strip()
 
 
@@ -168,24 +168,24 @@ def _build_results_summary(
     )
 
 
-def _call_groq_chat(
+def _call_cerebras_chat(
     user_messages: list[dict[str, str]],
     api_key: str,
     contesto_iniziale: str = "",
     system_prompt: str = SYSTEM_PROMPT_AI,
 ) -> str:
-    """Invia la chat a Groq e ritorna il testo risposta assistant."""
-    if Groq is None:
-        raise RuntimeError("Pacchetto groq non installato. Esegui: pip install groq")
+    """Invia la chat a Cerebras e ritorna il testo risposta assistant."""
+    if Cerebras is None:
+        raise RuntimeError("Pacchetto cerebras-cloud-sdk non installato. Esegui: pip install cerebras-cloud-sdk")
 
-    client = Groq(api_key=api_key)
+    client = Cerebras(api_key=api_key)
     payload = [{"role": "system", "content": system_prompt}]
     if contesto_iniziale.strip():
         payload.append({"role": "user", "content": contesto_iniziale})
     payload += user_messages
 
     completion = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="openai/gpt-oss-120b",
         messages=payload,
         temperature=0.3,
     )
@@ -263,7 +263,7 @@ st.divider()
 # ===========================================================================
 # RICERCA ASSISTITA AI
 # ===========================================================================
-ai_key = _get_groq_api_key()
+ai_key = _get_cerebras_api_key()
 if st.button("🤖 Aiutami a cercare", width="content"):
     st.session_state["assist_mode"] = True
     st.session_state["assist_turni"] = 0
@@ -283,10 +283,10 @@ if st.session_state.get("assist_confirm", ""):
 
 if st.session_state.get("assist_mode", False):
     if not ai_key:
-        st.info("💡 Per usare la ricerca assistita imposta GROQ_API_KEY in secrets o variabile ambiente.")
+        st.info("💡 Per usare la ricerca assistita imposta CEREBRAS_API_KEY in secrets o variabile ambiente.")
     else:
         with st.container(border=True):
-            st.subheader("🤖 Ricerca assistita (max 3 turni)")
+            st.subheader("🤖 Ricerca assistita (max 2 domande)")
             for msg in st.session_state.get("assist_chat", []):
                 role = "assistant" if msg.get("role") == "assistant" else "user"
                 with st.chat_message(role):
@@ -297,12 +297,12 @@ if st.session_state.get("assist_mode", False):
                     st.session_state["assist_chat_raw_input"] = ""
                     st.session_state["_assist_chat_pending_reset"] = False
 
-                input_assist = st.text_input(
-                    "Rispondi alla domanda dell'assistente",
+                input_assist = st.chat_input(
+                    "Rispondi all'assistente",
                     key="assist_chat_raw_input",
-                ).strip()
-                invia_assist = st.button("Invia risposta", key="assist_send_btn", width="content")
-                if invia_assist and input_assist:
+                )
+                if input_assist:
+                    input_assist = input_assist.strip()
                     st.session_state["assist_chat"].append({"role": "user", "content": input_assist})
                     st.session_state["assist_turni"] = int(st.session_state.get("assist_turni", 0)) + 1
 
@@ -370,7 +370,7 @@ if st.session_state.get("assist_mode", False):
                         )
 
                         if ai_key:
-                            os.environ["GROQ_API_KEY"] = ai_key
+                            os.environ["CEREBRAS_API_KEY"] = ai_key
 
                         intent = parse_search_intent(transcript)
                         query_ai = str(intent.get("query", "") or "").strip()
@@ -644,9 +644,9 @@ if st.session_state.get("ricerca_effettuata", False):
 
         st.divider()
 
-        groq_api_key = _get_groq_api_key()
-        if not groq_api_key:
-            st.info("💡 Aggiungi la tua GROQ_API_KEY in .streamlit/secrets.toml per abilitare l'assistente AI.")
+        cerebras_api_key = _get_cerebras_api_key()
+        if not cerebras_api_key:
+            st.info("💡 Aggiungi la tua CEREBRAS_API_KEY in .streamlit/secrets.toml per abilitare l'assistente AI.")
         else:
             with st.container(border=True):
                 st.subheader("🤖 Assistente AI")
@@ -662,13 +662,13 @@ if st.session_state.get("ricerca_effettuata", False):
                     )
                     with st.spinner("🤖 L'AI sta analizzando..."):
                         try:
-                            risposta_ai = _call_groq_chat(
+                            risposta_ai = _call_cerebras_chat(
                                 st.session_state.get("messaggi_chat", []),
-                                groq_api_key,
+                                cerebras_api_key,
                                 contesto_iniziale=st.session_state.get("contesto_chat", ""),
                             )
                             if not risposta_ai:
-                                raise RuntimeError("Risposta vuota dal modello. Controlla i limiti su console.groq.com")
+                                raise RuntimeError("Risposta vuota dal modello. Controlla limiti e stato su cloud.cerebras.ai")
                             st.session_state["messaggi_chat"].append({"role": "assistant", "content": risposta_ai})
                             st.rerun()
                         except Exception as exc:
@@ -677,7 +677,7 @@ if st.session_state.get("ricerca_effettuata", False):
                                 st.error(f"❌ Errore AI: {msg}. Riprova tra qualche secondo.")
                             else:
                                 st.error(f"❌ Errore AI: {msg}. Riprova tra qualche secondo.")
-                                st.info("Se il problema persiste, controlla limiti e stato API su console.groq.com")
+                                st.info("Se il problema persiste, controlla limiti e stato API su cloud.cerebras.ai")
 
                 if st.session_state.get("chat_attiva", False):
                     st.caption(f"🔍 Analisi completata su {len(offerte)} prodotti trovati")
@@ -698,13 +698,13 @@ if st.session_state.get("ricerca_effettuata", False):
                     st.session_state["messaggi_chat"].append({"role": "user", "content": user_prompt})
                     with st.spinner("🤖 L'AI sta analizzando..."):
                         try:
-                            risposta_ai = _call_groq_chat(
+                            risposta_ai = _call_cerebras_chat(
                                 st.session_state["messaggi_chat"],
-                                groq_api_key,
+                                cerebras_api_key,
                                 contesto_iniziale=st.session_state.get("contesto_chat", ""),
                             )
                             if not risposta_ai:
-                                raise RuntimeError("Risposta vuota dal modello. Controlla i limiti su console.groq.com")
+                                raise RuntimeError("Risposta vuota dal modello. Controlla limiti e stato su cloud.cerebras.ai")
                             st.session_state["messaggi_chat"].append({"role": "assistant", "content": risposta_ai})
                             st.rerun()
                         except Exception as exc:
@@ -713,7 +713,7 @@ if st.session_state.get("ricerca_effettuata", False):
                                 st.error(f"❌ Errore AI: {msg}. Riprova tra qualche secondo.")
                             else:
                                 st.error(f"❌ Errore AI: {msg}. Riprova tra qualche secondo.")
-                                st.info("Se il modello non risponde, controlla limiti e quota su console.groq.com")
+                                st.info("Se il modello non risponde, controlla limiti e quota su cloud.cerebras.ai")
 
 # ===========================================================================
 # FOOTER

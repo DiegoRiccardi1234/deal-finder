@@ -2,4 +2,4 @@ requests
 beautifulsoup4
 fake-useragent
 streamlit
-groq
+cerebras-cloud-sdk

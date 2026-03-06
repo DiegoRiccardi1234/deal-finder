@@ -16,7 +16,7 @@ Dipendenze Python:
 - `beautifulsoup4`
 - `fake-useragent`
 - `streamlit`
-- `groq`
+- `cerebras-cloud-sdk`
 
 ## Installazione dipendenze
 Dalla root del progetto:
@@ -48,7 +48,7 @@ Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 Dopo l'attivazione:
 
 ```powershell
-pip install requests beautifulsoup4 fake-useragent streamlit
+pip install requests beautifulsoup4 fake-useragent streamlit cerebras-cloud-sdk
 ```
 
 ## Avvio UI Streamlit
@@ -59,23 +59,23 @@ streamlit run app.py
 Poi apri:
 - `http://localhost:8501`
 
-## Configurazione AI (Groq)
+## Configurazione AI (Cerebras)
 Per abilitare l'assistente AI in `app.py`:
 
 1. Crea una API key gratuita su:
-	- `https://console.groq.com`
+	- `https://cloud.cerebras.ai`
 
 2. Crea il file `.streamlit/secrets.toml` nella root progetto con:
 
 ```toml
 # Esempio (non committare mai chiavi reali)
-GROQ_API_KEY = "gsk_..."
+CEREBRAS_API_KEY = "csk_..."
 ```
 
-3. Assicurati che `groq` sia installato:
+3. Assicurati che `cerebras-cloud-sdk` sia installato:
 
 ```powershell
-pip install groq
+pip install cerebras-cloud-sdk
 ```
 
 Nota sicurezza:

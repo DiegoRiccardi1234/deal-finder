@@ -33,9 +33,14 @@ import requests
 from bs4 import BeautifulSoup
 
 try:
-    from groq import Groq
+    from cerebras.cloud.sdk import Cerebras
 except Exception:
-    Groq = None
+    Cerebras = None
+
+try:
+    import streamlit as st
+except Exception:
+    st = None
 
 # ---------------------------------------------------------------------------
 # Tentativo di importare fake_useragent; fallback a lista statica se assente
@@ -176,6 +181,26 @@ def get_headers() -> dict[str, str]:
         "Connection":      "keep-alive",
         "Upgrade-Insecure-Requests": "1",
     }
+
+
+def _get_cerebras_api_key() -> str:
+    """Legge la key Cerebras da Streamlit secrets o variabile ambiente."""
+    if st is not None:
+        try:
+            key = str(st.secrets.get("CEREBRAS_API_KEY", "") or "")
+            if key.strip():
+                return key.strip()
+        except Exception:
+            pass
+    return os.environ.get("CEREBRAS_API_KEY", "").strip()
+
+
+def _get_cerebras_client() -> Optional[object]:
+    """Crea il client Cerebras se disponibile e configurato."""
+    api_key = _get_cerebras_api_key()
+    if not api_key or Cerebras is None:
+        return None
+    return Cerebras(api_key=api_key)
 
 
 def parse_price(text: str) -> Optional[float]:
@@ -599,8 +624,6 @@ def scrape_amazon(
                         continue  # Nessun prezzo trovato
 
                 prezzo = parse_price(prezzo_raw)
-                # Debug log: mostra titolo + prezzo grezzo + prezzo parsed
-                print(f"    [DEBUG Amazon] {nome[:50]} | raw='{prezzo_raw}' | parsed={prezzo}")
                 if prezzo is None:
                     continue
 
@@ -737,7 +760,7 @@ def scrape_ebay(
                 # Salta la card promozionale "Shop on eBay"
                 if nome.lower().startswith("shop on ebay"):
                     continue
-                if not nome:
+                if not nome or nome.lower() == query.strip().lower():
                     continue
 
                 # ----- Prezzo -----
@@ -983,32 +1006,26 @@ def detect_category_and_questions(testo_utente: str) -> dict[str, object]:
     fallback_questions: dict[str, list[str]] = {
         "smartphone": [
             "Hai preferenze di colore?",
-            "Quanto storage ti serve? (128GB, 256GB, 512GB)",
-            "Vuoi un modello Pro o standard?",
+            "Ti serve una versione standard o Pro, e con quanto storage?",
         ],
         "laptop": [
             "Qual e l'uso principale? (studio, ufficio, gaming, editing)",
-            "Hai preferenze su RAM o storage?",
-            "Preferisci una variante leggera o standard?",
+            "Preferisci un modello leggero/portatile o va bene standard?",
         ],
         "abbigliamento": [
             "Che taglia cerchi?",
             "Hai un colore preferito?",
-            "Hai preferenze su variante/materiale?",
         ],
         "scarpe": [
             "Che numero ti serve?",
-            "Colore preferito?",
             "Uso principale: sportivo o casual?",
         ],
         "elettrodomestico": [
             "Hai preferenze di marca o variante?",
-            "Hai limiti di dimensione/capacita?",
             "Qual e l'uso principale?",
         ],
         "altro": [
             "Hai preferenze di colore/storage/variante?",
-            "Budget minimo e massimo?",
             "Preferisci nuovo o usato?",
         ],
     }
@@ -1022,57 +1039,113 @@ def detect_category_and_questions(testo_utente: str) -> dict[str, object]:
             "intent_precompilato": {},
         }
 
-    # Se la prima frase contiene gia preferenze chiare, evita domande extra.
     intent_pre = parse_search_intent(testo)
-    filtri_pre = intent_pre.get("filtri", {}) if isinstance(intent_pre, dict) else {}
-    filtri_keys = {str(k).strip().lower() for k in filtri_pre.keys()} if isinstance(filtri_pre, dict) else set()
-    preferenze_chiare = bool(intent_pre.get("query", "").strip()) and bool(
-        filtri_keys.intersection({"colore", "storage", "variante"})
-    )
 
-    api_key = os.environ.get("GROQ_API_KEY", "").strip()
-    if not api_key or Groq is None:
-        lower = testo.lower()
-        if any(k in lower for k in ("iphone", "smartphone", "telefono", "android")):
-            categoria = "smartphone"
-        elif any(k in lower for k in ("laptop", "notebook", "pc", "macbook")):
-            categoria = "laptop"
-        elif any(k in lower for k in ("scarpe", "sneaker", "stivali", "sandali")):
-            categoria = "scarpe"
-        elif any(k in lower for k in ("maglia", "giacca", "pantaloni", "vestito", "abbigliamento")):
-            categoria = "abbigliamento"
-        elif any(k in lower for k in ("frigorifero", "lavatrice", "forno", "aspirapolvere")):
-            categoria = "elettrodomestico"
-        else:
-            categoria = "altro"
+    def _infer_category(lower_text: str) -> str:
+        if any(k in lower_text for k in ("iphone", "smartphone", "telefono", "android", "galaxy", "pixel")):
+            return "smartphone"
+        if any(k in lower_text for k in ("laptop", "notebook", "pc", "macbook", "thinkpad")):
+            return "laptop"
+        if any(k in lower_text for k in ("scarpe", "sneaker", "stivali", "sandali", "nike", "adidas")):
+            return "scarpe"
+        if any(k in lower_text for k in ("maglia", "giacca", "pantaloni", "vestito", "abbigliamento", "felpa")):
+            return "abbigliamento"
+        if any(k in lower_text for k in ("frigorifero", "lavatrice", "forno", "aspirapolvere")):
+            return "elettrodomestico"
+        return "altro"
+
+    def _questions_for_missing(categoria: str, lower_text: str) -> tuple[list[str], bool]:
+        has_color = any(c in lower_text for c in ("nero", "black", "bianco", "white", "rosa", "pink", "blu", "blue", "rosso", "red", "verde", "green", "lavanda", "silver", "graphite"))
+        has_storage = re.search(r"\b(64|128|256|512|1024)\s*gb\b|\b1\s*tb\b", lower_text) is not None
+        has_variant = any(v in lower_text for v in ("pro max", "pro", "plus", "standard", "base", "ultra", "mini"))
+        has_size = re.search(r"\b(?:xxs|xs|s|m|l|xl|xxl|\d{2}(?:[\.,]\d)?)\b", lower_text) is not None
+        has_use = any(v in lower_text for v in ("studio", "ufficio", "lavoro", "gaming", "editing", "sportivo", "casual", "running", "trail"))
+        has_portability = any(v in lower_text for v in ("leggero", "leggera", "portatile", "ultraleggero", "peso", "sottile"))
+        is_apple_phone = any(v in lower_text for v in ("iphone", "apple"))
+
+        questions: list[str] = []
+        if categoria == "smartphone":
+            if is_apple_phone and not has_storage:
+                questions.append("Quanto storage ti serve? (128GB, 256GB, 512GB)")
+            if is_apple_phone and not has_variant:
+                questions.append("Preferisci il modello standard o Pro?")
+            if not is_apple_phone and not has_color:
+                questions.append("Hai preferenze di colore?")
+            if not is_apple_phone and not has_storage:
+                questions.append("Quanto storage ti serve? (128GB, 256GB, 512GB)")
+            preferenze_ok = (has_storage and has_variant) if is_apple_phone else (has_storage or has_color)
+            return questions[:2], preferenze_ok
+
+        if categoria == "scarpe":
+            if not has_size:
+                questions.append("Che numero ti serve?")
+            if not has_use:
+                questions.append("Uso principale: sportivo o casual?")
+            return questions[:2], has_size and has_use
+
+        if categoria == "abbigliamento":
+            if not has_size:
+                questions.append("Che taglia cerchi?")
+            if not has_color:
+                questions.append("Hai un colore preferito?")
+            return questions[:2], has_size and has_color
+
+        if categoria == "laptop":
+            if not has_use:
+                questions.append("Qual e l'uso principale? (studio, ufficio, gaming, editing)")
+            if not has_portability:
+                questions.append("Preferisci un modello leggero/portatile o va bene standard?")
+            return questions[:2], has_use and has_portability
+
+        if categoria == "elettrodomestico":
+            if not any(v in lower_text for v in ("marca", "bosch", "samsung", "lg", "miele", "whirlpool")):
+                questions.append("Hai preferenze di marca o variante?")
+            if not has_use:
+                questions.append("Qual e l'uso principale?")
+            return questions[:2], len(questions) == 0
+
+        if not has_color:
+            questions.append("Hai preferenze di colore/storage/variante?")
+        if not any(v in lower_text for v in ("nuovo", "usato")):
+            questions.append("Preferisci nuovo o usato?")
+        return questions[:2], len(questions) == 0
+
+    lower = testo.lower()
+    categoria_base = _infer_category(lower)
+    domande_base, preferenze_chiare_base = _questions_for_missing(categoria_base, lower)
+
+    client = _get_cerebras_client()
+    if client is None:
+        categoria = categoria_base
         return {
             "categoria": categoria,
-            "domande": [] if preferenze_chiare else fallback_questions[categoria],
-            "preferenze_chiare": preferenze_chiare,
-            "intent_precompilato": intent_pre if preferenze_chiare else {},
+            "domande": [] if preferenze_chiare_base else (domande_base or fallback_questions[categoria])[:2],
+            "preferenze_chiare": preferenze_chiare_base,
+            "intent_precompilato": intent_pre if preferenze_chiare_base else {},
         }
 
     try:
-        client = Groq(api_key=api_key)
         prompt = (
-            "Sei un assistente acquisti. Il tuo compito è fare domande SOLO sulle preferenze "
-            "dell'utente per trovare il prodotto giusto online.\n\n"
+            "Sei un assistente acquisti. Identifica categoria prodotto, marca/modello gia specificati "
+            "e preferenze gia espresse (colore, storage, taglia, variante, uso).\n\n"
             "REGOLE ASSOLUTE:\n"
-            "- Fai SOLO domande su: colore, modello specifico, storage/capacità, taglia/misura, uso previsto\n"
-            "- NON chiedere MAI: megapixel, batteria, processore, RAM, sistema operativo, specifiche tecniche\n"
-            "- Se l'utente ha già specificato modello + almeno una preferenza, restituisci preferenze_chiare=true "
-            "senza fare altre domande\n"
-            "- Massimo 2 domande in totale, mai di più\n\n"
-            "Per smartphone: chiedi modello (Pro/standard/Plus) e colore o storage\n"
-            "Per laptop: chiedi uso principale (studio/lavoro/gaming) e peso/portabilità\n"
-            "Per abbigliamento: chiedi taglia e colore\n"
-            "Per scarpe: chiedi numero e uso (sportivo/casual)\n\n"
+            "- Genera SOLO domande sulle preferenze ANCORA mancanti\n"
+            "- NON chiedere mai di nuovo modello o colore se sono gia presenti (es: 'iphone 17 nero')\n"
+            "- Fai SOLO domande su preferenze utente: colore, storage, variante, taglia, uso, portabilita\n"
+            "- NON chiedere mai specifiche tecniche come megapixel, batteria, processore, sistema operativo\n"
+            "- Massimo 2 domande totali, una per turno\n"
+            "- Se le preferenze minime sono gia chiare, restituisci preferenze_chiare=true e domande=[]\n\n"
+            "Minimi per categoria:\n"
+            "- smartphone Apple: storage e modello (Pro/standard) se mancanti\n"
+            "- scarpe: numero e uso\n"
+            "- abbigliamento: taglia e colore\n"
+            "- laptop: uso principale e peso/portabilita\n\n"
             "Restituisci SOLO JSON con chiavi: categoria (string tra smartphone, laptop, "
             "abbigliamento, scarpe, elettrodomestico, altro), domande (array di max 2 stringhe), "
             "preferenze_chiare (bool)."
         )
         completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="openai/gpt-oss-120b",
             messages=[
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": testo},
@@ -1090,20 +1163,22 @@ def detect_category_and_questions(testo_utente: str) -> dict[str, object]:
             categoria = "altro"
         domande_raw = payload.get("domande", [])
         domande = [str(d).strip() for d in domande_raw if str(d).strip()]
+        domande_missing, preferenze_missing = _questions_for_missing(categoria, lower)
         if not domande:
-            domande = fallback_questions[categoria]
+            domande = domande_missing or fallback_questions[categoria]
+        preferenze_ai = bool(payload.get("preferenze_chiare", False)) or preferenze_missing
         return {
             "categoria": categoria,
-            "domande": [] if preferenze_chiare else domande[:3],
-            "preferenze_chiare": preferenze_chiare,
-            "intent_precompilato": intent_pre if preferenze_chiare else {},
+            "domande": [] if preferenze_ai else (domande_missing or domande)[:2],
+            "preferenze_chiare": preferenze_ai,
+            "intent_precompilato": intent_pre if preferenze_ai else {},
         }
     except Exception:
         return {
             "categoria": "altro",
-            "domande": [] if preferenze_chiare else fallback_questions["altro"],
-            "preferenze_chiare": preferenze_chiare,
-            "intent_precompilato": intent_pre if preferenze_chiare else {},
+            "domande": [] if preferenze_chiare_base else (domande_base or fallback_questions["altro"])[:2],
+            "preferenze_chiare": preferenze_chiare_base,
+            "intent_precompilato": intent_pre if preferenze_chiare_base else {},
         }
 
 
@@ -1170,8 +1245,8 @@ def parse_search_intent(risposta_utente: str) -> dict[str, object]:
     if not testo:
         return default
 
-    api_key = os.environ.get("GROQ_API_KEY", "").strip()
-    if not api_key or Groq is None:
+    client = _get_cerebras_client()
+    if client is None:
         guess = dict(default)
         m_range = re.search(r"(\d{2,5})\s*[-a]\s*(\d{2,5})", testo.lower())
         if m_range:
@@ -1202,7 +1277,6 @@ def parse_search_intent(risposta_utente: str) -> dict[str, object]:
         return _sanitize(guess)
 
     try:
-        client = Groq(api_key=api_key)
         system_prompt = (
             "Estrai un intent di ricerca shopping da testo utente in italiano. "
             "Rispondi SOLO con JSON valido senza markdown con chiavi: "
@@ -1210,7 +1284,7 @@ def parse_search_intent(risposta_utente: str) -> dict[str, object]:
             "filtri (object con attributi non cercabili direttamente, es colore/storage/taglia)."
         )
         completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="openai/gpt-oss-120b",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": testo},
@@ -1239,12 +1313,11 @@ def filtra_risultati_con_ai(risultati: list[Offerta], filtri: dict[str, str]) ->
     if not risultati or not filtri:
         return risultati
 
-    api_key = os.environ.get("GROQ_API_KEY", "").strip()
     scored: list[tuple[int, Offerta]] = []
 
-    if api_key and Groq is not None:
+    client = _get_cerebras_client()
+    if client is not None:
         try:
-            client = Groq(api_key=api_key)
             titoli = [f"{i+1}. {o.nome}" for i, o in enumerate(risultati)]
             prompt = (
                 "Valuta la rilevanza 0-10 dei titoli rispetto ai filtri dati. "
@@ -1252,7 +1325,7 @@ def filtra_risultati_con_ai(risultati: list[Offerta], filtri: dict[str, str]) ->
                 "Rispondi SOLO JSON: {\"scores\": [{\"idx\":1,\"score\":7}, ...]}"
             )
             completion = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="openai/gpt-oss-120b",
                 messages=[
                     {"role": "system", "content": prompt},
                     {
