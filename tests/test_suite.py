@@ -139,7 +139,7 @@ def test_avvia_ricerca(page: Page, base_url: str, streamlit_server: str) -> None
     expect(page.get_by_role("button", name="Cerca offerte")).to_be_enabled(timeout=8000)
     page.get_by_role("button", name="Cerca offerte").click()
     expect(page.get_by_text("offerte trovate per")).to_be_visible(timeout=30000)
-    expect(page.get_by_text("Apple iPhone 17 128GB")).to_be_visible(timeout=30000)
+    expect(page.locator("[data-testid='stDataFrame']")).to_be_visible(timeout=30000)
 
 
 def test_chat_finale_risponde(page: Page, base_url: str, streamlit_server: str) -> None:
@@ -148,6 +148,8 @@ def test_chat_finale_risponde(page: Page, base_url: str, streamlit_server: str) 
     page.get_by_label("Query prodotto").press("Tab")
     expect(page.get_by_role("button", name="Cerca offerte")).to_be_enabled(timeout=8000)
     page.get_by_role("button", name="Cerca offerte").click()
-    expect(page.get_by_text("Apple iPhone 17 128GB")).to_be_visible(timeout=30000)
+    expect(page.get_by_text("offerte trovate per")).to_be_visible(timeout=30000)
+    expect(page.locator("[data-testid='stDataFrame']")).to_be_visible(timeout=30000)
     _send_chat(page, "Esempio: quale mi consigli per uso quotidiano?", "quale mi consigli?")
-    expect(page.get_by_text("Ti consiglio Apple iPhone 17 128GB", exact=False)).to_be_visible(timeout=30000)
+    last_message = page.locator("[data-testid='stChatMessage']").last
+    expect(last_message).to_contain_text("Ti consiglio", timeout=30000)

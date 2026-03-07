@@ -11,7 +11,7 @@
 - Il progetto ha due entrypoint:
   - `offerte_tech.py`: libreria + CLI (`cerca_offerte` e parser argparse).
   - `app.py`: UI Streamlit che wrappa `cerca_offerte`.
-- `cerca_offerte(query, budget_max, top_n, export_csv, csv_filename, condizione, fonti)` e` il punto centrale del flusso:
+- `cerca_offerte(query, budget_max, top_n, export_csv, csv_filename, condizione, fonti, prezzo_min, categoria, app_id, cert_id)` e` il punto centrale del flusso:
   tokenizzazione query -> scraping trovaprezzi + amazon + ebay + vinted -> filtro rilevanza/budget -> deduplica -> ordinamento.
 - Ogni fonte di scraping va implementata in funzione separata (`scrape_<fonte>`), con parsing e gestione errori isolati.
 
@@ -38,7 +38,9 @@
 - Se i selettori CSS cambiano, aggiorna solo la funzione della fonte interessata senza impattare le altre.
 - Fonti supportate: `trovaprezzi.it`, `amazon.it`, `ebay.it`, `vinted.it`.
 - `cerca_offerte` deve rispettare il filtro `fonti` (selezione esplicita delle fonti) e `condizione`.
-- eBay: scraping diretto HTML della pagina di ricerca (`/sch/i.html`), **non** RSS (rss.ebay.it non esiste). Selettori `li[data-viewport]` con classi `s-card__*`.
+- eBay: usa la Browse API ufficiale con OAuth2 client credentials (`EBAY_APP_ID`, `EBAY_CERT_ID`) e marketplace `EBAY_IT`.
+- Se le credenziali eBay mancano, la fonte va saltata con log chiaro ma senza interrompere la ricerca.
+- Amazon su ambienti cloud può restituire HTTP 503 per blocco anti-bot: mostra un messaggio informativo Streamlit senza alterare la logica di retry.
 
 ## Data Conventions
 - Il prezzo va normalizzato a `float` (supporto formato italiano `1.299,00` e varianti).

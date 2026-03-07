@@ -1,7 +1,7 @@
 # Offerte Tech Italia
 
 Tool Python per cercare offerte di prodotti tech in Italia, con:
-- scraper multi-fonte (`trovaprezzi.it` + `amazon.it` + `ebay.it` + `vinted.it`),
+- scraper multi-fonte (`trovaprezzi.it` + `amazon.it` + `ebay.it` via Browse API + `vinted.it`),
 - filtro per query e budget,
 - ordinamento per prezzo,
 - interfaccia web Streamlit,
@@ -17,6 +17,10 @@ Dipendenze Python:
 - `fake-useragent`
 - `streamlit`
 - `cerebras-cloud-sdk`
+
+Credenziali opzionali:
+- `EBAY_APP_ID`
+- `EBAY_CERT_ID`
 
 ## Installazione dipendenze
 Dalla root del progetto:
@@ -87,6 +91,18 @@ Comportamento chat AI:
 - Il contesto iniziale (lista completa prodotti) viene inviato in modo interno al modello.
 - In UI non appare il bubble utente iniziale: viene mostrata la caption `🔍 Analisi completata su X prodotti trovati`.
 
+## Configurazione eBay Browse API
+Per abilitare i risultati eBay via API ufficiale configura una delle due opzioni:
+
+```toml
+EBAY_APP_ID = "..."
+EBAY_CERT_ID = "..."
+```
+
+oppure variabili ambiente `EBAY_APP_ID` e `EBAY_CERT_ID`.
+
+Se le chiavi mancano, eBay viene saltato automaticamente senza interrompere la ricerca.
+
 ## Uso CLI
 Esempio base:
 
@@ -150,7 +166,7 @@ Se trovi 403/404 o zero risultati:
 - prova una query piu semplice,
 - controlla se la struttura HTML e cambiata e richiede aggiornamento selettori.
 
-### 2) Amazon mostra CAPTCHA / robot check
+### 2) Amazon mostra CAPTCHA / robot check / HTTP 503
 Sintomi: pochi/zero risultati o pagina anti-bot.
 
 Cosa fare:
@@ -160,6 +176,8 @@ Cosa fare:
 - verifica connessione/rete/IP.
 
 Nota: il codice include User-Agent realistico, delay random e retry automatico.
+
+Su Streamlit Cloud Amazon può rispondere con `503` in modo sistematico perché blocca IP cloud riconosciuti come bot. In quel caso l'app mostra un avviso esplicito e conviene usare eBay/Trovaprezzi o avviare l'app in locale.
 
 ### 3) Errore PowerShell su attivazione venv
 Errore tipico: `running scripts is disabled on this system`.

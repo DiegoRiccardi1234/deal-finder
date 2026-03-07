@@ -353,6 +353,58 @@ st.markdown(
         [data-theme="dark"] .stTextInput input,
         [data-theme="dark"] .stNumberInput input { color: #e8e8e8 !important; background-color: #2d2d2d !important; }
 
+        [data-theme="dark"] .hero-kicker {
+            background: rgba(196, 92, 45, 0.22);
+            color: #e8825a;
+        }
+
+        [data-theme="dark"] .chip {
+            background: rgba(196, 92, 45, 0.2);
+            color: #e8e8e8;
+        }
+
+        [data-theme="dark"] [data-testid="stMetricValue"] {
+            color: #e8825a !important;
+        }
+
+        [data-theme="dark"] [data-testid="stMetric"] {
+            background: rgba(40, 35, 30, 0.98);
+            border-color: rgba(255,255,255,0.1);
+        }
+
+        [data-theme="dark"] [data-baseweb="tag"] {
+            background: rgba(196, 92, 45, 0.3) !important;
+            color: #e8e8e8 !important;
+        }
+
+        [data-theme="dark"] [data-testid="stExpander"] {
+            background: rgba(35,35,35,0.97);
+            border-color: rgba(255,255,255,0.08);
+        }
+
+        [data-theme="dark"] [data-testid="stCaptionContainer"] p,
+        [data-theme="dark"] footer {
+            color: #888888 !important;
+        }
+
+        [data-theme="dark"] [data-testid="stRadio"] label,
+        [data-theme="dark"] [data-testid="stCheckbox"] label {
+            color: #e8e8e8 !important;
+        }
+
+        [data-theme="dark"] [data-testid="stAlert"] {
+            background: rgba(40, 35, 30, 0.97) !important;
+            color: #e8e8e8 !important;
+            border-color: rgba(196, 92, 45, 0.4) !important;
+        }
+
+        [data-theme="dark"] [data-baseweb="select"] > div,
+        [data-theme="dark"] div[data-baseweb="input"] > div {
+            background: #2d2d2d !important;
+            color: #e8e8e8 !important;
+            border-color: rgba(255,255,255,0.15) !important;
+        }
+
         @media (max-width: 900px) {
             .hero-grid {
                 grid-template-columns: 1fr;
@@ -1229,13 +1281,35 @@ if st.session_state.get("ricerca_effettuata", False):
 
         st.write("")
         st.markdown(
-            "<div class='section-heading'><h3>Chat finale</h3><p>Chiedi un consiglio sintetico basato sulle tue preferenze e sui 10 prodotti piu economici.</p></div>",
+            """
+            <div class="section-heading" style="margin-top:0.3rem">
+                <h3>💬 Consiglio AI</h3>
+                <p>Chiedi quale prodotto ti conviene tra quelli trovati, in base al tuo uso e budget.</p>
+            </div>
+            """,
             unsafe_allow_html=True,
         )
 
         if cerebras_client is None:
             st.info("💡 Aggiungi CEREBRAS_API_KEY per ottenere la raccomandazione finale AI.")
         else:
+            if not st.session_state.get("final_chat_messages"):
+                st.markdown(
+                    """
+                    <div style="padding:1rem 1.2rem; border-radius:16px;
+                                background:rgba(196,92,45,0.07);
+                                border:1px solid rgba(196,92,45,0.15);
+                                margin-bottom:0.8rem">
+                        <p style="margin:0; color:var(--muted); font-size:0.9rem; line-height:1.65">
+                            💡 <strong>Prova a chiedere:</strong> "quale mi consigli per uso quotidiano?",
+                            "qual è il miglior rapporto qualità/prezzo?" oppure
+                            "confronta le prime 3 opzioni"
+                        </p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
             for message in st.session_state.get("final_chat_messages", []):
                 role = "assistant" if message.get("role") == "assistant" else "user"
                 with st.chat_message(role):

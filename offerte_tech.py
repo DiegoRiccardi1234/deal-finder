@@ -876,7 +876,17 @@ def scrape_amazon(
     except requests.ConnectionError:
         print("    ❌ Amazon.it: impossibile connettersi al sito.")
     except requests.HTTPError as exc:
-        print(f"    ❌ Amazon.it: errore HTTP {exc.response.status_code}.")
+        status = exc.response.status_code if exc.response is not None else 0
+        print(f"    ❌ Amazon.it: errore HTTP {status}.")
+        if status == 503 and st is not None:
+            try:
+                st.info(
+                    "ℹ️ **Amazon.it non raggiungibile** — Amazon blocca le richieste "
+                    "provenienti da server cloud. Usa eBay o Trovaprezzi, oppure avvia "
+                    "l'app in locale (`streamlit run app.py`) per includere Amazon."
+                )
+            except Exception:
+                pass
     except Exception as exc:
         print(f"    ❌ Amazon.it: errore inatteso → {exc}")
 
