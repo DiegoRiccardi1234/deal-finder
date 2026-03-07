@@ -19,6 +19,7 @@ Utilizzo da terminale:
 import argparse
 import csv
 import json
+import math
 import os
 import random
 import re
@@ -103,6 +104,11 @@ _ALIASES: dict[str, set[str]] = {
     "14":    {"14.0", "14\"", "14'", "14 pollici"},
     "15":    {"15.0", "15\"", "15'", "15 pollici"},
     "13":    {"13.0", "13\"", "13'", "13 pollici"},
+}
+
+_TECH_BRANDS = {
+    "iphone", "apple", "samsung", "galaxy", "xiaomi", "redmi", "pixel", "google",
+    "oneplus", "huawei", "honor", "oppo", "realme", "motorola", "nothing",
 }
 
 # Categorie statiche trovaprezzi utilizzabili con requests + BeautifulSoup.
@@ -204,7 +210,7 @@ def _get_cerebras_client() -> Optional[object]:
     return Cerebras(api_key=api_key)
 
 
-def parse_price(text: str) -> Optional[float]:
+def parse_price(text: str) -> float:
     """
     Converte una stringa di prezzo in float.
 
@@ -216,10 +222,10 @@ def parse_price(text: str) -> Optional[float]:
       - "1.299,00 €"          (simbolo dopo il numero)
       - "1.299,00 - 1.399,00" (range → prende il minimo)
 
-    Ritorna None se il parsing fallisce.
+    Ritorna math.inf se il parsing fallisce o il testo e vuoto.
     """
     if not text:
-        return None
+        return math.inf
 
     text = str(text)
     # Normalizza spazi speciali
@@ -251,7 +257,7 @@ def parse_price(text: str) -> Optional[float]:
     text = re.sub(r"[^\d,\.]", "", text)
 
     if not text:
-        return None
+        return math.inf
 
     if text.count(".") > 1 and "," not in text:
         parts = [part for part in text.split(".") if part]
@@ -274,13 +280,15 @@ def parse_price(text: str) -> Optional[float]:
 
     try:
         val = float(text)
-        return val if val > 0 else None
+        return val if val > 0 else math.inf
     except ValueError:
-        return None
+        return math.inf
 
 
 def _within_price_range(prezzo: float, prezzo_min: float, budget_max: Optional[float]) -> bool:
     """Verifica che il prezzo rientri nel range configurato."""
+    if not math.isfinite(prezzo):
+        return False
     return prezzo >= max(0.0, float(prezzo_min)) and (budget_max is None or prezzo <= budget_max)
 
 
@@ -432,7 +440,13 @@ def is_relevant(nome: str, query_tokens: list[str]) -> bool:
     del prodotto (o in uno dei loro alias normalizzati).
     """
     nome_lower = nome.lower()
+    brand_tokens = [token for token in query_tokens if token in _TECH_BRANDS]
     for token in query_tokens:
+        if token.isdigit() and len(token) <= 2 and brand_tokens:
+            if not any(re.search(rf"\b{re.escape(brand)}\s*{re.escape(token)}\b", nome_lower) for brand in brand_tokens):
+                return False
+            continue
+
         # Espande il token con gli alias conosciuti
         varianti = _ALIASES.get(token, {token})
         varianti.add(token)
@@ -613,7 +627,7 @@ def scrape_trovaprezzi(
                 prezzo_tag = item.select_one(".a8Pemb, .T14wmb") if item else None
                 prezzo_txt = prezzo_tag.get_text(" ", strip=True) if prezzo_tag else ""
                 prezzo = parse_price(prezzo_txt)
-                if prezzo is None:
+                if not math.isfinite(prezzo):
                     continue
 
                 link_tag = (item.select_one("a.shntl[href]") if item else None) or (item.select_one("a[href]") if item else None)
@@ -762,7 +776,7 @@ def scrape_amazon(
                         continue  # Nessun prezzo trovato
 
                 prezzo = parse_price(prezzo_raw)
-                if prezzo is None:
+                if not math.isfinite(prezzo):
                     continue
 
                 # ----- Negozio / Venditore -----
@@ -907,7 +921,7 @@ def scrape_ebay(
                 if not price_tag:
                     continue
                 prezzo = parse_price(price_tag.get_text(strip=True))
-                if prezzo is None:
+                if not math.isfinite(prezzo):
                     continue
 
                 # ----- Link (preferisci /itm/) -----
@@ -1035,7 +1049,7 @@ def scrape_vinted(
                 if not m:
                     continue
                 prezzo = parse_price(m.group(0))
-                if prezzo is None:
+                if not math.isfinite(prezzo):
                     continue
 
                 href = str(link_tag.get("href", "") or "")
@@ -1082,7 +1096,7 @@ def scrape_vinted(
                     if not price_match:
                         continue
                     prezzo = parse_price(price_match.group(0))
-                    if prezzo is None:
+                    if not math.isfinite(prezzo):
                         continue
 
                     if not is_relevant(nome, query_tokens):

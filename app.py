@@ -10,6 +10,7 @@ import csv
 import io
 import json
 import os
+import re
 from typing import Any, Optional
 
 import streamlit as st
@@ -18,6 +19,8 @@ try:
     from cerebras.cloud.sdk import Cerebras
 except Exception:
     Cerebras = None
+
+CEREBRAS_MODEL = "openai/gpt-oss-120b"
 
 try:
     from offerte_tech import Offerta, cerca_offerte, parse_search_intent
@@ -45,20 +48,20 @@ st.markdown(
             --bg: #f6f1e8;
             --panel: rgba(255, 251, 244, 0.86);
             --panel-strong: rgba(255, 248, 239, 0.96);
-            --ink: #1f2430;
-            --muted: #6b6f76;
+            --ink: #1a1a1a;
+            --muted: #3f3f3f;
             --accent: #c45c2d;
             --accent-dark: #8b3d18;
             --line: rgba(31, 36, 48, 0.12);
             --shadow: 0 18px 48px rgba(75, 48, 30, 0.12);
             --radius: 22px;
-            --text-adaptive: var(--text-color, #1f2430);
-            --caption-adaptive: var(--text-color, #6b6f76);
+            --surface: #ffffff;
+            --input-surface: #ffffff;
         }
 
         html, body, [class*="css"] {
             font-family: 'Manrope', sans-serif;
-            color: var(--text-adaptive);
+            color: var(--ink);
         }
 
         [data-testid="stAppViewContainer"] {
@@ -116,7 +119,7 @@ st.markdown(
         .hero-copy {
             max-width: 52rem;
             margin-top: 0.95rem;
-            color: var(--caption-adaptive);
+            color: var(--muted);
             font-size: 1rem;
             line-height: 1.7;
         }
@@ -134,8 +137,8 @@ st.markdown(
             max-width: 320px;
             padding: 1rem 1.1rem;
             border-radius: 20px;
-            background: rgba(31, 36, 48, 0.92);
-            color: var(--background-color, #fff8ef);
+            background: rgba(255, 255, 255, 0.94);
+            color: var(--ink);
             box-shadow: 0 16px 30px rgba(31, 36, 48, 0.16);
         }
 
@@ -168,7 +171,7 @@ st.markdown(
 
         .section-heading p {
             margin: 0.3rem 0 0 0;
-            color: var(--caption-adaptive);
+            color: var(--muted);
             font-size: 0.95rem;
         }
 
@@ -183,7 +186,7 @@ st.markdown(
             padding: 0.42rem 0.72rem;
             border-radius: 999px;
             background: rgba(196, 92, 45, 0.1);
-            color: var(--text-adaptive);
+            color: var(--ink);
             font-size: 0.84rem;
             font-weight: 700;
         }
@@ -203,13 +206,13 @@ st.markdown(
 
         .spec-card p {
             margin: 0.2rem 0;
-            color: var(--caption-adaptive);
+            color: var(--muted);
             font-size: 0.9rem;
             line-height: 1.5;
         }
 
         .spec-card strong {
-            color: var(--text-adaptive);
+            color: var(--ink);
         }
 
         [data-testid="stChatMessage"] {
@@ -224,10 +227,17 @@ st.markdown(
             line-height: 1.65;
         }
 
+        [data-testid="stChatMessage"] p,
+        [data-testid="stMarkdownContainer"] p,
+        [data-testid="stMetricValue"],
+        [data-testid="stMetricLabel"] {
+            color: #1a1a1a;
+        }
+
         [data-testid="stMetric"] {
             border: 1px solid var(--line);
             border-radius: 18px;
-            background: rgba(255, 249, 241, 0.96);
+            background: rgba(255, 255, 255, 0.96);
             padding: 0.2rem 0.35rem;
         }
 
@@ -255,7 +265,8 @@ st.markdown(
         div[data-baseweb="base-input"] > div,
         .stNumberInput input,
         .stTextInput input {
-            background: rgba(255, 251, 246, 0.96);
+            background: var(--input-surface);
+            color: var(--ink);
         }
 
         .stButton button,
@@ -277,35 +288,40 @@ st.markdown(
 
         @media (prefers-color-scheme: dark) {
             :root {
-                --bg: #131313;
-                --panel: rgba(30, 30, 30, 0.9);
-                --panel-strong: rgba(36, 36, 36, 0.94);
-                --ink: #f0f0f0;
-                --muted: #d8d8d8;
+                --bg: #1e1e1e;
+                --panel: rgba(30, 30, 30, 0.94);
+                --panel-strong: rgba(30, 30, 30, 0.98);
+                --ink: #e8e8e8;
+                --muted: #cfcfcf;
                 --line: rgba(255, 255, 255, 0.14);
-                --text-adaptive: var(--text-color, #f0f0f0);
-                --caption-adaptive: var(--text-color, #d8d8d8);
+                --surface: #1e1e1e;
+                --input-surface: #2d2d2d;
             }
 
-            .stChatMessage p, .stChatMessage span,
-            .stMarkdown p, label, .stCaption,
-            [data-testid="stMetricLabel"], [data-testid="stMetricValue"] {
-                color: #f0f0f0 !important;
+            [data-testid="stChatMessage"] p,
+            [data-testid="stMarkdownContainer"] p,
+            [data-testid="stMetricValue"],
+            [data-testid="stMetricLabel"] {
+                color: #e8e8e8 !important;
             }
 
             .stTextInput input, .stNumberInput input {
-                color: #f0f0f0 !important;
-                background-color: #2b2b2b !important;
+                color: #e8e8e8 !important;
+                background-color: #2d2d2d !important;
             }
 
             [data-testid="stChatMessage"] {
-                background: rgba(32, 32, 32, 0.95);
+                background: #1e1e1e;
                 border-color: rgba(255, 255, 255, 0.1);
             }
 
             .hero-note {
-                background: rgba(20, 20, 20, 0.92);
-                color: #f0f0f0;
+                background: #1e1e1e;
+                color: #e8e8e8;
+            }
+
+            [data-testid="stMetric"] {
+                background: #1e1e1e;
             }
         }
 
@@ -381,7 +397,80 @@ def _get_cerebras_api_key() -> str:
     return key.strip()
 
 
+def _is_test_mode() -> bool:
+    return os.environ.get("APP_TEST_MODE", "0").strip() == "1"
+
+
+class _MockCompletionMessage:
+    def __init__(self, content: str) -> None:
+        self.content = content
+
+
+class _MockCompletionChoice:
+    def __init__(self, content: str) -> None:
+        self.message = _MockCompletionMessage(content)
+
+
+class _MockCompletionResponse:
+    def __init__(self, content: str) -> None:
+        self.choices = [_MockCompletionChoice(content)]
+
+
+class _MockChatCompletions:
+    def create(self, model: str, messages: list[dict[str, str]], temperature: float = 0.0) -> object:
+        system_prompt = next((message.get("content", "") for message in messages if message.get("role") == "system"), "")
+        user_payload = messages[-1].get("content", "") if messages else ""
+
+        if "Sei un assistente shopping esperto italiano" in system_prompt:
+            try:
+                payload = json.loads(user_payload)
+            except Exception:
+                payload = {}
+            transcript = str(payload.get("trascrizione", "") or "").lower()
+            domande_fatte = int(payload.get("domande_fatte", 0) or 0)
+            if domande_fatte <= 0:
+                content = json.dumps({"domanda": "Qual e il tuo budget massimo?", "pronto": False}, ensure_ascii=False)
+            elif domande_fatte == 1:
+                content = json.dumps({"domanda": "Preferisci nuovo o usato?", "pronto": False}, ensure_ascii=False)
+            else:
+                categoria = "tech" if any(token in transcript for token in ("smartphone", "iphone", "telefono", "cellulare")) else "altro"
+                content = json.dumps(
+                    {
+                        "pronto": True,
+                        "query": "smartphone nuovo" if categoria == "tech" else "prodotto cercato",
+                        "prezzo_min": 200,
+                        "budget_max": 800,
+                        "categoria": categoria,
+                    },
+                    ensure_ascii=False,
+                )
+            return _MockCompletionResponse(content)
+
+        if "Sei un consulente shopping esperto" in system_prompt:
+            product_match = re.search(r'"nome":\s*"([^"]+)"', system_prompt)
+            product_name = product_match.group(1) if product_match else "Apple iPhone 17 128GB"
+            content = (
+                f"Ti consiglio {product_name} a € 799,00. Per uso quotidiano offre il prezzo migliore, uno storage adeguato "
+                "e un equilibrio piu convincente tra display, autonomia e praticita rispetto alle alternative."
+            )
+            return _MockCompletionResponse(content)
+
+        return _MockCompletionResponse("{}")
+
+
+class _MockChat:
+    def __init__(self) -> None:
+        self.completions = _MockChatCompletions()
+
+
+class _MockCerebrasClient:
+    def __init__(self) -> None:
+        self.chat = _MockChat()
+
+
 def _get_cerebras_client(api_key: str) -> Optional[object]:
+    if _is_test_mode():
+        return _MockCerebrasClient()
     if not api_key or Cerebras is None:
         return None
     return Cerebras(api_key=api_key)
@@ -395,13 +484,7 @@ def _extract_json_object(raw: str) -> dict[str, Any]:
         payload = json.loads(text)
         return payload if isinstance(payload, dict) else {}
     except Exception:
-        match = None
-        try:
-            import re
-
-            match = re.search(r"\{.*\}", text, flags=re.DOTALL)
-        except Exception:
-            match = None
+        match = re.search(r"\{.*\}", text, flags=re.DOTALL)
         if not match:
             return {}
         try:
@@ -550,7 +633,7 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
         ]
     )
 
-    client = _get_cerebras_client(api_key)
+    client = cerebras_client
     result: dict[str, Any]
 
     if client is None:
@@ -580,7 +663,7 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
         }
         try:
             completion = client.chat.completions.create(
-                model="openai/gpt-oss-120b",
+                model=CEREBRAS_MODEL,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
@@ -645,15 +728,11 @@ def _build_products_payload(offerte: list[Offerta]) -> list[dict[str, Any]]:
 
 
 def _call_final_recommendation(
-    api_key: str,
+    cerebras_client: object,
     offerte: list[Offerta],
     preferenze_utente: dict[str, Any],
     messages: list[dict[str, str]],
 ) -> str:
-    if Cerebras is None:
-        raise RuntimeError("Pacchetto cerebras-cloud-sdk non installato. Esegui: pip install cerebras-cloud-sdk")
-
-    client = Cerebras(api_key=api_key)
     system_prompt = (
         "Sei un consulente shopping esperto. Hai questi dati:\n"
         f"PREFERENZE UTENTE: {json.dumps(preferenze_utente, ensure_ascii=False)}\n"
@@ -662,13 +741,58 @@ def _call_final_recommendation(
         "confronta almeno 2-3 parametri rilevanti per l'utente. Sii conciso e diretto."
     )
     payload = [{"role": "system", "content": system_prompt}] + messages
-    completion = client.chat.completions.create(
-        model="openai/gpt-oss-120b",
+    completion = cerebras_client.chat.completions.create(
+        model=CEREBRAS_MODEL,
         messages=payload,
         temperature=0.2,
     )
     content = completion.choices[0].message.content if completion and completion.choices else ""
     return str(content or "").strip()
+
+
+def _build_mock_results(query: str, categoria: str, prezzo_min: int, budget_max: int) -> list[Offerta]:
+    base_results = [
+        Offerta(
+            nome="Apple iPhone 17 128GB",
+            prezzo=799.0,
+            negozio="Mock Store",
+            link="https://example.com/iphone-17-128",
+            fonte="amazon.it",
+            spedizione="Prime ✅",
+            specs={"display": "6.1\" OLED", "processore": "A19", "ram": "8 GB", "storage": "128 GB"},
+        ),
+        Offerta(
+            nome="Apple iPhone 17 256GB",
+            prezzo=899.0,
+            negozio="Mock Store Plus",
+            link="https://example.com/iphone-17-256",
+            fonte="ebay.it",
+            spedizione="€ 7,99",
+            specs={"display": "6.1\" OLED", "processore": "A19", "ram": "8 GB", "storage": "256 GB"},
+        ),
+        Offerta(
+            nome="Samsung Galaxy S25 256GB",
+            prezzo=749.0,
+            negozio="Mock Galaxy Shop",
+            link="https://example.com/galaxy-s25",
+            fonte="trovaprezzi",
+            spedizione="Gratuita ✅",
+            specs={"display": "6.2\" AMOLED", "processore": "Snapdragon", "ram": "12 GB", "storage": "256 GB"},
+        ),
+    ]
+    categoria_norm = str(categoria or "altro").lower()
+    results = base_results if categoria_norm == "tech" or "iphone" in query.lower() else [
+        Offerta(
+            nome="Nike Felpa Donna M Cotone",
+            prezzo=59.0,
+            negozio="Mock Fashion",
+            link="https://example.com/felpa",
+            fonte="vinted.it",
+            spedizione="€ 4,99",
+            specs={"brand": "Nike", "taglia": "M", "materiale": "cotone", "genere": "donna"},
+        )
+    ]
+    return [item for item in results if prezzo_min <= item.prezzo <= budget_max]
 
 
 def _offerte_to_csv_bytes(offerte: list[Offerta]) -> bytes:
@@ -762,7 +886,7 @@ def _run_search(
     top_n: int,
     condizione: str,
     fonti_backend: list[str],
-    api_key: str,
+    cerebras_client: Optional[object],
 ) -> None:
     st.session_state["ricerca_effettuata"] = True
     st.session_state["ultima_query"] = query
@@ -780,6 +904,13 @@ def _run_search(
         categoria = _infer_categoria_from_query(query)
 
     log_buffer = io.StringIO()
+    if _is_test_mode():
+        risultati = _build_mock_results(query, categoria, prezzo_min, budget_max)
+        st.session_state["risultati"] = risultati
+        st.session_state["log_ricerca"] = "[mock-mode] risultati generati localmente per la suite UI"
+        st.session_state["filtri_ai_ultima_ricerca"] = st.session_state.get("filtri_ai", {})
+        return
+
     with st.spinner("⏳ Sto cercando sulle fonti selezionate..."):
         try:
             with contextlib.redirect_stdout(log_buffer):
@@ -793,7 +924,7 @@ def _run_search(
                     condizione=condizione,
                     fonti=fonti_backend,
                     categoria=categoria,
-                    cerebras_client=_get_cerebras_client(api_key),
+                    cerebras_client=cerebras_client,
                 )
             st.session_state["risultati"] = risultati
             st.session_state["log_ricerca"] = log_buffer.getvalue()
@@ -807,6 +938,7 @@ def _run_search(
 
 
 api_key = _get_cerebras_api_key()
+cerebras_client = _get_cerebras_client(api_key)
 
 st.markdown(
     """
@@ -859,7 +991,7 @@ with pre_col:
     with top_actions[2]:
         st.button("Reset chat", width="stretch", on_click=_reset_presearch_chat)
 
-    if not api_key:
+    if cerebras_client is None:
         st.info("💡 Per la chat assistita imposta CEREBRAS_API_KEY in secrets o variabile ambiente.")
 
     for message in st.session_state.get("presearch_messages", []):
@@ -897,6 +1029,9 @@ with search_col:
         placeholder="es. notebook 14 pollici 16gb",
         value=st.session_state.get("_query_prefilled", ""),
     ).strip()
+    st.caption(
+        f"Range attivo: {st.session_state.get('price_min_input', 0)}€ - {st.session_state.get('budget_max_input', 800)}€"
+    )
 
     price_cols = st.columns(2, gap="medium")
     with price_cols[0]:
@@ -983,7 +1118,7 @@ if search_triggered:
             top_n=int(top_n_input),
             condizione=condizione,
             fonti_backend=fonti_backend,
-            api_key=api_key,
+            cerebras_client=cerebras_client,
         )
 
 if st.session_state.get("ricerca_effettuata", False):
@@ -1057,7 +1192,7 @@ if st.session_state.get("ricerca_effettuata", False):
             unsafe_allow_html=True,
         )
 
-        if not api_key:
+        if cerebras_client is None:
             st.info("💡 Aggiungi CEREBRAS_API_KEY per ottenere la raccomandazione finale AI.")
         else:
             for message in st.session_state.get("final_chat_messages", []):
@@ -1073,7 +1208,7 @@ if st.session_state.get("ricerca_effettuata", False):
                 with st.spinner("🤖 Sto confrontando i prodotti..."):
                     try:
                         risposta = _call_final_recommendation(
-                            api_key,
+                            cerebras_client,
                             offerte,
                             st.session_state.get("preferenze_utente", {}),
                             st.session_state.get("final_chat_messages", []),
