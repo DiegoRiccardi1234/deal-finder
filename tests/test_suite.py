@@ -96,6 +96,7 @@ def _send_chat(page: Page, placeholder: str, text: str) -> None:
     chat = page.get_by_placeholder(placeholder)
     chat.fill(text)
     chat.press("Enter")
+    page.wait_for_load_state("networkidle")
 
 
 def _assistant_messages(page: Page):
@@ -112,9 +113,12 @@ def test_chat_prericerca_risponde(page: Page, base_url: str, streamlit_server: s
 
 def test_chat_no_ripetizioni(page: Page, base_url: str, streamlit_server: str) -> None:
     _open_home(page, base_url)
+    initial_count = _assistant_messages(page).count()
     _send_chat(page, "Descrivi prodotto, uso, vincoli e preferenze", "cerco uno smartphone")
+    expect(_assistant_messages(page)).to_have_count(initial_count + 2, timeout=10000)
     first_reply = _assistant_messages(page).last.text_content() or ""
     _send_chat(page, "Descrivi prodotto, uso, vincoli e preferenze", "massimo 800 euro")
+    expect(_assistant_messages(page)).to_have_count(initial_count + 4, timeout=10000)
     second_reply = _assistant_messages(page).last.text_content() or ""
     assert first_reply != second_reply
 
@@ -131,6 +135,8 @@ def test_range_prezzo_sync(page: Page, base_url: str, streamlit_server: str) -> 
 def test_avvia_ricerca(page: Page, base_url: str, streamlit_server: str) -> None:
     _open_home(page, base_url)
     page.get_by_label("Query prodotto").fill("iPhone 17")
+    page.get_by_label("Query prodotto").press("Tab")
+    expect(page.get_by_role("button", name="Cerca offerte")).to_be_enabled(timeout=8000)
     page.get_by_role("button", name="Cerca offerte").click()
     expect(page.get_by_text("offerte trovate per")).to_be_visible(timeout=30000)
     expect(page.get_by_text("Apple iPhone 17 128GB")).to_be_visible(timeout=30000)
@@ -139,6 +145,8 @@ def test_avvia_ricerca(page: Page, base_url: str, streamlit_server: str) -> None
 def test_chat_finale_risponde(page: Page, base_url: str, streamlit_server: str) -> None:
     _open_home(page, base_url)
     page.get_by_label("Query prodotto").fill("iPhone 17")
+    page.get_by_label("Query prodotto").press("Tab")
+    expect(page.get_by_role("button", name="Cerca offerte")).to_be_enabled(timeout=8000)
     page.get_by_role("button", name="Cerca offerte").click()
     expect(page.get_by_text("Apple iPhone 17 128GB")).to_be_visible(timeout=30000)
     _send_chat(page, "Esempio: quale mi consigli per uso quotidiano?", "quale mi consigli?")
