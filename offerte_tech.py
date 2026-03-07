@@ -17,6 +17,7 @@ Utilizzo da terminale:
 """
 
 import argparse
+import base64
 import csv
 import json
 import math
@@ -73,6 +74,8 @@ DELAY_MIN      = 1.0       # secondi — delay minimo tra richieste
 DELAY_MAX      = 3.5       # secondi — delay massimo tra richieste
 MAX_RETRIES    = 2         # tentativi extra in caso di errore (tot: 1 + MAX_RETRIES)
 BACKOFF_BASE   = 2.0       # secondi — base per il backoff esponenziale
+
+_EBAY_TOKEN_CACHE: dict[str, object] = {"token": None, "expires_at": 0.0}
 
 # Stopword da ignorare nel filtro di rilevanza.
 # Include anche unità di misura (pollici, gb, tb…): il numero associato è già
@@ -468,6 +471,42 @@ def _select_trovaprezzi_categoria(query_tokens: list[str]) -> Optional[str]:
     return None
 
 
+def _get_ebay_token(app_id: str, cert_id: str) -> str:
+    """Ottiene e cachea un access token eBay OAuth2 tramite client credentials."""
+    now = time.time()
+    cached_token = str(_EBAY_TOKEN_CACHE.get("token") or "")
+    cached_expiry = float(_EBAY_TOKEN_CACHE.get("expires_at") or 0)
+    if cached_token and now < cached_expiry - 60:
+        return cached_token
+
+    credentials = f"{app_id}:{cert_id}".encode("utf-8")
+    headers = {
+        "Authorization": f"Basic {base64.b64encode(credentials).decode('ascii')}",
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+    data = {
+        "grant_type": "client_credentials",
+        "scope": "https://api.ebay.com/oauth/api_scope",
+    }
+    response = requests.post(
+        "https://api.ebay.com/identity/v1/oauth2/token",
+        headers=headers,
+        data=data,
+        timeout=TIMEOUT,
+    )
+    response.raise_for_status()
+
+    payload = response.json()
+    access_token = str(payload.get("access_token") or "").strip()
+    expires_in = int(payload.get("expires_in", 7200) or 7200)
+    if not access_token:
+        raise RuntimeError("Token eBay mancante nella risposta OAuth2")
+
+    _EBAY_TOKEN_CACHE["token"] = access_token
+    _EBAY_TOKEN_CACHE["expires_at"] = now + expires_in
+    return access_token
+
+
 # ===========================================================================
 # RETRY CON BACKOFF ESPONENZIALE
 # ===========================================================================
@@ -846,147 +885,113 @@ def scrape_amazon(
 
 
 # ===========================================================================
-# SCRAPER — ebay.it (scraping diretto HTML)
+# SCRAPER — ebay.it (Browse API ufficiale)
 # ===========================================================================
 
 def scrape_ebay(
     query: str,
     prezzo_min: float,
     budget_max: Optional[float],
+    condizione: str,
     query_tokens: list[str],
-    condizione: str = "tutti",
+    app_id: str,
+    cert_id: str,
 ) -> list[Offerta]:
-    """Scraper eBay.it tramite scraping diretto della pagina di ricerca."""
-    # _sop=15 → ordina per prezzo + spedizione crescente
-    url = f"https://www.ebay.it/sch/i.html?_nkw={quote_plus(query)}&_sop=15"
-    if condizione == "nuovo":
-        url += "&LH_ItemCondition=1000"
-    elif condizione == "usato":
-        url += "&LH_ItemCondition=3000"
-
-    print(f"\n🔍 Cerco su eBay.it: \"{query}\"")
+    """Scraper eBay.it tramite eBay Browse API ufficiale."""
+    print(f"\n🔍 Cerco su eBay.it API: \"{query}\"")
     risultati: list[Offerta] = []
 
-    try:
-        headers = get_headers()
-        headers["Referer"] = "https://www.ebay.it/"
+    if not app_id or not cert_id:
+        print("    ⚠️  eBay non configurato — chiavi mancanti.")
+        return risultati
 
-        time.sleep(random.uniform(2.0, 3.0))
+    price_max = budget_max if budget_max is not None else 999999
+    price_filter = f"price:[{max(0, prezzo_min)}..{price_max}],priceCurrency:EUR"
+    if condizione == "nuovo":
+        api_filter = price_filter + ",conditionIds:{1000}"
+    elif condizione == "usato":
+        api_filter = price_filter + ",conditionIds:{3000|4000|5000}"
+    else:
+        api_filter = price_filter
 
-        resp = fetch_with_retry(url, headers)
-        if resp.status_code in (401, 403, 429):
-            print("    ⚠️  eBay.it: accesso bloccato, salto la fonte.")
-            return risultati
-        resp.raise_for_status()
+    params = {
+        "q": query,
+        "limit": 50,
+        "filter": api_filter,
+    }
+    endpoint = "https://api.ebay.com/buy/browse/v1/item_summary/search"
 
-        soup = BeautifulSoup(resp.text, "html.parser")
+    for attempt in range(2):
+        try:
+            token = _get_ebay_token(app_id, cert_id)
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "X-EBAY-C-MARKETPLACE-ID": "EBAY_IT",
+                "Accept": "application/json",
+            }
+            response = requests.get(endpoint, headers=headers, params=params, timeout=TIMEOUT)
 
-        # Controlla CAPTCHA / robot check
-        page_title = (soup.title.string or "") if soup.title else ""
-        if any(kw in page_title.lower() for kw in ("sorry", "captcha", "robot")):
-            print("    ❌ eBay.it ha restituito una pagina anti-bot.")
-            return risultati
-
-        # Selettori eBay 2025+: li[data-viewport] con classi s-card__*
-        cards = soup.select("li[data-viewport]")
-        if not cards:
-            print("    ⚠️  Nessun prodotto trovato su eBay — selettore cambiato o CAPTCHA.")
-            return risultati
-
-        # Testi di UI eBay da rimuovere dai titoli
-        _JUNK_TITLE = ["viene aperta una nuova finestra o scheda", "Nuova inserzione"]
-
-        seen_links: set[str] = set()
-        for card in cards:
-            try:
-                # ----- Titolo -----
-                title_tag = card.select_one(".s-card__title")
-                if not title_tag:
-                    continue
-                nome = title_tag.get_text(strip=True)
-                if not nome:
-                    continue
-                # Pulisci testo UI eBay dal titolo
-                for junk in _JUNK_TITLE:
-                    nome = nome.replace(junk, "")
-                nome = nome.strip()
-                # Salta la card promozionale "Shop on eBay"
-                if nome.lower().startswith("shop on ebay"):
-                    continue
-                if not nome or nome.lower() == query.strip().lower():
-                    continue
-
-                # ----- Prezzo -----
-                price_tag = card.select_one(".s-card__price")
-                if not price_tag:
-                    continue
-                prezzo = parse_price(price_tag.get_text(strip=True))
-                if not math.isfinite(prezzo):
-                    continue
-
-                # ----- Link (preferisci /itm/) -----
-                link = ""
-                for a_tag in card.select("a.s-card__link[href]"):
-                    href = str(a_tag.get("href", "") or "")
-                    if "/itm/" in href:
-                        link = href
-                        break
-                if not link:
-                    first_a = card.select_one("a.s-card__link[href]")
-                    link = str(first_a.get("href", "") or "") if first_a else ""
-                if not link or link in seen_links:
-                    continue
-                seen_links.add(link)
-
-                # ----- Spedizione (dal testo completo della card) -----
-                card_text = card.get_text(" ", strip=True)
-                spedizione = _extract_shipping_from_text(card_text)
-                if spedizione == "n.d.":
-                    card_lower = card_text.lower()
-                    if "spedizione gratuita" in card_lower:
-                        spedizione = "Gratuita ✅"
-                    else:
-                        ship_m = re.search(
-                            r"[+]?\s*(?:EUR|€)\s*\d{1,3}(?:[\.\s]\d{3})*(?:,\d{2})?\s*(?:di\s+)?spes[ei]\s+di\s+spedizione",
-                            card_text, re.IGNORECASE,
-                        )
-                        if ship_m:
-                            val_m = re.search(r"(?:EUR|€)\s*\d{1,3}(?:[\.\s]\d{3})*(?:,\d{2})?", ship_m.group(0), re.IGNORECASE)
-                            if val_m:
-                                spedizione = val_m.group(0).replace("EUR", "€").strip()
-
-                # ----- Filtri -----
-                if not is_relevant(nome, query_tokens):
-                    continue
-                if not _within_price_range(prezzo, prezzo_min, budget_max):
-                    continue
-
-                risultati.append(
-                    Offerta(
-                        nome=nome,
-                        prezzo=prezzo,
-                        negozio="eBay.it",
-                        link=link,
-                        fonte="ebay.it",
-                        spedizione=spedizione,
-                    )
-                )
-            except (AttributeError, TypeError):
+            if response.status_code == 401 and attempt == 0:
+                _EBAY_TOKEN_CACHE["token"] = None
+                _EBAY_TOKEN_CACHE["expires_at"] = 0.0
                 continue
 
-        print(f"    ✅ Trovate {len(cards)} card grezze, {len(risultati)} valide dopo filtri")
+            response.raise_for_status()
 
-    except requests.Timeout:
-        print("    ❌ eBay.it: timeout raggiunto anche dopo i retry.")
-    except requests.ConnectionError:
-        print("    ❌ eBay.it: impossibile connettersi al sito.")
-    except requests.HTTPError as exc:
-        print(f"    ❌ eBay.it: errore HTTP {exc.response.status_code}.")
-    except Exception as exc:
-        print(f"    ❌ eBay.it: errore inatteso → {exc}")
+            try:
+                payload = response.json()
+            except ValueError as exc:
+                raise RuntimeError(f"JSON eBay malformato: {exc}") from exc
+
+            items = payload.get("itemSummaries", [])
+            for item in items:
+                try:
+                    nome = str(item.get("title") or "").strip()
+                    if not nome or not is_relevant(nome, query_tokens):
+                        continue
+
+                    price_obj = item.get("price") or {}
+                    prezzo = float(price_obj.get("value"))
+                    if not _within_price_range(prezzo, prezzo_min, budget_max):
+                        continue
+
+                    seller = item.get("seller") or {}
+                    link = str(item.get("itemWebUrl") or "").strip()
+                    if not link:
+                        continue
+
+                    risultati.append(
+                        Offerta(
+                            nome=nome,
+                            prezzo=prezzo,
+                            negozio=str(seller.get("username") or "eBay"),
+                            link=link,
+                            fonte="ebay.it",
+                            spedizione="n.d.",
+                        )
+                    )
+                except (TypeError, ValueError):
+                    continue
+
+            print(f"    ✅ eBay Browse API: {len(risultati)} risultati validi")
+            _random_delay()
+            return risultati
+
+        except requests.Timeout:
+            print("    ❌ eBay Browse API: timeout.")
+        except requests.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else "sconosciuto"
+            print(f"    ❌ eBay Browse API: errore HTTP {status}.")
+        except requests.ConnectionError:
+            print("    ❌ eBay Browse API: errore di connessione.")
+        except Exception as exc:
+            print(f"    ❌ eBay Browse API: errore inatteso → {exc}")
+
+        if attempt == 0:
+            time.sleep(1.0)
 
     _random_delay()
-    return risultati
+    return []
 
 
 # ===========================================================================
@@ -1664,6 +1669,8 @@ def cerca_offerte(
     fonti: Optional[list[str]] = None,
     categoria: str = "altro",
     cerebras_client: Optional[object] = None,
+    app_id: str = "",
+    cert_id: str = "",
 ) -> list[Offerta]:
     """
     Cerca offerte tech su trovaprezzi.it e amazon.it.
@@ -1680,6 +1687,8 @@ def cerca_offerte(
         fonti:        Fonti da usare (amazon, ebay, vinted, trovaprezzi). None = tutte.
         categoria:    Categoria normalizzata (tech, abbigliamento, altro).
         cerebras_client: Client Cerebras opzionale per l'arricchimento specs.
+        app_id:       App ID eBay Browse API.
+        cert_id:      Cert ID eBay Browse API.
 
     Returns:
         Lista di Offerta ordinata per prezzo crescente (max top_n elementi).
@@ -1717,7 +1726,10 @@ def cerca_offerte(
         if "amazon" in fonti_norm:
             jobs.append(executor.submit(scrape_amazon, query, prezzo_min, budget_max, query_tokens, condizione))
         if "ebay" in fonti_norm:
-            jobs.append(executor.submit(scrape_ebay, query, prezzo_min, budget_max, query_tokens, condizione))
+            if app_id and cert_id:
+                jobs.append(executor.submit(scrape_ebay, query, prezzo_min, budget_max, condizione, query_tokens, app_id, cert_id))
+            else:
+                print("    ⚠️  eBay non configurato — chiavi mancanti.")
         if "vinted" in fonti_norm:
             jobs.append(executor.submit(scrape_vinted, query, prezzo_min, budget_max, query_tokens, condizione))
 
@@ -1848,4 +1860,6 @@ if __name__ == "__main__":
         fonti        = args.fonti,
         categoria    = "altro",
         cerebras_client = None,
+        app_id       = "",
+        cert_id      = "",
     )

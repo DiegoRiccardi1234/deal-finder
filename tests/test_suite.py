@@ -44,6 +44,8 @@ def test_prezzo_min_filter(monkeypatch: pytest.MonkeyPatch) -> None:
         fonti=["amazon"],
         categoria="tech",
         cerebras_client=None,
+        app_id="",
+        cert_id="",
     )
 
     assert len(risultati) == 1

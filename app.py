@@ -87,6 +87,7 @@ st.markdown(
             padding: 2rem 2.2rem;
             border: 1px solid rgba(255, 255, 255, 0.55);
             border-radius: 28px;
+            color: #1a1a1a;
             background:
                 linear-gradient(135deg, rgba(255, 247, 237, 0.92), rgba(253, 250, 244, 0.82)),
                 repeating-linear-gradient(135deg, rgba(196, 92, 45, 0.025) 0 14px, transparent 14px 28px);
@@ -251,7 +252,7 @@ st.markdown(
         label,
         .stMarkdown p,
         .stMarkdown span {
-            color: var(--text-adaptive);
+            color: var(--ink);
         }
 
         [data-testid="stDataFrame"] {
@@ -286,44 +287,71 @@ st.markdown(
             color: white;
         }
 
-        @media (prefers-color-scheme: dark) {
-            :root {
-                --bg: #1e1e1e;
-                --panel: rgba(30, 30, 30, 0.94);
-                --panel-strong: rgba(30, 30, 30, 0.98);
-                --ink: #e8e8e8;
-                --muted: #cfcfcf;
-                --line: rgba(255, 255, 255, 0.14);
-                --surface: #1e1e1e;
-                --input-surface: #2d2d2d;
-            }
-
-            [data-testid="stChatMessage"] p,
-            [data-testid="stMarkdownContainer"] p,
-            [data-testid="stMetricValue"],
-            [data-testid="stMetricLabel"] {
-                color: #e8e8e8 !important;
-            }
-
-            .stTextInput input, .stNumberInput input {
-                color: #e8e8e8 !important;
-                background-color: #2d2d2d !important;
-            }
-
-            [data-testid="stChatMessage"] {
-                background: #1e1e1e;
-                border-color: rgba(255, 255, 255, 0.1);
-            }
-
-            .hero-note {
-                background: #1e1e1e;
-                color: #e8e8e8;
-            }
-
-            [data-testid="stMetric"] {
-                background: #1e1e1e;
-            }
+        [data-theme="dark"] {
+            --bg: #1a1a1a;
+            --panel: rgba(28,28,28,0.96);
+            --panel-strong: rgba(30,30,30,0.99);
+            --ink: #e8e8e8;
+            --muted: #b0b0b0;
+            --line: rgba(255,255,255,0.12);
+            --surface: #252525;
+            --input-surface: #2d2d2d;
+            --accent-dark: #e8825a;
         }
+
+        [data-theme="dark"] [data-testid="stAppViewContainer"] {
+            background: linear-gradient(180deg, #1a1a1a 0%, #1e1e1e 100%);
+        }
+
+        [data-theme="dark"] .hero-title,
+        [data-theme="dark"] .hero-kicker,
+        [data-theme="dark"] .hero-copy,
+        [data-theme="dark"] .hero-note,
+        [data-theme="dark"] .hero-note strong,
+        [data-theme="dark"] .section-heading h3,
+        [data-theme="dark"] .section-heading p,
+        [data-theme="dark"] .chip,
+        [data-theme="dark"] .spec-card h4,
+        [data-theme="dark"] .spec-card p,
+        [data-theme="dark"] .spec-card strong { color: var(--ink); }
+
+        [data-theme="dark"] .hero-shell {
+            background: linear-gradient(135deg, rgba(40,35,30,0.96), rgba(30,28,26,0.9));
+            border-color: rgba(255,255,255,0.08);
+        }
+
+        [data-theme="dark"] .hero-note {
+            background: rgba(35,35,35,0.97);
+            box-shadow: 0 16px 30px rgba(0,0,0,0.4);
+        }
+
+        [data-theme="dark"] .section-card {
+            background: rgba(28,28,28,0.96);
+            border-color: rgba(255,255,255,0.08);
+        }
+
+        [data-theme="dark"] .spec-card {
+            background: rgba(35,35,35,0.98);
+            border-color: rgba(255,255,255,0.1);
+        }
+
+        [data-theme="dark"] [data-testid="stChatMessage"] {
+            background: rgba(32,32,32,0.97);
+            border-color: rgba(255,255,255,0.08);
+        }
+
+        [data-theme="dark"] [data-testid="stChatMessage"] p,
+        [data-theme="dark"] [data-testid="stMarkdownContainer"] p,
+        [data-theme="dark"] [data-testid="stMetricValue"],
+        [data-theme="dark"] [data-testid="stMetricLabel"],
+        [data-theme="dark"] label,
+        [data-theme="dark"] .stMarkdown p,
+        [data-theme="dark"] .stMarkdown span { color: #e8e8e8 !important; }
+
+        [data-theme="dark"] [data-testid="stMetric"] { background: rgba(35,35,35,0.98); }
+
+        [data-theme="dark"] .stTextInput input,
+        [data-theme="dark"] .stNumberInput input { color: #e8e8e8 !important; background-color: #2d2d2d !important; }
 
         @media (max-width: 900px) {
             .hero-grid {
@@ -903,6 +931,17 @@ def _run_search(
     if categoria not in {"tech", "abbigliamento", "altro"}:
         categoria = _infer_categoria_from_query(query)
 
+    try:
+        ebay_app_id = str(st.secrets.get("EBAY_APP_ID", "") or "")
+    except Exception:
+        ebay_app_id = ""
+    try:
+        ebay_cert_id = str(st.secrets.get("EBAY_CERT_ID", "") or "")
+    except Exception:
+        ebay_cert_id = ""
+    ebay_app_id = ebay_app_id or os.environ.get("EBAY_APP_ID", "")
+    ebay_cert_id = ebay_cert_id or os.environ.get("EBAY_CERT_ID", "")
+
     log_buffer = io.StringIO()
     if _is_test_mode():
         risultati = _build_mock_results(query, categoria, prezzo_min, budget_max)
@@ -925,6 +964,8 @@ def _run_search(
                     fonti=fonti_backend,
                     categoria=categoria,
                     cerebras_client=cerebras_client,
+                    app_id=ebay_app_id,
+                    cert_id=ebay_cert_id,
                 )
             st.session_state["risultati"] = risultati
             st.session_state["log_ricerca"] = log_buffer.getvalue()
