@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 import pytest
 from playwright.sync_api import Page, expect
 
-from offerte_tech import Offerta, _deduplica, cerca_offerte, fetch_specs_ai, is_relevant, parse_price
+from offerte_tech import Offerta, _deduplica, _is_spec_token, cerca_offerte, fetch_specs_ai, is_relevant, parse_price
 
 
 def test_parse_price_europeo() -> None:
@@ -85,6 +85,62 @@ def test_fetch_specs_abbigliamento() -> None:
     assert risultati[0].specs["brand"] == "Nike"
     assert risultati[0].specs["taglia"] == "M"
     assert risultati[0].specs["genere"] == "donna"
+
+
+def test_is_spec_token() -> None:
+    assert _is_spec_token("16gb") is True
+    assert _is_spec_token("512gb") is True
+    assert _is_spec_token("1tb") is True
+    assert _is_spec_token("ram") is True
+    assert _is_spec_token("ssd") is True
+    assert _is_spec_token("notebook") is False
+    assert _is_spec_token("14") is False
+    assert _is_spec_token("iphone") is False
+
+
+def test_is_relevant_lenient_specs() -> None:
+    """Con strict_specs=False, i token spec (16gb, ram) vengono ignorati nel matching."""
+    assert is_relevant("Lenovo IdeaPad Laptop 14 pollici", ["notebook", "14", "16gb", "ram"], strict_specs=False) is True
+
+
+def test_is_relevant_strict_specs() -> None:
+    """Con strict_specs=True (default), tutti i token devono matchare."""
+    assert is_relevant("Lenovo IdeaPad Laptop 14 pollici", ["notebook", "14", "16gb", "ram"], strict_specs=True) is False
+
+
+def test_is_relevant_product_alias() -> None:
+    """Notebook/laptop sono alias tra loro."""
+    assert is_relevant("Lenovo IdeaPad Laptop 14 pollici 16GB RAM", ["notebook", "14", "16gb", "ram"]) is True
+
+
+def test_spec_aware_sorting(monkeypatch: pytest.MonkeyPatch) -> None:
+    """I prodotti con spec tokens nel titolo vengono ordinati prima."""
+    monkeypatch.setattr("offerte_tech.scrape_trovaprezzi", lambda *args, **kwargs: [])
+    monkeypatch.setattr(
+        "offerte_tech.scrape_amazon",
+        lambda *args, **kwargs: [
+            Offerta(nome="HP Laptop 14 pollici Intel i5", prezzo=600.0, negozio="Amazon", link="https://example.com/1"),
+            Offerta(nome="HP Laptop 14 pollici 16GB RAM SSD", prezzo=700.0, negozio="Amazon", link="https://example.com/2"),
+        ],
+    )
+    monkeypatch.setattr("offerte_tech.scrape_ebay", lambda *args, **kwargs: [])
+    monkeypatch.setattr("offerte_tech.scrape_vinted", lambda *args, **kwargs: [])
+    monkeypatch.setattr("offerte_tech.fetch_specs_ai", lambda offerte, categoria, cerebras_client: offerte)
+
+    risultati = cerca_offerte(
+        query="notebook 14 pollici 16gb ram",
+        budget_max=800,
+        top_n=10,
+        fonti=["amazon"],
+        categoria="tech",
+        cerebras_client=None,
+        app_id="",
+        cert_id="",
+    )
+
+    assert len(risultati) == 2
+    # Il prodotto con 16GB nel titolo deve essere primo nonostante costi di piu
+    assert "16GB" in risultati[0].nome
 
 
 def _open_home(page: Page, base_url: str) -> None:

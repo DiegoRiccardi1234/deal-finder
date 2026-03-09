@@ -440,7 +440,8 @@ def _init_state() -> None:
         "presearch_messages": [
             {
                 "role": "assistant",
-                "content": "Descrivimi liberamente cosa cerchi. Ti faro una domanda per volta e preparo la query finale.",
+                "content": "Descrivimi liberamente cosa cerchi. Ti faro una domanda per volta e preparo la query finale. "
+                "Se hai specifiche tecniche precise (es. 16GB RAM, 512GB SSD) le usero come filtro separato per trovare risultati piu precisi.",
             }
         ],
         "presearch_question_count": 0,
@@ -610,6 +611,16 @@ def _sanitize_presearch_payload(payload: dict[str, Any], transcript: str) -> dic
     prezzo_min = max(0, prezzo_min)
     budget_max = max(prezzo_min, budget_max)
 
+    # Extract filtri_ai (spec filters)
+    filtri_ai_raw = payload.get("filtri_ai", {})
+    filtri_ai: dict[str, str] = {}
+    if isinstance(filtri_ai_raw, dict):
+        for k, v in filtri_ai_raw.items():
+            key = str(k or "").strip().lower()
+            val = str(v or "").strip()
+            if key and val:
+                filtri_ai[key] = val
+
     return {
         "pronto": bool(payload.get("pronto", False)),
         "domanda": str(payload.get("domanda", "") or "").strip(),
@@ -617,6 +628,7 @@ def _sanitize_presearch_payload(payload: dict[str, Any], transcript: str) -> dic
         "prezzo_min": prezzo_min,
         "budget_max": budget_max,
         "categoria": categoria,
+        "filtri_ai": filtri_ai,
     }
 
 
@@ -640,13 +652,15 @@ def _reset_presearch_chat() -> None:
     st.session_state["presearch_messages"] = [
         {
             "role": "assistant",
-            "content": "Descrivimi liberamente cosa cerchi. Ti faro una domanda per volta e preparo la query finale.",
+            "content": "Descrivimi liberamente cosa cerchi. Ti faro una domanda per volta e preparo la query finale. "
+            "Se hai specifiche tecniche precise (es. 16GB RAM, 512GB SSD) le usero come filtro separato per trovare risultati piu precisi.",
         }
     ]
     st.session_state["presearch_question_count"] = 0
     st.session_state["presearch_ready"] = False
     st.session_state["query_ottimizzata"] = ""
     st.session_state["categoria"] = "altro"
+    st.session_state["filtri_ai"] = {}
     st.session_state["preferenze_utente"] = {"messaggi": [], "trascrizione": ""}
     st.session_state["prezzo_min"] = 0
     st.session_state["budget_max"] = int(st.session_state.get("budget_max_input", 800))
@@ -659,6 +673,7 @@ def _apply_presearch_result(result: dict[str, Any]) -> None:
     st.session_state["prezzo_min"] = sanitized["prezzo_min"]
     st.session_state["budget_max"] = sanitized["budget_max"]
     st.session_state["categoria"] = sanitized["categoria"]
+    st.session_state["filtri_ai"] = sanitized.get("filtri_ai", {})
     st.session_state["presearch_ready"] = True
     st.session_state["_query_prefilled"] = sanitized["query"]
     st.session_state["ultima_query"] = sanitized["query"]
@@ -728,11 +743,13 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
             "3. Identifica quali variabili l'utente NON ha ancora specificato\n"
             "4. Fai UNA SOLA domanda che copre la variabile piu importante mancante\n"
             "5. Dopo max 4 domande, anche se mancano info, genera la query finale\n"
-            "Il campo 'query' deve essere una query di ricerca sintetica di max 5 parole, adatta a un motore di ricerca e-commerce. "
-            "NON includere il budget nel campo query.\n"
+            "Il campo 'query' deve essere una query di ricerca AMPIA di max 5 parole, adatta a un motore di ricerca e-commerce. "
+            "Includi SOLO tipo/marca/modello/dimensione del prodotto. NON includere budget o specifiche tecniche dettagliate (RAM, storage, ecc.) nel campo query.\n"
+            "Le specifiche tecniche come RAM, storage, risoluzione ecc. vanno nel campo 'filtri_ai' come oggetto separato "
+            "(es. {\"ram\": \"16gb\", \"storage\": \"512gb\"}).\n"
             "Rispondi SOLO in JSON valido:\n"
             "- Se servono ancora info: {\"domanda\": \"...\", \"pronto\": false}\n"
-            "- Se hai abbastanza info: {\"pronto\": true, \"query\": \"...\", \"prezzo_min\": N, \"budget_max\": N, \"categoria\": \"tech|abbigliamento|altro\"}\n"
+            "- Se hai abbastanza info: {\"pronto\": true, \"query\": \"...\", \"prezzo_min\": N, \"budget_max\": N, \"categoria\": \"tech|abbigliamento|altro\", \"filtri_ai\": {}}\n"
             f"Cronologia conversazione finora:\n{history_text}\n\nNuovo messaggio utente: {cleaned}"
         )
         user_payload = {
@@ -761,13 +778,18 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
     sanitized = _sanitize_presearch_payload(result, transcript)
     if sanitized.get("pronto"):
         _apply_presearch_result(sanitized)
+        filtri_msg = ""
+        filtri_ai_result = sanitized.get("filtri_ai", {})
+        if filtri_ai_result:
+            filtri_parts = [f"{k}: {v}" for k, v in filtri_ai_result.items()]
+            filtri_msg = f" · filtri specs: {', '.join(filtri_parts)}"
         st.session_state["presearch_messages"].append(
             {
                 "role": "assistant",
                 "content": (
                     f"Ho preparato la ricerca: {sanitized['query']} · "
                     f"range {sanitized['prezzo_min']}€ - {sanitized['budget_max']}€ · "
-                    f"categoria {sanitized['categoria']}."
+                    f"categoria {sanitized['categoria']}{filtri_msg}."
                 ),
             }
         )
@@ -1077,7 +1099,10 @@ pre_col, search_col = st.columns([1.08, 1], gap="large")
 with pre_col:
     st.markdown("<div class='section-card'>", unsafe_allow_html=True)
     st.markdown(
-        "<div class='section-heading'><h3>Chat pre-ricerca</h3><p>Una sola domanda per volta, massimo quattro turni prima della query finale.</p></div>",
+        "<div class='section-heading'><h3>Chat pre-ricerca</h3>"
+        "<p>Descrivi il prodotto che cerchi con dettagli come uso, budget e preferenze. "
+        "La chat separa automaticamente la query di ricerca dalle specifiche tecniche (RAM, storage…) "
+        "per trovare risultati più precisi.</p></div>",
         unsafe_allow_html=True,
     )
     top_actions = st.columns([1, 1.2, 1])
@@ -1098,11 +1123,15 @@ with pre_col:
         st.rerun()
 
     if st.session_state.get("presearch_ready", False):
+        filtri_ai_display = st.session_state.get("filtri_ai", {})
+        filtri_info = ""
+        if filtri_ai_display:
+            filtri_info = " · specs: " + ", ".join(f"{k}={v}" for k, v in filtri_ai_display.items())
         st.success(
             "Query pronta: "
             f"{st.session_state.get('query_ottimizzata', '')} · "
             f"{st.session_state.get('prezzo_min', 0)}€ - {st.session_state.get('budget_max', 800)}€ · "
-            f"categoria {st.session_state.get('categoria', 'altro')}"
+            f"categoria {st.session_state.get('categoria', 'altro')}{filtri_info}"
         )
 
         if st.button("Avvia ricerca con questa query", type="primary", width="stretch"):

@@ -107,7 +107,25 @@ _ALIASES: dict[str, set[str]] = {
     "14":    {"14.0", "14\"", "14'", "14 pollici"},
     "15":    {"15.0", "15\"", "15'", "15 pollici"},
     "13":    {"13.0", "13\"", "13'", "13 pollici"},
+    # Alias di prodotto — sinonimi per tipi di prodotto comuni
+    "notebook": {"laptop", "portatile", "ultrabook", "chromebook"},
+    "laptop": {"notebook", "portatile", "ultrabook", "chromebook"},
+    "smartphone": {"telefono", "cellulare", "phone"},
+    "telefono": {"smartphone", "cellulare", "phone"},
+    "cellulare": {"smartphone", "telefono", "phone"},
+    "cuffie": {"auricolari", "earbuds", "headphones"},
+    "auricolari": {"cuffie", "earbuds", "headphones"},
+    "monitor": {"display", "schermo"},
 }
+
+_SPEC_PATTERN = re.compile(r'^\d+(?:gb|tb)$')
+_SPEC_KEYWORDS = {"ram", "ssd", "hdd", "nvme", "ddr4", "ddr5"}
+
+
+def _is_spec_token(token: str) -> bool:
+    """True se il token rappresenta una specifica tecnica (es. '16gb', 'ram')."""
+    return bool(_SPEC_PATTERN.match(token)) or token in _SPEC_KEYWORDS
+
 
 _TECH_BRANDS = {
     "iphone", "apple", "samsung", "galaxy", "xiaomi", "redmi", "pixel", "google",
@@ -437,14 +455,19 @@ def tokenize_query(query: str) -> list[str]:
     return [t for t in tokens if t not in _STOPWORDS and len(t) > 1]
 
 
-def is_relevant(nome: str, query_tokens: list[str]) -> bool:
+def is_relevant(nome: str, query_tokens: list[str], strict_specs: bool = True) -> bool:
     """
-    Filtro strict: TUTTI i token della query devono essere presenti nel nome
+    Filtro di rilevanza: i token della query devono essere presenti nel nome
     del prodotto (o in uno dei loro alias normalizzati).
+
+    Con strict_specs=False, i token di specifica tecnica (es. '16gb', 'ram')
+    vengono saltati — le specs verranno verificate tramite AI enrichment.
     """
     nome_lower = nome.lower()
     brand_tokens = [token for token in query_tokens if token in _TECH_BRANDS]
     for token in query_tokens:
+        if not strict_specs and _is_spec_token(token):
+            continue
         if token.isdigit() and len(token) <= 2 and brand_tokens:
             if not any(re.search(rf"\b{re.escape(brand)}\s*{re.escape(token)}\b", nome_lower) for brand in brand_tokens):
                 return False
@@ -680,7 +703,7 @@ def scrape_trovaprezzi(
                     continue
                 seen_links.add(link)
 
-                if not is_relevant(nome, query_tokens):
+                if not is_relevant(nome, query_tokens, strict_specs=False):
                     continue
                 if not _within_price_range(prezzo, prezzo_min, budget_max):
                     continue
@@ -773,7 +796,9 @@ def scrape_amazon(
 
         # Controlla CAPTCHA / robot check
         page_title = (soup.title.string or "") if soup.title else ""
-        if any(kw in page_title.lower() for kw in ("sorry", "robot", "captcha", "service unavailable")):
+        body_snippet = soup.get_text(" ", strip=True).lower()[:2000]
+        if any(kw in page_title.lower() for kw in ("sorry", "robot", "captcha", "service unavailable")) or \
+           any(kw in body_snippet for kw in ("enter the characters", "tipo i caratteri", "not a robot", "unusual traffic")):
             print("    ❌ Amazon.it ha restituito una pagina anti-bot.")
             return risultati
 
@@ -860,7 +885,7 @@ def scrape_amazon(
                     spedizione = _extract_shipping_from_text(card.get_text(" ", strip=True))
 
                 # ----- Filtri -----
-                if not is_relevant(nome, query_tokens):
+                if not is_relevant(nome, query_tokens, strict_specs=False):
                     continue
                 if not _within_price_range(prezzo, prezzo_min, budget_max):
                     continue
@@ -957,7 +982,7 @@ def scrape_ebay(
             for item in items:
                 try:
                     nome = str(item.get("title") or "").strip()
-                    if not nome or not is_relevant(nome, query_tokens):
+                    if not nome or not is_relevant(nome, query_tokens, strict_specs=False):
                         continue
 
                     price_obj = item.get("price") or {}
@@ -1072,7 +1097,7 @@ def scrape_vinted(
                     continue
                 link = href if href.startswith("http") else urljoin("https://www.vinted.it", href)
 
-                if not is_relevant(nome, query_tokens):
+                if not is_relevant(nome, query_tokens, strict_specs=False):
                     continue
                 if not _within_price_range(prezzo, prezzo_min, budget_max):
                     continue
@@ -1114,7 +1139,7 @@ def scrape_vinted(
                     if not math.isfinite(prezzo):
                         continue
 
-                    if not is_relevant(nome, query_tokens):
+                    if not is_relevant(nome, query_tokens, strict_specs=False):
                         continue
                     if not _within_price_range(prezzo, prezzo_min, budget_max):
                         continue
@@ -1768,9 +1793,16 @@ def cerca_offerte(
     offerte = _deduplica(offerte)
     print(f"  🔄 Dopo deduplicazione: {len(offerte)} offerte uniche")
 
-    # Ordinamento finale: solo prezzo se non e stato applicato il ranking AI.
+    # Ordinamento finale con ranking basato su spec tokens trovati nei titoli.
+    spec_tokens = {t for t in query_tokens if _is_spec_token(t)}
     if not filtri_ai_effettivi:
-        offerte.sort(key=lambda o: o.prezzo)
+        if spec_tokens:
+            def _spec_score(o: Offerta) -> int:
+                nl = o.nome.lower()
+                return sum(1 for t in spec_tokens if any(v in nl for v in _ALIASES.get(t, {t}) | {t}))
+            offerte.sort(key=lambda o: (-_spec_score(o), o.prezzo))
+        else:
+            offerte.sort(key=lambda o: o.prezzo)
 
     # Tronca a top_n
     offerte_top = offerte[:top_n]
