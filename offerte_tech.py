@@ -1442,12 +1442,15 @@ def parse_search_intent(risposta_utente: str) -> dict[str, object]:
     client = _get_cerebras_client()
     if client is None:
         guess = dict(default)
-        m_range = re.search(r"(\d{2,5})\s*[-a]\s*(\d{2,5})", testo.lower())
+        m_range = re.search(r"(\d{2,5})\s*[-/a]\s*(\d{2,5})", testo.lower())
+        m_min = re.search(r"(?:min(?:imo)?|da|partire da)\s*(\d{2,5})", testo.lower())
+        m_max = re.search(r"(?:max(?:imo)?|massimo|fino a|budget)\s*(\d{2,5})", testo.lower())
         if m_range:
             guess["prezzo_min"] = int(m_range.group(1))
             guess["prezzo_max"] = int(m_range.group(2))
         else:
-            m_max = re.search(r"(?:max|fino a|budget)\s*(\d{2,5})", testo.lower())
+            if m_min:
+                guess["prezzo_min"] = int(m_min.group(1))
             if m_max:
                 guess["prezzo_max"] = int(m_max.group(1))
 
@@ -1547,17 +1550,40 @@ def filtra_risultati_con_ai(risultati: list[Offerta], filtri: dict[str, str]) ->
 
     if not scored:
         # Fallback locale lessicale quando AI non disponibile.
-        filtri_values = [str(v).lower() for v in filtri.values()]
-        expanded_values: set[str] = set(filtri_values)
-        if "rosa" in expanded_values:
-            expanded_values.update({"pink", "lavanda"})
+        # Espande aliases per spec matching (es. "16gb" -> {"16gb", "16 gb"})
+        expanded_values: set[str] = set()
+        for v in filtri.values():
+            val = str(v).lower().strip()
+            if not val:
+                continue
+            expanded_values.add(val)
+            # Aggiungi varianti con/senza spazio per specs
+            num_match = re.match(r"^(\d+)(gb|tb)$", val)
+            if num_match:
+                expanded_values.add(f"{num_match.group(1)} {num_match.group(2)}")
+                expanded_values.add(f"{num_match.group(1)}{num_match.group(2)}")
+            # Sinonimi colore
+            color_syn: dict[str, set[str]] = {
+                "rosa": {"pink", "lavanda"}, "nero": {"black", "graphite"},
+                "bianco": {"white", "silver"},
+            }
+            if val in color_syn:
+                expanded_values.update(color_syn[val])
+
         for offerta in risultati:
             titolo = offerta.nome.lower()
-            hit = sum(1 for v in expanded_values if v and v in titolo)
+            # Controlla anche specs arricchite se disponibili
+            specs_text = " ".join(str(sv).lower() for sv in (offerta.specs or {}).values() if sv)
+            search_text = f"{titolo} {specs_text}"
+            hit = sum(1 for v in expanded_values if v and v in search_text)
             score = min(10, hit * 4)
             scored.append((score, offerta))
 
     filtered = [(score, o) for score, o in scored if score >= 3]
+    # Se il filtro specs è troppo aggressivo e scarta tutto, ritorna tutti con ranking
+    if not filtered and scored:
+        scored.sort(key=lambda x: (-x[0], x[1].prezzo))
+        return [o for _, o in scored]
     filtered.sort(key=lambda x: (-x[0], x[1].prezzo))
 
     # Alternative detection: suggerisce una variante diversa se costa >10% in meno.

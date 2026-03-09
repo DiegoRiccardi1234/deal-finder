@@ -514,14 +514,20 @@ class _MockChatCompletions:
             elif domande_fatte == 1:
                 content = json.dumps({"domanda": "Preferisci nuovo o usato?", "pronto": False}, ensure_ascii=False)
             else:
-                categoria = "tech" if any(token in transcript for token in ("smartphone", "iphone", "telefono", "cellulare")) else "altro"
+                categoria = "tech" if any(token in transcript for token in ("smartphone", "iphone", "telefono", "cellulare", "notebook", "laptop")) else "altro"
+                # Estrai filtri_ai dal transcript
+                filtri_ai_mock: dict[str, str] = {}
+                ram_m = re.search(r"(\d{1,3})\s*gb\s*(?:di\s*)?ram", transcript)
+                if ram_m:
+                    filtri_ai_mock["ram"] = f"{ram_m.group(1)}gb"
                 content = json.dumps(
                     {
                         "pronto": True,
-                        "query": "smartphone nuovo" if categoria == "tech" else "prodotto cercato",
+                        "query": "smartphone nuovo" if "smartphone" in transcript else "notebook 14 pollici" if "notebook" in transcript else "prodotto cercato",
                         "prezzo_min": 200,
                         "budget_max": 800,
                         "categoria": categoria,
+                        "filtri_ai": filtri_ai_mock,
                     },
                     ensure_ascii=False,
                 )
@@ -691,19 +697,78 @@ def _apply_presearch_result(result: dict[str, Any]) -> None:
 
 def _presearch_fallback() -> dict[str, Any]:
     preferenze = st.session_state.get("preferenze_utente", {})
-    transcript = str(preferenze.get("trascrizione", "") or "")
+    transcript = str(preferenze.get("trascrizione", "") or "").lower()
     turni = int(st.session_state.get("presearch_question_count", 0))
-    if turni < 2:
-        return {"pronto": False, "domanda": "Qual e il budget ideale oppure il range di prezzo che vuoi rispettare?"}
 
-    intent = parse_search_intent(transcript)
-    query = str(intent.get("query", "") or transcript).strip()
+    # Estrai budget dal transcript
+    prezzo_min = 0
+    budget_max = 800
+    m_min = re.search(r"(?:min(?:imo)?|da|partire da)\s*(\d{2,5})", transcript)
+    m_max = re.search(r"(?:max(?:imo)?|massimo|fino a|budget)\s*(\d{2,5})", transcript)
+    m_range = re.search(r"(\d{2,5})\s*[-/a]\s*(\d{2,5})", transcript)
+    if m_range:
+        prezzo_min = int(m_range.group(1))
+        budget_max = int(m_range.group(2))
+    else:
+        if m_min:
+            prezzo_min = int(m_min.group(1))
+        if m_max:
+            budget_max = int(m_max.group(1))
+
+    has_budget = m_range or m_min or m_max
+    has_product = any(kw in transcript for kw in (
+        "notebook", "laptop", "smartphone", "telefono", "iphone", "monitor",
+        "tablet", "cuffie", "scarpe", "felpa", "giacca", "mouse", "tastiera",
+        "ssd", "pc", "console", "smartwatch",
+    ))
+
+    # Estrai filtri_ai (specs) dal transcript
+    filtri_ai: dict[str, str] = {}
+    ram_match = re.search(r"(\d{1,3})\s*gb\s*(?:di\s*)?ram", transcript)
+    if ram_match:
+        filtri_ai["ram"] = f"{ram_match.group(1)}gb"
+    storage_match = re.search(r"(\d{2,4})\s*gb\s*(?:di\s*)?(?:ssd|storage|disco|memoria)", transcript)
+    if storage_match:
+        filtri_ai["storage"] = f"{storage_match.group(1)}gb"
+    tb_match = re.search(r"(\d)\s*tb", transcript)
+    if tb_match:
+        filtri_ai["storage"] = f"{tb_match.group(1)}tb"
+
+    if turni < 1 and not has_budget:
+        return {"pronto": False, "domanda": "Qual e il tuo budget ideale o il range di prezzo?"}
+    if turni < 2 and not has_product:
+        return {"pronto": False, "domanda": "Che tipo di prodotto stai cercando?"}
+    if turni < 2 and has_product and not has_budget:
+        return {"pronto": False, "domanda": "Qual e il tuo budget ideale o il range di prezzo?"}
+
+    # Costruisci query pulita dal transcript
+    product_tokens = []
+    for kw in ("notebook", "laptop", "smartphone", "iphone", "samsung", "xiaomi",
+               "monitor", "tablet", "cuffie", "mouse", "tastiera", "ssd", "pc",
+               "console", "smartwatch", "scarpe", "felpa", "giacca"):
+        if kw in transcript:
+            product_tokens.append(kw)
+            break
+    # Estrai dimensione (es. 14 pollici)
+    dim_match = re.search(r"(\d{2})\s*(?:pollici|\")", transcript)
+    if dim_match:
+        product_tokens.append(f"{dim_match.group(1)} pollici")
+    # Marca
+    for brand in ("lenovo", "hp", "dell", "asus", "acer", "apple", "msi", "samsung", "huawei"):
+        if brand in transcript and brand not in product_tokens:
+            product_tokens.append(brand)
+            break
+
+    query = " ".join(product_tokens) if product_tokens else transcript.split("\n")[0].strip()
+    query = " ".join(query.split()[:5])
+
     return {
         "pronto": True,
-        "query": " ".join(query.split()[:5]),
-        "prezzo_min": int(intent.get("prezzo_min", 0) or 0),
-        "budget_max": int(intent.get("prezzo_max", 800) or 800),
+        "query": query,
+        "prezzo_min": prezzo_min,
+        "budget_max": budget_max,
         "categoria": _infer_categoria_from_query(query),
+        "filtri_ai": filtri_ai,
     }
 
 
