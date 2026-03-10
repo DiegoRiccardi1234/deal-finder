@@ -1,10 +1,12 @@
 # Offerte Tech Italia
 
 Tool Python per cercare offerte di prodotti tech in Italia, con:
-- scraper multi-fonte (`trovaprezzi.it` + `amazon.it` + `ebay.it` via Browse API + `vinted.it`),
+- scraper multi-fonte (`trovaprezzi.it` via Google Shopping + `amazon.it` + `ebay.it` via Browse API + `vinted.it` + `euronics.it` + `unieuro.it` + `mediaworld.it`),
 - filtro per query e budget,
 - ordinamento per prezzo,
-- interfaccia web Streamlit,
+- interfaccia web Streamlit con **dark mode** di default,
+- chat pre-ricerca AI (Cerebras `gpt-oss-120b`) che raccoglie query, budget e specs separati,
+- raccomandazione **top-3 automatica** al termine di ogni ricerca,
 - esportazione CSV.
 
 ## Requisiti
@@ -19,6 +21,7 @@ Dipendenze Python:
 - `cerebras-cloud-sdk`
 
 Credenziali opzionali:
+- `CEREBRAS_API_KEY` — chat pre-ricerca + raccomandazione AI
 - `EBAY_APP_ID`
 - `EBAY_CERT_ID`
 
@@ -82,14 +85,17 @@ CEREBRAS_API_KEY = "csk_..."
 pip install cerebras-cloud-sdk
 ```
 
+**Modello usato**: `gpt-oss-120b` (disponibile nel piano gratuito Cerebras).
+
 Nota sicurezza:
 - `secrets.toml` non va mai committato su git.
 - Il progetto include `.gitignore` con la regola `.streamlit/secrets.toml`.
 
 Comportamento chat AI:
-- Dopo una ricerca con risultati, l'assistente genera automaticamente una prima analisi.
-- Il contesto iniziale (lista completa prodotti) viene inviato in modo interno al modello.
-- In UI non appare il bubble utente iniziale: viene mostrata la caption `🔍 Analisi completata su X prodotti trovati`.
+- La chat pre-ricerca raccoglie: tipo prodotto, uso principale, budget, specifiche hardware.
+- Le specifiche tecniche (RAM, storage) vengono separate dalla query di ricerca in `filtri_ai`.
+- Al termine di ogni ricerca, l'AI genera **automaticamente** una raccomandazione top-3 motivata.
+- L'utente può continuare la conversazione con domande aggiuntive nella sezione "Consiglio AI".
 
 ## Configurazione eBay Browse API
 Per abilitare i risultati eBay via API ufficiale configura una delle due opzioni:
@@ -136,6 +142,8 @@ python offerte_tech.py -q "iphone usato" --fonti ebay vinted -n 5
 Note fonti:
 - Vinted mostra solo articoli usati: con `--condizione nuovo` la fonte viene saltata.
 - Se `--fonti` non e specificato, vengono usate tutte le fonti disponibili.
+- `euronics`, `unieuro`, `mediaworld` sono selezionabili via `--fonti` nella CLI e attive di default nella UI.
+- Euronics/Unieuro/MediaWorld usano parsing CSS + JSON-LD come fallback; i selettori potrebbero richiedere aggiornamento se il sito cambia layout.
 
 ## Categorie trovaprezzi supportate (auto-mapping da query)
 - `notebook`, `laptop` -> `notebook/offerte/notebook`

@@ -4,7 +4,18 @@ from unittest.mock import MagicMock
 import pytest
 from playwright.sync_api import Page, expect
 
-from offerte_tech import Offerta, _deduplica, _is_spec_token, cerca_offerte, fetch_specs_ai, is_relevant, parse_price
+from offerte_tech import (
+    Offerta,
+    _deduplica,
+    _is_spec_token,
+    cerca_offerte,
+    fetch_specs_ai,
+    is_relevant,
+    parse_price,
+    scrape_euronics,
+    scrape_mediaworld,
+    scrape_unieuro,
+)
 
 
 def test_parse_price_europeo() -> None:
@@ -23,18 +34,26 @@ def test_parse_price_range() -> None:
     assert parse_price("100,00 - 200,00") == 100.0
 
 
+def _make_monkeypatch_cerca(monkeypatch: pytest.MonkeyPatch, amazon_results: list[Offerta] | None = None) -> None:
+    """Helper: patcha tutte le fonti di cerca_offerte."""
+    monkeypatch.setattr("offerte_tech.scrape_trovaprezzi", lambda *a, **kw: [])
+    monkeypatch.setattr("offerte_tech.scrape_amazon", lambda *a, **kw: amazon_results or [])
+    monkeypatch.setattr("offerte_tech.scrape_ebay", lambda *a, **kw: [])
+    monkeypatch.setattr("offerte_tech.scrape_vinted", lambda *a, **kw: [])
+    monkeypatch.setattr("offerte_tech.scrape_euronics", lambda *a, **kw: [])
+    monkeypatch.setattr("offerte_tech.scrape_unieuro", lambda *a, **kw: [])
+    monkeypatch.setattr("offerte_tech.scrape_mediaworld", lambda *a, **kw: [])
+    monkeypatch.setattr("offerte_tech.fetch_specs_ai", lambda offerte, categoria, cerebras_client: offerte)
+
+
 def test_prezzo_min_filter(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("offerte_tech.scrape_trovaprezzi", lambda *args, **kwargs: [])
-    monkeypatch.setattr(
-        "offerte_tech.scrape_amazon",
-        lambda *args, **kwargs: [
+    _make_monkeypatch_cerca(
+        monkeypatch,
+        amazon_results=[
             Offerta(nome="Apple iPhone 17 128GB", prezzo=150.0, negozio="A", link="https://example.com/1"),
             Offerta(nome="Apple iPhone 17 256GB", prezzo=320.0, negozio="B", link="https://example.com/2"),
         ],
     )
-    monkeypatch.setattr("offerte_tech.scrape_ebay", lambda *args, **kwargs: [])
-    monkeypatch.setattr("offerte_tech.scrape_vinted", lambda *args, **kwargs: [])
-    monkeypatch.setattr("offerte_tech.fetch_specs_ai", lambda offerte, categoria, cerebras_client: offerte)
 
     risultati = cerca_offerte(
         query="iphone 17",
@@ -77,6 +96,7 @@ def test_fetch_specs_ai_tech(cerebras_mock: MagicMock) -> None:
     assert risultati[0].specs["processore"] == "A19"
     assert risultati[0].specs["ram"] == "8 GB"
     assert risultati[0].specs["storage"] == "256 GB"
+
 
 
 def test_fetch_specs_abbigliamento() -> None:
@@ -125,6 +145,9 @@ def test_spec_aware_sorting(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr("offerte_tech.scrape_ebay", lambda *args, **kwargs: [])
     monkeypatch.setattr("offerte_tech.scrape_vinted", lambda *args, **kwargs: [])
+    monkeypatch.setattr("offerte_tech.scrape_euronics", lambda *args, **kwargs: [])
+    monkeypatch.setattr("offerte_tech.scrape_unieuro", lambda *args, **kwargs: [])
+    monkeypatch.setattr("offerte_tech.scrape_mediaworld", lambda *args, **kwargs: [])
     monkeypatch.setattr("offerte_tech.fetch_specs_ai", lambda offerte, categoria, cerebras_client: offerte)
 
     risultati = cerca_offerte(
@@ -141,6 +164,59 @@ def test_spec_aware_sorting(monkeypatch: pytest.MonkeyPatch) -> None:
     assert len(risultati) == 2
     # Il prodotto con 16GB nel titolo deve essere primo nonostante costi di piu
     assert "16GB" in risultati[0].nome
+
+
+def test_nuove_fonti_vuote(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verifica che le nuove fonti (euronics/unieuro/mediaworld) restituiscano lista vuota su errore o blocco."""
+    from unittest.mock import patch
+    import requests
+
+    for scraper in (scrape_euronics, scrape_unieuro, scrape_mediaworld):
+        with patch("offerte_tech.fetch_with_retry") as mock_fetch:
+            mock_fetch.side_effect = requests.ConnectionError("test")
+            result = scraper("notebook", 0, 1000, ["notebook"])
+            assert result == [], f"{scraper.__name__} doveva restituire [] su ConnectionError"
+
+
+def test_cerca_offerte_nuove_fonti_integrate(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verifica che cerca_offerte aggreghi i risultati da euronics/unieuro/mediaworld."""
+    monkeypatch.setattr("offerte_tech.scrape_trovaprezzi", lambda *a, **kw: [])
+    monkeypatch.setattr("offerte_tech.scrape_amazon", lambda *a, **kw: [])
+    monkeypatch.setattr("offerte_tech.scrape_ebay", lambda *a, **kw: [])
+    monkeypatch.setattr("offerte_tech.scrape_vinted", lambda *a, **kw: [])
+    monkeypatch.setattr(
+        "offerte_tech.scrape_euronics",
+        lambda *a, **kw: [Offerta(nome="Samsung Galaxy A55 128GB", prezzo=349.0, negozio="Euronics", link="https://euronics.it/1", fonte="euronics.it")],
+    )
+    monkeypatch.setattr(
+        "offerte_tech.scrape_unieuro",
+        lambda *a, **kw: [Offerta(nome="Samsung Galaxy A55 256GB", prezzo=399.0, negozio="Unieuro", link="https://unieuro.it/1", fonte="unieuro.it")],
+    )
+    monkeypatch.setattr(
+        "offerte_tech.scrape_mediaworld",
+        lambda *a, **kw: [Offerta(nome="Samsung Galaxy A56 128GB", prezzo=429.0, negozio="MediaWorld", link="https://mw.it/1", fonte="mediaworld.it")],
+    )
+    monkeypatch.setattr("offerte_tech.fetch_specs_ai", lambda offerte, categoria, cerebras_client: offerte)
+
+    risultati = cerca_offerte(
+        query="samsung galaxy",
+        budget_max=500,
+        top_n=10,
+        fonti=["euronics", "unieuro", "mediaworld"],
+        categoria="tech",
+        cerebras_client=None,
+        app_id="",
+        cert_id="",
+    )
+
+    assert len(risultati) == 3
+    fonti_trovate = {o.fonte for o in risultati}
+    assert "euronics.it" in fonti_trovate
+    assert "unieuro.it" in fonti_trovate
+    assert "mediaworld.it" in fonti_trovate
+    # Ordine per prezzo crescente
+    prezzi = [o.prezzo for o in risultati]
+    assert prezzi == sorted(prezzi)
 
 
 def _open_home(page: Page, base_url: str) -> None:

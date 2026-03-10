@@ -20,7 +20,7 @@ try:
 except Exception:
     Cerebras = None
 
-CEREBRAS_MODEL = "openai/gpt-oss-120b"
+CEREBRAS_MODEL = "gpt-oss-120b"
 
 try:
     from offerte_tech import Offerta, cerca_offerte, parse_search_intent
@@ -405,6 +405,114 @@ st.markdown(
             border-color: rgba(255,255,255,0.15) !important;
         }
 
+        /* ── Dark mode: multiselect tags e dropdown ── */
+        [data-theme="dark"] [data-baseweb="tag"] {
+            background: rgba(196, 92, 45, 0.35) !important;
+            color: #f0c8b0 !important;
+        }
+        [data-theme="dark"] [data-baseweb="menu"] {
+            background: #2a2a2a !important;
+        }
+        [data-theme="dark"] [data-baseweb="menu"] [role="option"] {
+            color: #e8e8e8 !important;
+        }
+        [data-theme="dark"] [data-baseweb="menu"] [aria-selected="true"] {
+            background: rgba(196, 92, 45, 0.25) !important;
+        }
+
+        /* ── Dark mode: slider ── */
+        [data-theme="dark"] [data-testid="stSlider"] [role="slider"] {
+            background: var(--accent) !important;
+        }
+        [data-theme="dark"] [data-testid="stSlider"] [data-baseweb="slider"] > div:last-child {
+            background: rgba(196, 92, 45, 0.3) !important;
+        }
+
+        /* ── Dark mode: tabella dataframe ── */
+        [data-theme="dark"] [data-testid="stDataFrame"] {
+            background: rgba(30, 30, 30, 0.98) !important;
+        }
+        [data-theme="dark"] [data-testid="stDataFrame"] .dvn-scroller,
+        [data-theme="dark"] [data-testid="stDataFrame"] canvas {
+            background: rgba(30, 30, 30, 0.98) !important;
+        }
+
+        /* ── Dark mode: expander ── */
+        [data-theme="dark"] details,
+        [data-theme="dark"] [data-testid="stExpander"] {
+            background: rgba(30, 30, 30, 0.97) !important;
+            border-color: rgba(255,255,255,0.08) !important;
+        }
+        [data-theme="dark"] details summary span,
+        [data-theme="dark"] [data-testid="stExpander"] summary p {
+            color: #e0e0e0 !important;
+        }
+
+        /* ── Dark mode: code block (log) ── */
+        [data-theme="dark"] [data-testid="stCode"],
+        [data-theme="dark"] [data-testid="stCode"] pre {
+            background: #1a1a1a !important;
+            color: #b8d4b0 !important;
+            border-color: rgba(255,255,255,0.1) !important;
+        }
+
+        /* ── Dark mode: spinner / progress ── */
+        [data-theme="dark"] [data-testid="stSpinner"] p {
+            color: #e8e8e8 !important;
+        }
+
+        /* ── Dark mode: download button ── */
+        [data-theme="dark"] .stDownloadButton button {
+            background: linear-gradient(180deg, #c45c2d 0%, #a04020 100%) !important;
+        }
+
+        /* ── Dark mode: warning/info/success boxes ── */
+        [data-theme="dark"] [data-testid="stWarningBox"],
+        [data-theme="dark"] [data-testid="stInfoBox"] {
+            background: rgba(40, 35, 30, 0.97) !important;
+            color: #e0d0c0 !important;
+        }
+        [data-theme="dark"] [data-testid="stSuccessMessage"],
+        [data-theme="dark"] [data-testid="stSuccess"] {
+            background: rgba(30, 45, 30, 0.97) !important;
+            color: #c8e0c8 !important;
+        }
+
+        /* ── Dark mode: hero shell ── */
+        [data-theme="dark"] [data-testid="stAppViewContainer"] {
+            background:
+                radial-gradient(circle at top left, rgba(196, 92, 45, 0.10), transparent 28%),
+                linear-gradient(180deg, #111116 0%, #0e0e12 100%) !important;
+        }
+
+        /* ── Dark mode: caption/footer ── */
+        [data-theme="dark"] [data-testid="stCaptionContainer"] p,
+        [data-theme="dark"] footer,
+        [data-theme="dark"] small {
+            color: #666 !important;
+        }
+
+        /* ── Dark mode: chat input ── */
+        [data-theme="dark"] [data-testid="stChatInput"] textarea,
+        [data-theme="dark"] [data-testid="stChatInputContainer"] textarea {
+            background: #2d2d2d !important;
+            color: #e8e8e8 !important;
+            border-color: rgba(255,255,255,0.15) !important;
+        }
+
+        /* ── Dark mode: scrollbar ── */
+        [data-theme="dark"] ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        [data-theme="dark"] ::-webkit-scrollbar-track {
+            background: #1a1a1a;
+        }
+        [data-theme="dark"] ::-webkit-scrollbar-thumb {
+            background: rgba(196, 92, 45, 0.4);
+            border-radius: 3px;
+        }
+
         @media (max-width: 900px) {
             .hero-grid {
                 grid-template-columns: 1fr;
@@ -433,7 +541,7 @@ def _init_state() -> None:
         "ultimo_prezzo_min": 0,
         "ultimo_prezzo_max": 800,
         "ultimo_top_n": 10,
-        "fonti_selezionate": ["Amazon", "eBay", "Vinted", "Trovaprezzi"],
+        "fonti_selezionate": ["Amazon", "eBay", "Vinted", "Trovaprezzi", "Euronics", "Unieuro", "MediaWorld"],
         "price_min_input": 0,
         "budget_max_input": 800,
         "price_range_slider": (0, 800),
@@ -560,7 +668,10 @@ def _get_cerebras_client(api_key: str) -> Optional[object]:
         return _MockCerebrasClient()
     if not api_key or Cerebras is None:
         return None
-    return Cerebras(api_key=api_key)
+    try:
+        return Cerebras(api_key=api_key)
+    except Exception:
+        return None
 
 
 def _extract_json_object(raw: str) -> dict[str, Any]:
@@ -800,21 +911,21 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
         result = _presearch_fallback()
     else:
         system_prompt = (
-            "Sei un assistente shopping esperto italiano.\n"
-            "Categoria tech include: smartphone, telefono, cellulare, laptop, notebook, tablet, PC, monitor, SSD, cuffie, smartwatch, fotocamera, console. "
-            "Se l'utente menziona uno di questi, usa sempre categoria tech.\n"
-            "1. Identifica la categoria: tech / abbigliamento / altro\n"
-            "2. Elenca mentalmente TUTTE le variabili che servono per trovare il prodotto giusto per quella categoria\n"
-            "3. Identifica quali variabili l'utente NON ha ancora specificato\n"
-            "4. Fai UNA SOLA domanda che copre la variabile piu importante mancante\n"
-            "5. Dopo max 4 domande, anche se mancano info, genera la query finale\n"
-            "Il campo 'query' deve essere una query di ricerca AMPIA di max 5 parole, adatta a un motore di ricerca e-commerce. "
-            "Includi SOLO tipo/marca/modello/dimensione del prodotto. NON includere budget o specifiche tecniche dettagliate (RAM, storage, ecc.) nel campo query.\n"
-            "Le specifiche tecniche come RAM, storage, risoluzione ecc. vanno nel campo 'filtri_ai' come oggetto separato "
-            "(es. {\"ram\": \"16gb\", \"storage\": \"512gb\"}).\n"
+            "Sei un consulente acquisti esperto italiano. Il tuo obiettivo NON e' solo trovare un prodotto, "
+            "ma capire abbastanza le esigenze dell'utente da potergli dare una RACCOMANDAZIONE FINALE motivata e personalizzata.\n"
+            "Per farlo devi conoscere: 1) categoria/tipo prodotto, 2) uso principale "
+            "(lavoro, studio, gaming, casa, sport, svago…), 3) budget, 4) eventuali preferenze hardware/fisiche.\n"
+            "Categoria tech: smartphone, laptop, notebook, tablet, PC, monitor, SSD, cuffie, smartwatch, fotocamera, console.\n"
+            "REGOLE:\n"
+            "- Fai UNA SOLA domanda per turno, quella piu' utile mancante per la raccomandazione finale\n"
+            "- NON chiedere cose gia' dette dall'utente\n"
+            "- Dopo max 4 domande genera la query finale\n"
+            "- Il campo 'query' e' SOLO tipo/dimensione/marca (max 5 parole, senza budget ne' specs)\n"
+            "- Le specifiche tecniche (RAM, storage, display…) vanno in 'filtri_ai'\n"
             "Rispondi SOLO in JSON valido:\n"
             "- Se servono ancora info: {\"domanda\": \"...\", \"pronto\": false}\n"
-            "- Se hai abbastanza info: {\"pronto\": true, \"query\": \"...\", \"prezzo_min\": N, \"budget_max\": N, \"categoria\": \"tech|abbigliamento|altro\", \"filtri_ai\": {}}\n"
+            "- Se hai abbastanza info: {\"pronto\": true, \"query\": \"...\", \"prezzo_min\": N, \"budget_max\": N, "
+            "\"categoria\": \"tech|abbigliamento|altro\", \"filtri_ai\": {}}\n"
             f"Cronologia conversazione finora:\n{history_text}\n\nNuovo messaggio utente: {cleaned}"
         )
         user_payload = {
@@ -1149,8 +1260,11 @@ chips = [
     "eBay",
     "Vinted",
     "Trovaprezzi",
-    "Prezzo minimo e massimo sincronizzati",
-    "Chat finale con raccomandazione AI",
+    "Euronics",
+    "Unieuro",
+    "MediaWorld",
+    "Prezzo min/max sincronizzati",
+    "Consiglio AI automatico top-3",
 ]
 st.markdown(
     "<div class='chip-row'>" + "".join(f"<span class='chip'>{chip}</span>" for chip in chips) + "</div>",
@@ -1267,7 +1381,7 @@ with search_col:
         )
     condizione = condizione_ui.lower()
 
-    fonti_disponibili = ["Amazon", "eBay", "Vinted", "Trovaprezzi"]
+    fonti_disponibili = ["Amazon", "eBay", "Vinted", "Trovaprezzi", "Euronics", "Unieuro", "MediaWorld"]
     fonti_selezionate = st.multiselect(
         "Fonti da consultare",
         fonti_disponibili,
@@ -1279,6 +1393,9 @@ with search_col:
         "eBay": "ebay",
         "Vinted": "vinted",
         "Trovaprezzi": "trovaprezzi",
+        "Euronics": "euronics",
+        "Unieuro": "unieuro",
+        "MediaWorld": "mediaworld",
     }
     fonti_backend = [fonti_map[fonte] for fonte in fonti_selezionate if fonte in fonti_map]
 
@@ -1387,25 +1504,34 @@ if st.session_state.get("ricerca_effettuata", False):
         if cerebras_client is None:
             st.info("💡 Aggiungi CEREBRAS_API_KEY per ottenere la raccomandazione finale AI.")
         else:
+            # Auto top-3 al primo caricamento
             if not st.session_state.get("final_chat_messages"):
-                st.markdown(
-                    """
-                    <div style="padding:1rem 1.2rem; border-radius:16px;
-                                background:rgba(196,92,45,0.07);
-                                border:1px solid rgba(196,92,45,0.15);
-                                margin-bottom:0.8rem">
-                        <p style="margin:0; color:var(--muted); font-size:0.9rem; line-height:1.65">
-                            💡 <strong>Prova a chiedere:</strong> "quale mi consigli per uso quotidiano?",
-                            "qual è il miglior rapporto qualità/prezzo?" oppure
-                            "confronta le prime 3 opzioni"
-                        </p>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+                with st.spinner("🤖 Analizzo i risultati per la top 3…"):
+                    try:
+                        auto_query = (
+                            "Analizza i prodotti disponibili e consigliami le migliori 3 opzioni con una motivazione "
+                            "concisa per ciascuna (nome, prezzo, punto di forza). Poi indica la tua raccomandazione finale."
+                        )
+                        auto_messages = [{"role": "user", "content": auto_query}]
+                        risposta_auto = _call_final_recommendation(
+                            cerebras_client, offerte,
+                            st.session_state.get("preferenze_utente", {}), auto_messages,
+                        )
+                        if risposta_auto:
+                            st.session_state["final_chat_messages"] = [
+                                {"role": "user", "content": auto_query},
+                                {"role": "assistant", "content": risposta_auto},
+                            ]
+                            st.rerun()
+                    except Exception as exc:
+                        st.warning(f"⚠️ Auto-raccomandazione non disponibile: {exc}")
 
+            _AUTO_QUERY_PREFIX = "Analizza i prodotti disponibili"
             for message in st.session_state.get("final_chat_messages", []):
                 role = "assistant" if message.get("role") == "assistant" else "user"
+                # Nasconde il messaggio utente dell'auto-query
+                if role == "user" and message.get("content", "").startswith(_AUTO_QUERY_PREFIX):
+                    continue
                 with st.chat_message(role):
                     st.write(message.get("content", ""))
 
