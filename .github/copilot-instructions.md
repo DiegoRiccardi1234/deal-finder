@@ -27,7 +27,7 @@
 - Avvio CLI scraper:
   - `python offerte_tech.py -q "notebook 14 pollici 16gb" -b 800 -n 10`
 - Test unitari (senza Playwright):
-  - `python -m pytest tests/test_suite.py -k "not page and not chat_prericerca and not no_ripetizioni and not range_prezzo and not avvia_ricerca" -v`
+  - `python -m pytest tests/test_suite.py -k "not page and not chat_prericerca and not no_ripetizioni and not range_prezzo and not avvia_ricerca and not chat_finale" -v`
 - Controllo statico rapido dopo modifiche:
   - usa i problemi editor/Pylance e assicurati che `get_errors` non riporti errori.
 

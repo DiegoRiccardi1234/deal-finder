@@ -45,18 +45,18 @@ st.markdown(
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap');
 
         :root {
-            --bg: #f6f1e8;
-            --panel: rgba(255, 251, 244, 0.86);
-            --panel-strong: rgba(255, 248, 239, 0.96);
-            --ink: #1a1a1a;
-            --muted: #3f3f3f;
+            --bg: #0e0e12;
+            --panel: rgba(20, 20, 28, 0.96);
+            --panel-strong: rgba(22, 22, 30, 0.99);
+            --ink: #e8e8e8;
+            --muted: #a8a8b8;
             --accent: #c45c2d;
-            --accent-dark: #8b3d18;
-            --line: rgba(31, 36, 48, 0.12);
-            --shadow: 0 18px 48px rgba(75, 48, 30, 0.12);
+            --accent-dark: #e8825a;
+            --line: rgba(255, 255, 255, 0.10);
+            --shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
             --radius: 22px;
-            --surface: #ffffff;
-            --input-surface: #ffffff;
+            --surface: #16161e;
+            --input-surface: #2a2a35;
         }
 
         html, body, [class*="css"] {
@@ -66,9 +66,9 @@ st.markdown(
 
         [data-testid="stAppViewContainer"] {
             background:
-                radial-gradient(circle at top left, rgba(196, 92, 45, 0.16), transparent 28%),
-                radial-gradient(circle at top right, rgba(102, 128, 96, 0.14), transparent 24%),
-                linear-gradient(180deg, #fbf6ef 0%, var(--bg) 100%);
+                radial-gradient(circle at top left, rgba(196, 92, 45, 0.09), transparent 28%),
+                radial-gradient(circle at bottom right, rgba(60, 60, 120, 0.06), transparent 24%),
+                linear-gradient(180deg, #111116 0%, #0e0e12 100%) !important;
         }
 
         [data-testid="stHeader"] {
@@ -85,12 +85,12 @@ st.markdown(
             position: relative;
             overflow: hidden;
             padding: 2rem 2.2rem;
-            border: 1px solid rgba(255, 255, 255, 0.55);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 28px;
-            color: #1a1a1a;
+            color: var(--ink);
             background:
-                linear-gradient(135deg, rgba(255, 247, 237, 0.92), rgba(253, 250, 244, 0.82)),
-                repeating-linear-gradient(135deg, rgba(196, 92, 45, 0.025) 0 14px, transparent 14px 28px);
+                linear-gradient(135deg, rgba(30, 25, 20, 0.97), rgba(22, 20, 18, 0.93)),
+                repeating-linear-gradient(135deg, rgba(196, 92, 45, 0.045) 0 14px, transparent 14px 28px);
             box-shadow: var(--shadow);
             margin-bottom: 1.2rem;
         }
@@ -100,8 +100,8 @@ st.markdown(
             margin-bottom: 0.75rem;
             padding: 0.32rem 0.72rem;
             border-radius: 999px;
-            background: rgba(196, 92, 45, 0.11);
-            color: var(--accent-dark);
+            background: rgba(196, 92, 45, 0.22);
+            color: #e8825a;
             font-size: 0.78rem;
             font-weight: 800;
             letter-spacing: 0.08em;
@@ -138,9 +138,10 @@ st.markdown(
             max-width: 320px;
             padding: 1rem 1.1rem;
             border-radius: 20px;
-            background: rgba(255, 255, 255, 0.94);
+            background: rgba(28, 28, 38, 0.97);
             color: var(--ink);
-            box-shadow: 0 16px 30px rgba(31, 36, 48, 0.16);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 16px 30px rgba(0, 0, 0, 0.4);
         }
 
         .hero-note strong {
@@ -217,11 +218,11 @@ st.markdown(
         }
 
         [data-testid="stChatMessage"] {
-            border: 1px solid rgba(255, 255, 255, 0.45);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 20px;
-            background: rgba(255, 250, 244, 0.92);
+            background: rgba(22, 22, 32, 0.97);
             padding: 0.55rem 0.7rem;
-            box-shadow: 0 12px 28px rgba(75, 48, 30, 0.08);
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.3);
         }
 
         [data-testid="stChatMessageContent"] p {
@@ -232,13 +233,13 @@ st.markdown(
         [data-testid="stMarkdownContainer"] p,
         [data-testid="stMetricValue"],
         [data-testid="stMetricLabel"] {
-            color: #1a1a1a;
+            color: var(--ink);
         }
 
         [data-testid="stMetric"] {
             border: 1px solid var(--line);
             border-radius: 18px;
-            background: rgba(255, 255, 255, 0.96);
+            background: rgba(28, 28, 38, 0.98);
             padding: 0.2rem 0.35rem;
         }
 
@@ -492,7 +493,48 @@ st.markdown(
             color: #666 !important;
         }
 
-        /* ── Dark mode: chat input ── */
+        /* ── Chat input (dark di default) ── */
+        [data-testid="stChatInput"] textarea,
+        [data-testid="stChatInputContainer"] textarea {
+            background: var(--input-surface) !important;
+            color: var(--ink) !important;
+            border-color: var(--line) !important;
+        }
+
+        /* ── Expander di default dark ── */
+        details,
+        [data-testid="stExpander"] {
+            background: rgba(22, 22, 30, 0.97) !important;
+            border-color: var(--line) !important;
+        }
+        details summary span,
+        [data-testid="stExpander"] summary p {
+            color: var(--ink) !important;
+        }
+
+        /* ── Inputs/select di default dark ── */
+        [data-baseweb="select"] > div,
+        div[data-baseweb="input"] > div,
+        div[data-baseweb="base-input"] > div {
+            background: var(--input-surface) !important;
+            color: var(--ink) !important;
+            border-color: var(--line) !important;
+        }
+        .stTextInput input,
+        .stNumberInput input {
+            color: var(--ink) !important;
+            background-color: var(--input-surface) !important;
+        }
+
+        /* ── Alert/warning di default dark ── */
+        [data-testid="stAlert"],
+        [data-testid="stWarningBox"],
+        [data-testid="stInfoBox"] {
+            background: rgba(28, 28, 38, 0.97) !important;
+            color: var(--ink) !important;
+        }
+
+        /* ── Dark mode: chat input (rinforzo) ── */
         [data-theme="dark"] [data-testid="stChatInput"] textarea,
         [data-theme="dark"] [data-testid="stChatInputContainer"] textarea {
             background: #2d2d2d !important;
@@ -500,7 +542,20 @@ st.markdown(
             border-color: rgba(255,255,255,0.15) !important;
         }
 
-        /* ── Dark mode: scrollbar ── */
+        /* ── Scrollbar (dark di default) ── */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #111116;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(196, 92, 45, 0.4);
+            border-radius: 3px;
+        }
+
+        /* ── Dark mode: scrollbar (ridondante ma esplicito) ── */
         [data-theme="dark"] ::-webkit-scrollbar {
             width: 6px;
             height: 6px;
@@ -562,6 +617,7 @@ def _init_state() -> None:
         "final_chat_messages": [],
         "filtri_ai": {},
         "filtri_ai_ultima_ricerca": {},
+        "auto_recommend_tried": False,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -1174,6 +1230,7 @@ def _run_search(
     st.session_state["ultimo_top_n"] = int(top_n)
     st.session_state["condizione"] = condizione
     st.session_state["final_chat_messages"] = []
+    st.session_state["auto_recommend_tried"] = False
     st.session_state["risultati"] = []
     st.session_state["log_ricerca"] = ""
 
@@ -1504,8 +1561,9 @@ if st.session_state.get("ricerca_effettuata", False):
         if cerebras_client is None:
             st.info("💡 Aggiungi CEREBRAS_API_KEY per ottenere la raccomandazione finale AI.")
         else:
-            # Auto top-3 al primo caricamento
-            if not st.session_state.get("final_chat_messages"):
+            # Auto top-3 al primo caricamento (al massimo 1 tentativo per ricerca)
+            if not st.session_state.get("final_chat_messages") and not st.session_state.get("auto_recommend_tried"):
+                st.session_state["auto_recommend_tried"] = True  # imposta prima del try per evitare doppio tentativo
                 with st.spinner("🤖 Analizzo i risultati per la top 3…"):
                     try:
                         auto_query = (

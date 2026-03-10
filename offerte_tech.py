@@ -204,7 +204,9 @@ def get_headers() -> dict[str, str]:
         "User-Agent":      _random_ua(),
         "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.7,en;q=0.5",
-        "Accept-Encoding": "gzip, deflate, br",
+        # Brotli (br) rimosso: requests non decodifica Brotli senza il pacchetto brotli,
+        # restituendo contenuto binario illeggibile.
+        "Accept-Encoding": "gzip, deflate",
         "DNT":             "1",
         "Connection":      "keep-alive",
         "Upgrade-Insecure-Requests": "1",
@@ -644,69 +646,77 @@ def scrape_trovaprezzi(
     query_tokens: list[str],
 ) -> list[Offerta]:
     """
-    Scraper Google Shopping (hl=it, gl=it) come fallback stabile a Trovaprezzi.
+    Scraper trovaprezzi.it (sito diretto).
+
+    URL: /categoria.aspx?libera={query}  →  redirect a /{categoria}/offerte/{slug}
+    Selettori (validi a marzo 2026):
+        Container: a.suggested_product[href]
+        Nome:      .product_info .name  (testo dentro il container)
+        Prezzo:    .price_range         (es. "da 1.419,00 €")
+        Link:      href del container a (relativo → prepend https://www.trovaprezzi.it)
     """
-    url = f"https://www.google.it/search?tbm=shop&q={quote_plus(query)}&hl=it&gl=it"
-    print(f"\n🔍 Cerco su Google Shopping: \"{query}\"")
+    url = f"https://www.trovaprezzi.it/categoria.aspx?libera={quote_plus(query)}"
+    print(f"\n🔍 Cerco su Trovaprezzi.it: \"{query}\"")
 
     risultati: list[Offerta] = []
 
     try:
         headers = get_headers()
-        headers["Referer"] = "https://www.google.it/"
+        headers["Referer"] = "https://www.trovaprezzi.it/"
 
         resp = fetch_with_retry(url, headers)
-        if resp.status_code in (401, 403, 429):
-            print("    ⚠️  Google Shopping: accesso bloccato, salto la fonte.")
+        if resp.status_code in (401, 403, 429, 503):
+            print(f"    ⚠️  Trovaprezzi.it: accesso bloccato (HTTP {resp.status_code}), salto la fonte.")
             return risultati
 
         resp.raise_for_status()
 
         soup = BeautifulSoup(resp.text, "html.parser")
-        page_title = (soup.title.string or "") if soup.title else ""
-        if any(kw in page_title.lower() for kw in ("sorry", "captcha", "robot", "unusual traffic")):
-            print("    ⚠️  Google Shopping: blocco anti-bot, salto la fonte.")
+        page_title = str((soup.title.string or "") if soup.title else "")
+        if any(kw in page_title.lower() for kw in ("sorry", "captcha", "robot", "unusual traffic", "404")):
+            print("    ⚠️  Trovaprezzi.it: blocco anti-bot o pagina non trovata, salto la fonte.")
             return risultati
 
-        name_nodes = soup.select(".Xjkr3b, .tAxDx")
-        if not name_nodes:
-            print("    ⚠️  Google Shopping: nessun risultato parsabile, salto la fonte.")
+        # Prodotti: ogni <a class="suggested_product" href="..."> è un prodotto aggregato
+        cards = soup.select("a.suggested_product[href]")
+
+        if not cards:
+            print("    ⚠️  Trovaprezzi.it: nessun risultato parsabile (selettori cambiati o blocco).")
             return risultati
 
+        print(f"    ✅ Trovate {len(cards)} card su Trovaprezzi.it")
         seen_links: set[str] = set()
-        for name_tag in name_nodes:
+        # Trovaprezzi filtra già per categoria: omettiamo i token-categoria dall'is_relevant
+        # (es. "notebook" è già implicito nel fatto che la ricerca atterri nella cat. notebook).
+        # Verifichiamo solo le specifiche secondarie (dimensione, brand, ecc.).
+        _tp_cat_words = {"notebook", "laptop", "smartphone", "tablet", "telefono",
+                         "cellulare", "monitor", "cuffie", "auricolari", "pc"}
+        tp_tokens = [t for t in query_tokens if t not in _tp_cat_words] or query_tokens
+        for card in cards:
             try:
-                nome = name_tag.get_text(" ", strip=True)
+                nome_tag = card.select_one(".name") or card.select_one("[class*='name']")
+                if not nome_tag:
+                    continue
+                nome = nome_tag.get_text(strip=True)
                 if not nome:
                     continue
 
-                item = name_tag
-                for _ in range(4):
-                    parent = item.find_parent("div") if item else None
-                    if not parent:
-                        break
-                    item = parent
-                    if item.select_one(".a8Pemb, .T14wmb"):
-                        break
-
-                prezzo_tag = item.select_one(".a8Pemb, .T14wmb") if item else None
+                # Prezzo "da X.XXX,XX €" → parse_price gestisce il prefisso "da"
+                prezzo_tag = card.select_one(".price_range") or card.select_one("[class*='price']")
                 prezzo_txt = prezzo_tag.get_text(" ", strip=True) if prezzo_tag else ""
                 prezzo = parse_price(prezzo_txt)
                 if not math.isfinite(prezzo):
                     continue
 
-                link_tag = (item.select_one("a.shntl[href]") if item else None) or (item.select_one("a[href]") if item else None)
-                if not link_tag:
-                    continue
-                href = str(link_tag.get("href", "") or "")
+                href = str(card.get("href", "") or "")
                 if not href:
                     continue
-                link = href if href.startswith("http") else urljoin("https://www.google.it", href)
+                link = href if href.startswith("http") else f"https://www.trovaprezzi.it{href}"
                 if link in seen_links:
                     continue
                 seen_links.add(link)
 
-                if not is_relevant(nome, query_tokens, strict_specs=False):
+                if not is_relevant(nome, tp_tokens, strict_specs=False):
                     continue
                 if not _within_price_range(prezzo, prezzo_min, budget_max):
                     continue
@@ -715,9 +725,9 @@ def scrape_trovaprezzi(
                     Offerta(
                         nome=nome,
                         prezzo=prezzo,
-                        negozio="Google Shopping",
+                        negozio="Trovaprezzi",
                         link=link,
-                        fonte="google_shopping",
+                        fonte="trovaprezzi.it",
                         spedizione="n.d.",
                     )
                 )
@@ -725,16 +735,16 @@ def scrape_trovaprezzi(
                 continue
 
         if not risultati:
-            print("    ⚠️  Google Shopping: risultati vuoti dopo parsing, salto la fonte.")
+            print("    ⚠️  Trovaprezzi.it: risultati vuoti dopo parsing.")
 
     except requests.Timeout:
-        print("    ❌ trovaprezzi.it: timeout raggiunto anche dopo i retry.")
+        print("    ❌ Trovaprezzi.it: timeout raggiunto anche dopo i retry.")
     except requests.ConnectionError:
-        print("    ❌ trovaprezzi.it: impossibile connettersi al sito.")
+        print("    ❌ Trovaprezzi.it: impossibile connettersi al sito.")
     except requests.HTTPError as exc:
-        print(f"    ❌ trovaprezzi.it: errore HTTP {exc.response.status_code}.")
+        print(f"    ❌ Trovaprezzi.it: errore HTTP {exc.response.status_code}.")
     except Exception as exc:
-        print(f"    ❌ trovaprezzi.it: errore inatteso → {exc}")
+        print(f"    ❌ Trovaprezzi.it: errore inatteso → {exc}")
 
     _random_delay()
     return risultati
@@ -1181,11 +1191,15 @@ def scrape_euronics(
     """
     Scraper per euronics.it.
 
-    Parsing multi-strategia:
-      1. Selettori CSS dei product card
-      2. JSON-LD <script type="application/ld+json"> come fallback
+    NOTE SELETTORI (validi a marzo 2026):
+        URL ricerca: /search?q=
+        Container:   .product-tile
+        Nome:        span.tile-name   (dentro .pdp-link > a)
+        Prezzo:      span.price-formatted  (dentro .price-container)
+        Link:        a.text-dark[href]  (relativo → prepend https://www.euronics.it)
+    Fallback: JSON-LD application/ld+json
     """
-    url = f"https://www.euronics.it/search/all?q={quote_plus(query)}"
+    url = f"https://www.euronics.it/search?q={quote_plus(query)}"
     print(f"\n🔍 Cerco su Euronics.it: \"{query}\"")
     risultati: list[Offerta] = []
 
@@ -1202,30 +1216,25 @@ def scrape_euronics(
         soup = BeautifulSoup(resp.text, "html.parser")
 
         page_title = (soup.title.string or "") if soup.title else ""
-        if any(kw in page_title.lower() for kw in ("captcha", "robot", "sorry", "access denied")):
-            print("    ⚠️  Euronics.it: blocco anti-bot, salto la fonte.")
+        if any(kw in page_title.lower() for kw in ("captcha", "robot", "sorry", "access denied", "404")):
+            print("    ⚠️  Euronics.it: blocco anti-bot o pagina non trovata, salto la fonte.")
             return risultati
 
-        # Strategia 1: CSS selettori card prodotto
-        cards = (
-            soup.select(".items-inner .item") or
-            soup.select(".product-list .product-item") or
-            soup.select(".product-wrapper") or
-            soup.select("[data-product-id]") or
-            soup.select(".search-results-item")
-        )
+        # ── Strategia 1: CSS selettori .product-tile ──
+        cards = soup.select(".product-tile")
 
         if cards:
             print(f"    ✅ Trovate {len(cards)} card su Euronics.it")
             seen_links: set[str] = set()
             for card in cards:
                 try:
+                    # Nome: span.tile-name dentro il link principale
                     nome_tag = (
-                        card.select_one(".item__name") or
-                        card.select_one(".product-name") or
+                        card.select_one("span.tile-name") or
+                        card.select_one("[class*='tile-name']") or
+                        card.select_one(".pdp-link a span") or
                         card.select_one("h2") or
-                        card.select_one("h3") or
-                        card.select_one("[class*='title']")
+                        card.select_one("h3")
                     )
                     if not nome_tag:
                         continue
@@ -1233,20 +1242,22 @@ def scrape_euronics(
                     if not nome:
                         continue
 
+                    # Prezzo: span.price-formatted (primo hit, contiene "€ X.XXX,XX")
                     prezzo_tag = (
-                        card.select_one(".price--actual") or
-                        card.select_one(".price--current") or
-                        card.select_one(".item__price") or
-                        card.select_one("[class*='price-final']") or
+                        card.select_one("span.price-formatted") or
+                        card.select_one("[class*='price-formatted']") or
+                        card.select_one("[class*='price-new']") or
                         card.select_one("[class*='price']")
                     )
                     if not prezzo_tag:
                         continue
-                    prezzo = parse_price(prezzo_tag.get_text(" ", strip=True))
+                    prezzo_raw = prezzo_tag.get_text(" ", strip=True)
+                    prezzo = parse_price(prezzo_raw)
                     if not math.isfinite(prezzo):
                         continue
 
-                    link_tag = card.select_one("a[href]")
+                    # Link: prima a[href] nel card
+                    link_tag = card.select_one("a.text-dark[href]") or card.select_one("a[href]")
                     if not link_tag:
                         continue
                     href = str(link_tag.get("href", "") or "")
@@ -1269,15 +1280,23 @@ def scrape_euronics(
                 except (AttributeError, TypeError):
                     continue
 
-        # Strategia 2: JSON-LD fallback
+        # ── Strategia 2: JSON-LD fallback ──
         if not risultati:
             for script in soup.find_all("script", {"type": "application/ld+json"}):
                 try:
                     data = json.loads(str(script.string or ""))
-                    items = data if isinstance(data, list) else [data]
-                    for item_data in items:
-                        if item_data.get("@type") not in ("Product", "ItemListElement"):
-                            item_data = item_data.get("item", item_data)
+                    # Supporta sia lista che singolo oggetto e ItemList
+                    items_raw = []
+                    if isinstance(data, list):
+                        items_raw = data
+                    elif isinstance(data, dict):
+                        if data.get("@type") == "ItemList":
+                            items_raw = [el.get("item", el) for el in data.get("itemListElement", [])]
+                        else:
+                            items_raw = [data]
+                    for item_data in items_raw:
+                        if not isinstance(item_data, dict):
+                            continue
                         nome = str(item_data.get("name", "") or "").strip()
                         if not nome:
                             continue
@@ -1330,9 +1349,9 @@ def scrape_unieuro(
     """
     Scraper per unieuro.it.
 
-    Parsing multi-strategia:
-      1. Selettori CSS dei product tile
-      2. JSON-LD come fallback
+    NOTA: il sito usa Ionic Framework (Angular SPA) che richiede JavaScript
+    per il rendering. Le richieste HTTP statiche ricevono solo il wrapper HTML
+    senza prodotti. La fonte viene saltata con messaggio informativo.
     """
     url = f"https://www.unieuro.it/online/search?q={quote_plus(query)}&sortBy=relevance"
     print(f"\n🔍 Cerco su Unieuro.it: \"{query}\"")
@@ -1348,14 +1367,26 @@ def scrape_unieuro(
             return risultati
         resp.raise_for_status()
 
+        # Rileva Ionic SPA: la pagina restituisce sempre lo stesso wrapper JS
+        html_snip = resp.text[:3000]
+        is_ionic_spa = (
+            "ion-ce" in html_snip or
+            "Please enable JavaScript" in html_snip or
+            "ionic" in html_snip.lower() or
+            ("unieuro" in html_snip.lower() and "<ion-" in html_snip)
+        )
+        if is_ionic_spa:
+            print("    ℹ️  Unieuro.it: usa una webapp JavaScript (Ionic/Angular) che richiede rendering lato browser — fonte non disponibile senza Playwright.")
+            return risultati
+
         soup = BeautifulSoup(resp.text, "html.parser")
 
-        page_title = (soup.title.string or "") if soup.title else ""
+        page_title = str((soup.title.string or "") if soup.title else "")
         if any(kw in page_title.lower() for kw in ("captcha", "robot", "sorry", "access denied")):
             print("    ⚠️  Unieuro.it: blocco anti-bot, salto la fonte.")
             return risultati
 
-        # Strategia 1: CSS selettori
+        # CSS selettori (fallback nel caso il sito torni SSR)
         cards = (
             soup.select(".h-product") or
             soup.select("[data-productid]") or
@@ -1417,7 +1448,7 @@ def scrape_unieuro(
                 except (AttributeError, TypeError):
                     continue
 
-        # Strategia 2: JSON-LD fallback
+        # JSON-LD fallback
         if not risultati:
             for script in soup.find_all("script", {"type": "application/ld+json"}):
                 try:
@@ -1450,7 +1481,7 @@ def scrape_unieuro(
                     continue
 
         if not risultati:
-            print("    ⚠️  Unieuro.it: nessun risultato parsabile (selettori cambiati o blocco).")
+            print("    ⚠️  Unieuro.it: nessun risultato parsabile.")
 
     except requests.Timeout:
         print("    ❌ Unieuro.it: timeout raggiunto anche dopo i retry.")
@@ -1479,9 +1510,11 @@ def scrape_mediaworld(
     Scraper per MediaWorld.it.
 
     Parsing multi-strategia (priorità decrescente):
-      1. __NEXT_DATA__ JSON (Next.js SSR)
-      2. Selettori CSS dei product card
-      3. JSON-LD <script type="application/ld+json">
+      1. JSON-LD <script type="application/ld+json"> @type=ItemList (confermato a marzo 2026)
+         → URL cerca: /it/search.html?q=  redirect a /it/list/{slug}?pageNumber=0
+         → ItemList.itemListElement[].item → name, url, offers.price (numerico)
+      2. Selettori CSS dei product card (fallback)
+      3. JSON-LD Product singoli (fallback)
     """
     url = f"https://www.mediaworld.it/it/search.html?q={quote_plus(query)}&sortby=rating&pageNumber=0"
     print(f"\n🔍 Cerco su MediaWorld.it: \"{query}\"")
@@ -1499,44 +1532,45 @@ def scrape_mediaworld(
 
         soup = BeautifulSoup(resp.text, "html.parser")
 
-        page_title = (soup.title.string or "") if soup.title else ""
+        page_title = str((soup.title.string or "") if soup.title else "")
         if any(kw in page_title.lower() for kw in ("captcha", "robot", "sorry", "access denied")):
             print("    ⚠️  MediaWorld.it: blocco anti-bot, salto la fonte.")
             return risultati
 
-        # Strategia 1: __NEXT_DATA__ (Next.js)
-        next_data_script = soup.select_one("script#__NEXT_DATA__")
-        if next_data_script:
+        # ── Strategia 1: JSON-LD con @type="ItemList" ──
+        for script in soup.find_all("script", {"type": "application/ld+json"}):
             try:
-                data = json.loads(str(next_data_script.string or ""))
-                page_props = data.get("props", {}).get("pageProps", {})
-                products_raw = (
-                    page_props.get("searchResult", {}).get("products", []) or
-                    page_props.get("productsData", {}).get("products", []) or
-                    page_props.get("products", []) or
-                    []
-                )
-                for product in products_raw:
+                data = json.loads(str(script.string or ""))
+                if not isinstance(data, dict):
+                    continue
+                if data.get("@type") != "ItemList":
+                    continue
+                item_list = data.get("itemListElement", [])
+                if not item_list:
+                    continue
+
+                for el in item_list:
                     try:
-                        nome = str(product.get("name", "") or product.get("title", "") or "").strip()
+                        product = el.get("item", el)
+                        if not isinstance(product, dict):
+                            continue
+                        nome = str(product.get("name", "") or "").strip()
                         if not nome:
                             continue
-                        prezzo_data = product.get("price", {}) or {}
-                        if isinstance(prezzo_data, dict):
-                            prezzo_raw = str(
-                                prezzo_data.get("finalPrice", "") or
-                                prezzo_data.get("value", "") or
-                                prezzo_data.get("current", "") or ""
-                            )
-                        else:
-                            prezzo_raw = str(prezzo_data)
-                        prezzo = parse_price(prezzo_raw)
-                        if not math.isfinite(prezzo):
-                            continue
-                        product_url = str(product.get("url", "") or product.get("pdpUrl", "") or "").strip()
+                        product_url = str(product.get("url", "") or "").strip()
                         if not product_url:
                             continue
                         link = product_url if product_url.startswith("http") else f"https://www.mediaworld.it{product_url}"
+
+                        offers = product.get("offers", {}) or {}
+                        if isinstance(offers, list):
+                            offers = offers[0] if offers else {}
+                        # Il prezzo in ItemList di MediaWorld è già numerico (es. 629)
+                        price_raw = offers.get("price", "")
+                        prezzo = parse_price(str(price_raw))
+                        if not math.isfinite(prezzo):
+                            continue
+
                         if not is_relevant(nome, query_tokens, strict_specs=False):
                             continue
                         if not _within_price_range(prezzo, prezzo_min, budget_max):
@@ -1547,14 +1581,16 @@ def scrape_mediaworld(
                         ))
                     except (TypeError, ValueError, KeyError):
                         continue
+
                 if risultati:
-                    print(f"    ✅ MediaWorld.it (__NEXT_DATA__): {len(risultati)} risultati validi")
+                    print(f"    ✅ MediaWorld.it (JSON-LD ItemList): {len(risultati)} risultati validi")
                     _random_delay()
                     return risultati
-            except Exception:
-                pass
 
-        # Strategia 2: CSS selettori
+            except Exception:
+                continue
+
+        # ── Strategia 2: CSS selettori ──
         cards = (
             soup.select(".product-grid__item") or
             soup.select("[class*='ProductItem']") or
@@ -1614,13 +1650,15 @@ def scrape_mediaworld(
                 except (AttributeError, TypeError):
                     continue
 
-        # Strategia 3: JSON-LD fallback
+        # ── Strategia 3: JSON-LD Product singoli ──
         if not risultati:
             for script in soup.find_all("script", {"type": "application/ld+json"}):
                 try:
                     data = json.loads(str(script.string or ""))
-                    items = data if isinstance(data, list) else [data]
+                    items: list = data if isinstance(data, list) else [data]
                     for item_data in items:
+                        if not isinstance(item_data, dict):
+                            continue
                         if item_data.get("@type") != "Product":
                             continue
                         nome = str(item_data.get("name", "") or "").strip()
