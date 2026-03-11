@@ -889,8 +889,8 @@ def _reset_presearch_chat() -> None:
     st.session_state["presearch_messages"] = [
         {
             "role": "assistant",
-            "content": "Descrivimi liberamente cosa cerchi. Ti faro una domanda per volta e preparo la query finale. "
-            "Se hai specifiche tecniche precise (es. 16GB RAM, 512GB SSD) le usero come filtro separato per trovare risultati piu precisi.",
+            "content": "Raccontami cosa cerchi — tipo prodotto, budget, uso e preferenze. "
+            "Se mi dai già abbastanza informazioni, preparo la query in un colpo solo senza fare altre domande.",
         }
     ]
     st.session_state["presearch_question_count"] = 0
@@ -901,6 +901,8 @@ def _reset_presearch_chat() -> None:
     st.session_state["preferenze_utente"] = {"messaggi": [], "trascrizione": ""}
     st.session_state["prezzo_min"] = 0
     st.session_state["budget_max"] = int(st.session_state.get("budget_max_input", 800))
+    st.session_state["_query_prefilled"] = ""
+    st.session_state["condizione"] = "tutti"
 
 
 def _apply_presearch_result(result: dict[str, Any]) -> None:
@@ -1048,28 +1050,32 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
         result = _presearch_fallback()
     else:
         system_prompt = (
-            "Sei un consulente acquisti esperto italiano. Il tuo obiettivo NON e' solo trovare un prodotto, "
-            "ma capire abbastanza le esigenze dell'utente da potergli dare una RACCOMANDAZIONE FINALE motivata e personalizzata.\n"
-            "Per farlo devi conoscere: 1) categoria/tipo prodotto, 2) uso principale "
-            "(lavoro, studio, gaming, casa, sport, svago…), 3) budget, 4) eventuali preferenze hardware/fisiche.\n"
+            "Sei un consulente acquisti esperto italiano. Il tuo obiettivo e' capire le esigenze dell'utente "
+            "per dargli una RACCOMANDAZIONE FINALE motivata e personalizzata.\n"
+            "Per farlo devi conoscere: 1) categoria/tipo prodotto, 2) uso principale, 3) budget, "
+            "4) preferenze fisiche/hardware.\n"
             "Categoria tech: smartphone, laptop, notebook, tablet, PC, monitor, SSD, cuffie, smartwatch, fotocamera, console.\n"
-            "REGOLE:\n"
-            "- Fai UNA SOLA domanda per turno, quella piu' utile mancante per la raccomandazione finale\n"
-            "- NON chiedere cose gia' dette dall'utente\n"
-            "- Dopo max 4 domande genera la query finale\n"
-            "- Il campo 'query' e' SOLO tipo/dimensione/marca (max 5 parole, senza budget ne' specs)\n"
-            "- Le specifiche tecniche (RAM, storage, display…) vanno in 'filtri_ai'\n"
+            "REGOLE IMPORTANTI:\n"
+            "- Se il messaggio contiene gia' tipo prodotto + budget/range e almeno 1 altra preferenza: vai SUBITO a pronto:true\n"
+            "- Se manca tipo prodotto OPPURE budget: fai UNA SOLA domanda specifica\n"
+            "- NON chiedere cose gia' dette\n"
+            "- Dopo max 3 domande vai sempre a pronto:true\n"
+            "- Il campo 'query' deve essere BREVE: tipo/dimensione/marca, MAX 5 parole, NO frasi, NO budget\n"
+            "  Es: 'notebook 14 pollici windows', 'iphone 17 128gb', 'cuffie wireless anc'\n"
+            "- Le specifiche tecniche (RAM, storage...) vanno in 'filtri_ai', NON nella query\n"
+            "- Le preferenze utente (uso, materiale, marca...) vanno in 'contesto_extra' (stringa)\n"
             "Rispondi SOLO in JSON valido:\n"
             "- Se servono ancora info: {\"domanda\": \"...\", \"pronto\": false}\n"
             "- Se hai abbastanza info: {\"pronto\": true, \"query\": \"...\", \"prezzo_min\": N, \"budget_max\": N, "
-            "\"categoria\": \"tech|abbigliamento|altro\", \"condizione\": \"nuovo|usato|tutti\", \"filtri_ai\": {}}\n"
+            "\"categoria\": \"tech|abbigliamento|altro\", \"condizione\": \"nuovo|usato|tutti\", "
+            "\"filtri_ai\": {}, \"contesto_extra\": \"...\"}\n"
             f"Cronologia conversazione finora:\n{history_text}\n\nNuovo messaggio utente: {cleaned}"
         )
         user_payload = {
             "messaggi_utente": messaggi,
             "trascrizione": transcript,
             "domande_fatte": int(st.session_state.get("presearch_question_count", 0)),
-            "forza_chiusura": int(st.session_state.get("presearch_question_count", 0)) >= 4,
+            "forza_chiusura": int(st.session_state.get("presearch_question_count", 0)) >= 3,
         }
         try:
             raw = _cerebras_chat_with_retry(
@@ -1095,13 +1101,20 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
         if filtri_ai_result:
             filtri_parts = [f"{k}: {v}" for k, v in filtri_ai_result.items()]
             filtri_msg = f" · filtri specs: {', '.join(filtri_parts)}"
+        extra_ctx = str(result.get("contesto_extra", "") or "").strip()
+        if extra_ctx:
+            # Arricchisce preferenze_utente con il contesto extra per la raccomandazione finale
+            _prev = st.session_state.get("preferenze_utente", {})
+            _prev["contesto_extra"] = extra_ctx
+            st.session_state["preferenze_utente"] = _prev
         st.session_state["presearch_messages"].append(
             {
                 "role": "assistant",
                 "content": (
-                    f"Ho preparato la ricerca: {sanitized['query']} · "
+                    f"Ho preparato la ricerca: **{sanitized['query']}** · "
                     f"range {sanitized['prezzo_min']}€ - {sanitized['budget_max']}€ · "
-                    f"categoria {sanitized['categoria']}{filtri_msg}."
+                    f"categoria {sanitized['categoria']}{filtri_msg}.\n"
+                    "Ora puoi affinare le fonti o il range e cliccare **Cerca offerte**."
                 ),
             }
         )
@@ -1110,7 +1123,7 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
     question_count = int(st.session_state.get("presearch_question_count", 0)) + 1
     st.session_state["presearch_question_count"] = question_count
 
-    if question_count >= 4:
+    if question_count >= 3:
         fallback_finale = _presearch_fallback()
         fallback_finale["pronto"] = True
         _apply_presearch_result(fallback_finale)
@@ -1484,135 +1497,160 @@ st.markdown(
 
 st.write("")
 
-st.markdown("<div class='section-card'>", unsafe_allow_html=True)
-st.markdown(
-    "<div class='section-heading'><h3>🔍 Trova le migliori offerte</h3>"
-    "<p>Descrivi cosa cerchi nella chat — la AI prepara query e budget automaticamente. "
-    "Poi imposta i parametri, scegli le fonti e avvia la ricerca.</p></div>",
-    unsafe_allow_html=True,
-)
-
-# ── Chat pre-ricerca ──────────────────────────────────────────────────────
-_chat_hdr = st.columns([6, 1])
-with _chat_hdr[1]:
-    st.button("Reset chat", on_click=_reset_presearch_chat)
-
-if cerebras_client is None:
-    st.info("💡 Per la chat assistita imposta CEREBRAS_API_KEY in secrets o variabile ambiente.")
-
-for message in st.session_state.get("presearch_messages", []):
-    role = "assistant" if message.get("role") == "assistant" else "user"
-    with st.chat_message(role):
-        st.write(message.get("content", ""))
-
-presearch_input = st.chat_input("Descrivi prodotto, uso, vincoli e preferenze", key="presearch_input")
-if presearch_input:
-    _run_presearch_step(presearch_input, api_key)
-    st.rerun()
-
-if st.session_state.get("presearch_ready", False):
-    filtri_ai_display = st.session_state.get("filtri_ai", {})
-    filtri_info = ""
-    if filtri_ai_display:
-        filtri_info = " · specs: " + ", ".join(f"{k}={v}" for k, v in filtri_ai_display.items())
-    st.success(
-        "Query pronta: "
-        f"{st.session_state.get('query_ottimizzata', '')} · "
-        f"{st.session_state.get('prezzo_min', 0)}€ - {st.session_state.get('budget_max', 800)}€ · "
-        f"categoria {st.session_state.get('categoria', 'altro')}{filtri_info}"
-    )
-
-st.divider()
-
-# ── Parametri ricerca ─────────────────────────────────────────────────────
-_q_col, _range_col = st.columns([3, 2], gap="medium")
-with _q_col:
-    query_input = st.text_input(
-        "Query prodotto",
-        placeholder="es. notebook 14 pollici 16gb",
-        value=st.session_state.get("_query_prefilled", ""),
-    ).strip()
-with _range_col:
-    st.caption(
-        f"Range attivo: {st.session_state.get('price_min_input', 0)}€ - {st.session_state.get('budget_max_input', 800)}€"
-    )
-
-price_cols = st.columns(2, gap="medium")
-with price_cols[0]:
-    st.number_input(
-        "Prezzo minimo (€)",
-        min_value=0,
-        max_value=3000,
-        step=10,
-        key="price_min_input",
-        on_change=_sync_from_numbers,
-    )
-with price_cols[1]:
-    st.number_input(
-        "Budget massimo (€)",
-        min_value=0,
-        max_value=3000,
-        step=10,
-        key="budget_max_input",
-        on_change=_sync_from_numbers,
-    )
-
-st.slider(
-    "Range prezzo sincronizzato",
-    min_value=0,
-    max_value=3000,
-    step=10,
-    key="price_range_slider",
-    on_change=_sync_from_slider,
-)
-
-lower_cols = st.columns([1, 1.15], gap="medium")
-with lower_cols[0]:
-    top_n_input = st.number_input(
-        "Numero risultati",
-        min_value=1,
-        max_value=50,
-        value=int(st.session_state.get("ultimo_top_n", 10)),
-        step=1,
-    )
-with lower_cols[1]:
-    condizione_ui = st.radio(
-        "Condizione",
-        ["Tutti", "Nuovo", "Usato"],
-        horizontal=True,
-        index={"tutti": 0, "nuovo": 1, "usato": 2}.get(st.session_state.get("condizione", "tutti"), 0),
-    )
-condizione = condizione_ui.lower()
-
-fonti_disponibili = ["Amazon", "eBay", "Vinted", "Trovaprezzi", "Euronics", "Unieuro", "MediaWorld"]
-fonti_selezionate = st.multiselect(
-    "Fonti da consultare",
-    fonti_disponibili,
-    default=st.session_state.get("fonti_selezionate", fonti_disponibili),
-)
-st.session_state["fonti_selezionate"] = fonti_selezionate
-fonti_map = {
-    "Amazon": "amazon",
-    "eBay": "ebay",
-    "Vinted": "vinted",
-    "Trovaprezzi": "trovaprezzi",
-    "Euronics": "euronics",
-    "Unieuro": "unieuro",
-    "MediaWorld": "mediaworld",
+# ── Valori default (sovrascriuti dai widget nel ramo attivo) ──────────────
+_presearch_done = st.session_state.get("presearch_ready", False)
+query_input: str = ""
+top_n_input: int = int(st.session_state.get("ultimo_top_n", 10))
+condizione: str = st.session_state.get("condizione", "tutti")
+_fonti_def = ["Amazon", "eBay", "Vinted", "Trovaprezzi", "Euronics", "Unieuro", "MediaWorld"]
+fonti_selezionate: list[str] = list(st.session_state.get("fonti_selezionate", _fonti_def))
+_fonti_map = {
+    "Amazon": "amazon", "eBay": "ebay", "Vinted": "vinted",
+    "Trovaprezzi": "trovaprezzi", "Euronics": "euronics",
+    "Unieuro": "unieuro", "MediaWorld": "mediaworld",
 }
-fonti_backend = [fonti_map[fonte] for fonte in fonti_selezionate if fonte in fonti_map]
+fonti_backend: list[str] = [_fonti_map[f] for f in fonti_selezionate if f in _fonti_map]
+avvia_ricerca: bool = False
 
-avvia_ricerca = st.button(
-    "🔍 Cerca offerte",
-    type="primary",
-    width="stretch",
-    disabled=not query_input,
-)
+st.markdown("<div class='section-card'>", unsafe_allow_html=True)
+
+if not _presearch_done:
+    # ══════════════════════════════ STATO 1: Chat attiva ═════════════════
+    st.markdown(
+        "<div class='section-heading'><h3>🔍 Trova le migliori offerte</h3>"
+        "<p>Racconta liberamente cosa stai cercando — la AI genera la query ottimizzata, il budget e i filtri tecnici. "
+        "Se il primo messaggio contiene già abbastanza informazioni, andiamo direttamente alla ricerca.</p></div>",
+        unsafe_allow_html=True,
+    )
+    _chat_hdr = st.columns([6, 1])
+    with _chat_hdr[1]:
+        st.button("Reset", on_click=_reset_presearch_chat, help="Ricomincia la chat")
+
+    if cerebras_client is None:
+        st.info("💡 Per la chat assistita imposta CEREBRAS_API_KEY in secrets o variabile ambiente.")
+
+    for _msg in st.session_state.get("presearch_messages", []):
+        _role = "assistant" if _msg.get("role") == "assistant" else "user"
+        with st.chat_message(_role):
+            st.write(_msg.get("content", ""))
+
+    presearch_input = st.chat_input("Descrivi prodotto, uso, vincoli e preferenze", key="presearch_input")
+    if presearch_input:
+        _run_presearch_step(presearch_input, api_key)
+        st.rerun()
+
+    st.divider()
+
+    with st.expander("🔧 Cerca senza chat (inserimento manuale)", expanded=False):
+        st.caption("Per risultati migliori usa la chat sopra. Qui puoi fare una ricerca diretta con query breve (3–6 parole).")
+        query_input = st.text_input(
+            "Query prodotto",
+            placeholder="es. notebook 14 pollici",
+            value="",
+            key="manual_query_input",
+            help="Mantieni la query a 3-6 parole chiave. NO frasi, NO budget.",
+        ).strip()
+        if query_input:
+            _pc = st.columns(2, gap="medium")
+            with _pc[0]:
+                st.number_input("Prezzo minimo (€)", min_value=0, max_value=3000, step=10,
+                                key="price_min_input", on_change=_sync_from_numbers)
+            with _pc[1]:
+                st.number_input("Budget massimo (€)", min_value=0, max_value=3000, step=10,
+                                key="budget_max_input", on_change=_sync_from_numbers)
+            st.slider("Range prezzo", min_value=0, max_value=3000, step=10,
+                      key="price_range_slider", on_change=_sync_from_slider)
+            _lc = st.columns([1, 1.15], gap="medium")
+            with _lc[0]:
+                top_n_input = st.number_input("Risultati", min_value=1, max_value=50,
+                                              value=int(st.session_state.get("ultimo_top_n", 10)), step=1)
+            with _lc[1]:
+                _cond_m = st.radio("Condizione", ["Tutti", "Nuovo", "Usato"], horizontal=True,
+                                   index={"tutti": 0, "nuovo": 1, "usato": 2}.get(
+                                       st.session_state.get("condizione", "tutti"), 0))
+                condizione = _cond_m.lower()
+            fonti_selezionate = st.multiselect("Fonti", _fonti_def,
+                                               default=st.session_state.get("fonti_selezionate", _fonti_def),
+                                               key="fonti_ms_manual")
+            st.session_state["fonti_selezionate"] = fonti_selezionate
+            fonti_backend = [_fonti_map[f] for f in fonti_selezionate if f in _fonti_map]
+            avvia_ricerca = st.button("🔍 Cerca offerte", type="primary", width="stretch",
+                                      key="btn_manual_cerca")
+
+else:
+    # ══════════════════════════ STATO 2: Presearch completata ════════════
+    _q_opt = st.session_state.get("query_ottimizzata", "")
+    _bmin_p = st.session_state.get("prezzo_min", 0)
+    _bmax_p = st.session_state.get("budget_max", 800)
+    _cond_p = st.session_state.get("condizione", "tutti")
+    _filtri_p = st.session_state.get("filtri_ai", {})
+    _filtri_str = " · ".join(f"{k}: {v}" for k, v in _filtri_p.items()) if _filtri_p else ""
+    _parts = [f"**{_q_opt}**", f"{_bmin_p}€–{_bmax_p}€", _cond_p]
+    if _filtri_str:
+        _parts.append(_filtri_str)
+
+    _hcol1, _hcol2 = st.columns([5, 1])
+    with _hcol1:
+        st.markdown(
+            "<div class='section-heading'><h3>🔍 Trova le migliori offerte</h3>"
+            f"<p>Ricerca pronta: {' · '.join(_parts)}</p></div>",
+            unsafe_allow_html=True,
+        )
+    with _hcol2:
+        st.write("")
+        st.button("✏️ Modifica", on_click=_reset_presearch_chat,
+                  help="Torna alla chat per cambiare le preferenze")
+
+    query_input = _q_opt
+
+    price_cols = st.columns(2, gap="medium")
+    with price_cols[0]:
+        st.number_input("Prezzo minimo (€)", min_value=0, max_value=3000, step=10,
+                        key="price_min_input", on_change=_sync_from_numbers)
+    with price_cols[1]:
+        st.number_input("Budget massimo (€)", min_value=0, max_value=3000, step=10,
+                        key="budget_max_input", on_change=_sync_from_numbers)
+
+    st.slider("Range prezzo sincronizzato", min_value=0, max_value=3000, step=10,
+              key="price_range_slider", on_change=_sync_from_slider)
+
+    lower_cols = st.columns([1, 1.15], gap="medium")
+    with lower_cols[0]:
+        top_n_input = st.number_input("Numero risultati", min_value=1, max_value=50,
+                                      value=int(st.session_state.get("ultimo_top_n", 10)), step=1)
+    with lower_cols[1]:
+        condizione_ui = st.radio(
+            "Condizione", ["Tutti", "Nuovo", "Usato"], horizontal=True,
+            index={"tutti": 0, "nuovo": 1, "usato": 2}.get(
+                st.session_state.get("condizione", "tutti"), 0),
+        )
+        condizione = condizione_ui.lower()
+
+    fonti_selezionate = st.multiselect(
+        "Fonti da consultare", _fonti_def,
+        default=st.session_state.get("fonti_selezionate", _fonti_def),
+    )
+    st.session_state["fonti_selezionate"] = fonti_selezionate
+    fonti_backend = [_fonti_map[f] for f in fonti_selezionate if f in _fonti_map]
+
+    avvia_ricerca = st.button("🔍 Cerca offerte", type="primary", width="stretch",
+                              disabled=not query_input)
+
 st.markdown("</div>", unsafe_allow_html=True)
 
 search_triggered = avvia_ricerca or bool(st.session_state.pop("run_ai_query", False))
 if search_triggered:
-    current_query = st.session_state.get("query_ottimizzata", "").strip() if not query_input else query_input
+    # Preferisce sempre la query ottimizzata dalla chat; se assente, sanitizza l'input manuale
+    _opt_q = st.session_state.get("query_ottimizzata", "").strip()
+    if _opt_q:
+        current_query = _opt_q
+    else:
+        _raw_words = query_input.split()
+        if len(_raw_words) > 7:
+            current_query = " ".join(_raw_words[:7])
+            st.info(f"💡 Query semplificata per la ricerca: **{current_query}**")
+        else:
+            current_query = query_input
     current_min = int(st.session_state.get("price_min_input", 0) or 0)
     current_max = int(st.session_state.get("budget_max_input", 800) or 800)
     if not current_query:
