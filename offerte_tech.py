@@ -70,8 +70,8 @@ except Exception:
 # Costanti globali
 # ---------------------------------------------------------------------------
 TIMEOUT        = 10        # secondi per ogni richiesta HTTP
-DELAY_MIN      = 1.0       # secondi — delay minimo tra richieste
-DELAY_MAX      = 3.5       # secondi — delay massimo tra richieste
+DELAY_MIN      = 0.5       # secondi — delay minimo tra richieste
+DELAY_MAX      = 2.0       # secondi — delay massimo tra richieste
 MAX_RETRIES    = 2         # tentativi extra in caso di errore (tot: 1 + MAX_RETRIES)
 BACKOFF_BASE   = 2.0       # secondi — base per il backoff esponenziale
 
@@ -798,16 +798,8 @@ def scrape_amazon(
         base_headers["Cache-Control"] = "max-age=0"
 
         with requests.Session() as session:
-            home_headers = dict(base_headers)
-            home_headers["Referer"] = "https://www.amazon.it/"
-            _ = fetch_with_retry("https://www.amazon.it", home_headers, session=session)
-
-            # Delay umano tra apertura homepage e ricerca per ridurre blocchi anti-bot
-            time.sleep(random.uniform(2.0, 3.0))
-
             search_headers = dict(base_headers)
             search_headers["Referer"] = "https://www.amazon.it/"
-
             resp = fetch_with_retry(url, search_headers, session=session)
         resp.raise_for_status()
 

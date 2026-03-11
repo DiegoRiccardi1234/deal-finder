@@ -10,6 +10,7 @@ import csv
 import io
 import json
 import os
+import random
 import re
 import time
 from typing import Any, Optional
@@ -502,6 +503,18 @@ st.markdown(
             border-color: var(--line) !important;
         }
 
+        /* ── Chat input dimensione compatta per la chat AI finale ── */
+        [data-testid="stChatInputContainer"] {
+            max-height: 56px !important;
+        }
+        [data-testid="stChatInputContainer"] textarea {
+            min-height: 40px !important;
+            max-height: 40px !important;
+            resize: none !important;
+            overflow: hidden !important;
+            padding: 8px 12px !important;
+        }
+
         /* ── Expander di default dark ── */
         details,
         [data-testid="stExpander"] {
@@ -737,6 +750,36 @@ def _get_cerebras_client(api_key: str) -> Optional[object]:
         return Cerebras(api_key=api_key)
     except Exception:
         return None
+
+
+def _cerebras_chat_with_retry(
+    client: object,
+    messages: list[dict[str, str]],
+    temperature: float = 0.1,
+    max_retries: int = 2,
+) -> str:
+    """Chiama Cerebras con retry silenzioso su errori 429/too_many_requests (2-3 s di attesa)."""
+    last_exc: Optional[BaseException] = None
+    for attempt in range(1 + max_retries):
+        try:
+            completion = client.chat.completions.create(  # type: ignore[attr-defined]
+                model=CEREBRAS_MODEL,
+                messages=messages,
+                temperature=temperature,
+            )
+            content = completion.choices[0].message.content if completion and completion.choices else ""
+            return str(content or "").strip()
+        except Exception as exc:
+            last_exc = exc
+            exc_str = str(exc).lower()
+            is_rate_limit = "429" in exc_str or "too_many" in exc_str or "queue" in exc_str
+            if is_rate_limit and attempt < max_retries:
+                time.sleep(random.uniform(2.0, 3.5))
+                continue
+            raise
+    if last_exc is not None:
+        raise last_exc
+    return ""
 
 
 def _extract_json_object(raw: str) -> dict[str, Any]:
@@ -1029,16 +1072,15 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
             "forza_chiusura": int(st.session_state.get("presearch_question_count", 0)) >= 4,
         }
         try:
-            completion = client.chat.completions.create(
-                model=CEREBRAS_MODEL,
-                messages=[
+            raw = _cerebras_chat_with_retry(
+                client,
+                [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
                 ],
                 temperature=0.1,
             )
-            content = completion.choices[0].message.content if completion and completion.choices else ""
-            result = _extract_json_object(str(content or ""))
+            result = _extract_json_object(raw)
         except Exception:
             result = {}
 
@@ -1122,13 +1164,7 @@ def _call_final_recommendation(
         "Sii diretto e concreto."
     )
     payload = [{"role": "system", "content": system_prompt}] + messages
-    completion = cerebras_client.chat.completions.create(
-        model=CEREBRAS_MODEL,
-        messages=payload,
-        temperature=0.2,
-    )
-    content = completion.choices[0].message.content if completion and completion.choices else ""
-    return str(content or "").strip()
+    return _cerebras_chat_with_retry(cerebras_client, payload, temperature=0.2)
 
 
 def _build_mock_results(query: str, categoria: str, prezzo_min: int, budget_max: int) -> list[Offerta]:
@@ -1199,16 +1235,38 @@ def _offerte_to_csv_bytes(offerte: list[Offerta]) -> bytes:
     return ("\ufeff" + buf.getvalue()).encode("utf-8")
 
 
-def _summarize_specs(specs: dict[str, Any]) -> str:
+def _specs_from_name(nome: str) -> str:
+    """Estrae specs di base dal nome prodotto tramite regex (fallback quando specs strutturate sono assenti)."""
+    parts: list[str] = []
+    text = nome.lower()
+    m = re.search(r'(\d{1,2}[,.]?\d*)\s*(?:"|\'\'{2}|pollici?\b)', text)
+    if m:
+        parts.append(f"Display: {m.group(1)}\"")
+    m = re.search(r'(\d{1,3})\s*gb\s*(?:di\s*)?(?:ram|lpddr|ddr)', text)
+    if m:
+        parts.append(f"Ram: {m.group(1)}GB")
+    m = re.search(r'(\d{1,4})\s*(tb|gb)\s*(?:ssd|nvme|m\.2|emmc)', text)
+    if m:
+        unit = m.group(2).upper()
+        parts.append(f"SSD: {m.group(1)}{unit}")
+    m = re.search(r'\b(i[357]-\d{4,5}[a-z]*|i[357]\s+\d{4,5}[a-z]*|ryzen\s*[357]\s*\d{4}[a-z]*|core\s*ultra\s*[57]\s*\d{3}|celeron\s*n\d+)\b', text)
+    if m:
+        parts.append(f"CPU: {m.group(1).title()}")
+    return " · ".join(parts)
+
+
+def _summarize_specs(specs: dict[str, Any], nome: str = "") -> str:
     if not specs:
-        return ""
+        return _specs_from_name(nome) if nome else ""
     parts = []
     for key, value in specs.items():
         if value in (None, "", [], {}):
             continue
         label = str(key).replace("_", " ").capitalize()
         parts.append(f"{label}: {value}")
-    return " · ".join(parts)
+    if parts:
+        return " · ".join(parts)
+    return _specs_from_name(nome) if nome else ""
 
 
 def _offerte_to_records(offerte: list[Offerta]) -> list[dict[str, Any]]:
@@ -1220,7 +1278,7 @@ def _offerte_to_records(offerte: list[Offerta]) -> list[dict[str, Any]]:
             "Spedizione": offerta.spedizione,
             "Negozio": offerta.negozio,
             "Fonte": offerta.fonte,
-            "Specs": _summarize_specs(offerta.specs),
+            "Specs": _summarize_specs(offerta.specs, offerta.nome),
             "Link": offerta.link,
         }
         for i, offerta in enumerate(offerte, start=1)
@@ -1426,139 +1484,131 @@ st.markdown(
 
 st.write("")
 
-pre_col, search_col = st.columns([1.08, 1], gap="large")
+st.markdown("<div class='section-card'>", unsafe_allow_html=True)
+st.markdown(
+    "<div class='section-heading'><h3>🔍 Trova le migliori offerte</h3>"
+    "<p>Descrivi cosa cerchi nella chat — la AI prepara query e budget automaticamente. "
+    "Poi imposta i parametri, scegli le fonti e avvia la ricerca.</p></div>",
+    unsafe_allow_html=True,
+)
 
-with pre_col:
-    st.markdown("<div class='section-card'>", unsafe_allow_html=True)
-    st.markdown(
-        "<div class='section-heading'><h3>Chat pre-ricerca</h3>"
-        "<p>Descrivi il prodotto che cerchi con dettagli come uso, budget e preferenze. "
-        "La chat separa automaticamente la query di ricerca dalle specifiche tecniche (RAM, storage…) "
-        "per trovare risultati più precisi.</p></div>",
-        unsafe_allow_html=True,
-    )
-    top_actions = st.columns([1, 1.2, 1])
-    with top_actions[2]:
-        st.button("Reset chat", width="stretch", on_click=_reset_presearch_chat)
+# ── Chat pre-ricerca ──────────────────────────────────────────────────────
+_chat_hdr = st.columns([6, 1])
+with _chat_hdr[1]:
+    st.button("Reset chat", on_click=_reset_presearch_chat)
 
-    if cerebras_client is None:
-        st.info("💡 Per la chat assistita imposta CEREBRAS_API_KEY in secrets o variabile ambiente.")
+if cerebras_client is None:
+    st.info("💡 Per la chat assistita imposta CEREBRAS_API_KEY in secrets o variabile ambiente.")
 
-    for message in st.session_state.get("presearch_messages", []):
-        role = "assistant" if message.get("role") == "assistant" else "user"
-        with st.chat_message(role):
-            st.write(message.get("content", ""))
+for message in st.session_state.get("presearch_messages", []):
+    role = "assistant" if message.get("role") == "assistant" else "user"
+    with st.chat_message(role):
+        st.write(message.get("content", ""))
 
-    presearch_input = st.chat_input("Descrivi prodotto, uso, vincoli e preferenze", key="presearch_input")
-    if presearch_input:
-        _run_presearch_step(presearch_input, api_key)
-        st.rerun()
+presearch_input = st.chat_input("Descrivi prodotto, uso, vincoli e preferenze", key="presearch_input")
+if presearch_input:
+    _run_presearch_step(presearch_input, api_key)
+    st.rerun()
 
-    if st.session_state.get("presearch_ready", False):
-        filtri_ai_display = st.session_state.get("filtri_ai", {})
-        filtri_info = ""
-        if filtri_ai_display:
-            filtri_info = " · specs: " + ", ".join(f"{k}={v}" for k, v in filtri_ai_display.items())
-        st.success(
-            "Query pronta: "
-            f"{st.session_state.get('query_ottimizzata', '')} · "
-            f"{st.session_state.get('prezzo_min', 0)}€ - {st.session_state.get('budget_max', 800)}€ · "
-            f"categoria {st.session_state.get('categoria', 'altro')}{filtri_info}"
-        )
-
-        if st.button("Avvia ricerca con questa query", type="primary", width="stretch"):
-            st.session_state["run_ai_query"] = True
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-with search_col:
-    st.markdown("<div class='section-card'>", unsafe_allow_html=True)
-    st.markdown(
-        "<div class='section-heading'><h3>Pannello ricerca</h3><p>I controlli prezzo restano sincronizzati tra input numerici e slider doppio range.</p></div>",
-        unsafe_allow_html=True,
+if st.session_state.get("presearch_ready", False):
+    filtri_ai_display = st.session_state.get("filtri_ai", {})
+    filtri_info = ""
+    if filtri_ai_display:
+        filtri_info = " · specs: " + ", ".join(f"{k}={v}" for k, v in filtri_ai_display.items())
+    st.success(
+        "Query pronta: "
+        f"{st.session_state.get('query_ottimizzata', '')} · "
+        f"{st.session_state.get('prezzo_min', 0)}€ - {st.session_state.get('budget_max', 800)}€ · "
+        f"categoria {st.session_state.get('categoria', 'altro')}{filtri_info}"
     )
 
+st.divider()
+
+# ── Parametri ricerca ─────────────────────────────────────────────────────
+_q_col, _range_col = st.columns([3, 2], gap="medium")
+with _q_col:
     query_input = st.text_input(
         "Query prodotto",
         placeholder="es. notebook 14 pollici 16gb",
         value=st.session_state.get("_query_prefilled", ""),
     ).strip()
+with _range_col:
     st.caption(
         f"Range attivo: {st.session_state.get('price_min_input', 0)}€ - {st.session_state.get('budget_max_input', 800)}€"
     )
 
-    price_cols = st.columns(2, gap="medium")
-    with price_cols[0]:
-        st.number_input(
-            "Prezzo minimo (€)",
-            min_value=0,
-            max_value=3000,
-            step=10,
-            key="price_min_input",
-            on_change=_sync_from_numbers,
-        )
-    with price_cols[1]:
-        st.number_input(
-            "Budget massimo (€)",
-            min_value=0,
-            max_value=3000,
-            step=10,
-            key="budget_max_input",
-            on_change=_sync_from_numbers,
-        )
-
-    st.slider(
-        "Range prezzo sincronizzato",
+price_cols = st.columns(2, gap="medium")
+with price_cols[0]:
+    st.number_input(
+        "Prezzo minimo (€)",
         min_value=0,
         max_value=3000,
         step=10,
-        key="price_range_slider",
-        on_change=_sync_from_slider,
+        key="price_min_input",
+        on_change=_sync_from_numbers,
+    )
+with price_cols[1]:
+    st.number_input(
+        "Budget massimo (€)",
+        min_value=0,
+        max_value=3000,
+        step=10,
+        key="budget_max_input",
+        on_change=_sync_from_numbers,
     )
 
-    lower_cols = st.columns([1, 1.15], gap="medium")
-    with lower_cols[0]:
-        top_n_input = st.number_input(
-            "Numero risultati",
-            min_value=1,
-            max_value=50,
-            value=int(st.session_state.get("ultimo_top_n", 10)),
-            step=1,
-        )
-    with lower_cols[1]:
-        condizione_ui = st.radio(
-            "Condizione",
-            ["Tutti", "Nuovo", "Usato"],
-            horizontal=True,
-            index={"tutti": 0, "nuovo": 1, "usato": 2}.get(st.session_state.get("condizione", "tutti"), 0),
-        )
-    condizione = condizione_ui.lower()
+st.slider(
+    "Range prezzo sincronizzato",
+    min_value=0,
+    max_value=3000,
+    step=10,
+    key="price_range_slider",
+    on_change=_sync_from_slider,
+)
 
-    fonti_disponibili = ["Amazon", "eBay", "Vinted", "Trovaprezzi", "Euronics", "Unieuro", "MediaWorld"]
-    fonti_selezionate = st.multiselect(
-        "Fonti da consultare",
-        fonti_disponibili,
-        default=st.session_state.get("fonti_selezionate", fonti_disponibili),
+lower_cols = st.columns([1, 1.15], gap="medium")
+with lower_cols[0]:
+    top_n_input = st.number_input(
+        "Numero risultati",
+        min_value=1,
+        max_value=50,
+        value=int(st.session_state.get("ultimo_top_n", 10)),
+        step=1,
     )
-    st.session_state["fonti_selezionate"] = fonti_selezionate
-    fonti_map = {
-        "Amazon": "amazon",
-        "eBay": "ebay",
-        "Vinted": "vinted",
-        "Trovaprezzi": "trovaprezzi",
-        "Euronics": "euronics",
-        "Unieuro": "unieuro",
-        "MediaWorld": "mediaworld",
-    }
-    fonti_backend = [fonti_map[fonte] for fonte in fonti_selezionate if fonte in fonti_map]
+with lower_cols[1]:
+    condizione_ui = st.radio(
+        "Condizione",
+        ["Tutti", "Nuovo", "Usato"],
+        horizontal=True,
+        index={"tutti": 0, "nuovo": 1, "usato": 2}.get(st.session_state.get("condizione", "tutti"), 0),
+    )
+condizione = condizione_ui.lower()
 
-    avvia_ricerca = st.button(
-        "Cerca offerte",
-        type="primary",
-        width="stretch",
-        disabled=not query_input,
-    )
-    st.markdown("</div>", unsafe_allow_html=True)
+fonti_disponibili = ["Amazon", "eBay", "Vinted", "Trovaprezzi", "Euronics", "Unieuro", "MediaWorld"]
+fonti_selezionate = st.multiselect(
+    "Fonti da consultare",
+    fonti_disponibili,
+    default=st.session_state.get("fonti_selezionate", fonti_disponibili),
+)
+st.session_state["fonti_selezionate"] = fonti_selezionate
+fonti_map = {
+    "Amazon": "amazon",
+    "eBay": "ebay",
+    "Vinted": "vinted",
+    "Trovaprezzi": "trovaprezzi",
+    "Euronics": "euronics",
+    "Unieuro": "unieuro",
+    "MediaWorld": "mediaworld",
+}
+fonti_backend = [fonti_map[fonte] for fonte in fonti_selezionate if fonte in fonti_map]
+
+avvia_ricerca = st.button(
+    "🔍 Cerca offerte",
+    type="primary",
+    width="stretch",
+    disabled=not query_input,
+)
+st.markdown("</div>", unsafe_allow_html=True)
 
 search_triggered = avvia_ricerca or bool(st.session_state.pop("run_ai_query", False))
 if search_triggered:
@@ -1665,7 +1715,7 @@ if st.session_state.get("ricerca_effettuata", False):
                 records,
                 width="stretch",
                 hide_index=True,
-                height=min(90 + len(records) * 38, 620),
+                height=min(120 + len(records) * 38, 750),
                 column_config={
                     "#": st.column_config.NumberColumn("#", width="small", format="%d"),
                     "Prodotto": st.column_config.TextColumn("Prodotto", width="large"),
@@ -1735,13 +1785,14 @@ if st.session_state.get("ricerca_effettuata", False):
                 for offerta in risultati_con_alternativa:
                     st.warning(f"{offerta.nome}: {offerta.alternativa}")
 
-            _render_specs_grid(offerte_vis)
+            with st.expander("🔬 Specs rilevate", expanded=False):
+                _render_specs_grid(offerte_vis)
 
         _offerte_export = offerte_vis if offerte_vis else offerte
         csv_bytes = _offerte_to_csv_bytes(_offerte_export)
         nome_file = f"offerte_{st.session_state.get('ultima_query', 'ricerca')[:30].replace(' ', '_')}.csv"
         st.download_button(
-            label="Esporta CSV",
+            label="↓ Esporta CSV",
             data=csv_bytes,
             file_name=nome_file,
             mime="text/csv",
@@ -1749,70 +1800,67 @@ if st.session_state.get("ricerca_effettuata", False):
         )
 
         st.write("")
-        st.markdown(
-            """
-            <div class="section-heading" style="margin-top:0.3rem">
-                <h3>💬 Consiglio AI</h3>
-                <p>Chiedi quale prodotto ti conviene tra quelli trovati, in base al tuo uso e budget.</p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        with st.expander("💬 Consiglio AI", expanded=True):
+            st.caption("Chiedi quale prodotto ti conviene tra quelli trovati, in base al tuo uso e budget.")
+            if cerebras_client is None:
+                st.info("💡 Aggiungi CEREBRAS_API_KEY per ottenere la raccomandazione finale AI.")
+            else:
+                # Auto top-3 al primo caricamento (al massimo 1 tentativo per ricerca)
+                if not st.session_state.get("final_chat_messages") and not st.session_state.get("auto_recommend_tried"):
+                    st.session_state["auto_recommend_tried"] = True
+                    with st.spinner("🤖 Analizzo i risultati per la top 3…"):
+                        try:
+                            auto_query = (
+                                "Analizza i prodotti disponibili e consigliami le migliori 3 opzioni con una motivazione "
+                                "concisa per ciascuna (nome, prezzo, punto di forza). Poi indica la tua raccomandazione finale."
+                            )
+                            auto_messages = [{"role": "user", "content": auto_query}]
+                            risposta_auto = _call_final_recommendation(
+                                cerebras_client, offerte,
+                                st.session_state.get("preferenze_utente", {}), auto_messages,
+                            )
+                            if risposta_auto:
+                                st.session_state["final_chat_messages"] = [
+                                    {"role": "user", "content": auto_query},
+                                    {"role": "assistant", "content": risposta_auto},
+                                ]
+                                st.rerun()
+                        except Exception as exc:
+                            _exc_s = str(exc).lower()
+                            if not ("429" in _exc_s or "too_many" in _exc_s or "queue" in _exc_s):
+                                st.warning(f"⚠️ Auto-raccomandazione non disponibile: {exc}")
 
-        if cerebras_client is None:
-            st.info("💡 Aggiungi CEREBRAS_API_KEY per ottenere la raccomandazione finale AI.")
-        else:
-            # Auto top-3 al primo caricamento (al massimo 1 tentativo per ricerca)
-            if not st.session_state.get("final_chat_messages") and not st.session_state.get("auto_recommend_tried"):
-                st.session_state["auto_recommend_tried"] = True  # imposta prima del try per evitare doppio tentativo
-                with st.spinner("🤖 Analizzo i risultati per la top 3…"):
-                    try:
-                        auto_query = (
-                            "Analizza i prodotti disponibili e consigliami le migliori 3 opzioni con una motivazione "
-                            "concisa per ciascuna (nome, prezzo, punto di forza). Poi indica la tua raccomandazione finale."
-                        )
-                        auto_messages = [{"role": "user", "content": auto_query}]
-                        risposta_auto = _call_final_recommendation(
-                            cerebras_client, offerte,
-                            st.session_state.get("preferenze_utente", {}), auto_messages,
-                        )
-                        if risposta_auto:
-                            st.session_state["final_chat_messages"] = [
-                                {"role": "user", "content": auto_query},
-                                {"role": "assistant", "content": risposta_auto},
-                            ]
+                _AUTO_QUERY_PREFIX = "Analizza i prodotti disponibili"
+                for message in st.session_state.get("final_chat_messages", []):
+                    role = "assistant" if message.get("role") == "assistant" else "user"
+                    if role == "user" and message.get("content", "").startswith(_AUTO_QUERY_PREFIX):
+                        continue
+                    with st.chat_message(role):
+                        st.write(message.get("content", ""))
+
+                final_prompt = st.chat_input("Esempio: quale mi consigli per uso quotidiano?", key="final_advice_input")
+                if final_prompt:
+                    st.session_state["final_chat_messages"].append({"role": "user", "content": final_prompt})
+                    with st.chat_message("user"):
+                        st.write(final_prompt)
+                    with st.spinner("🤖 Sto confrontando i prodotti..."):
+                        try:
+                            risposta = _call_final_recommendation(
+                                cerebras_client,
+                                offerte,
+                                st.session_state.get("preferenze_utente", {}),
+                                st.session_state.get("final_chat_messages", []),
+                            )
+                            if not risposta:
+                                raise RuntimeError("Risposta vuota dal modello")
+                            st.session_state["final_chat_messages"].append({"role": "assistant", "content": risposta})
                             st.rerun()
-                    except Exception as exc:
-                        st.warning(f"⚠️ Auto-raccomandazione non disponibile: {exc}")
-
-            _AUTO_QUERY_PREFIX = "Analizza i prodotti disponibili"
-            for message in st.session_state.get("final_chat_messages", []):
-                role = "assistant" if message.get("role") == "assistant" else "user"
-                # Nasconde il messaggio utente dell'auto-query
-                if role == "user" and message.get("content", "").startswith(_AUTO_QUERY_PREFIX):
-                    continue
-                with st.chat_message(role):
-                    st.write(message.get("content", ""))
-
-            final_prompt = st.chat_input("Esempio: quale mi consigli per uso quotidiano?", key="final_advice_input")
-            if final_prompt:
-                st.session_state["final_chat_messages"].append({"role": "user", "content": final_prompt})
-                with st.chat_message("user"):
-                    st.write(final_prompt)
-                with st.spinner("🤖 Sto confrontando i prodotti..."):
-                    try:
-                        risposta = _call_final_recommendation(
-                            cerebras_client,
-                            offerte,
-                            st.session_state.get("preferenze_utente", {}),
-                            st.session_state.get("final_chat_messages", []),
-                        )
-                        if not risposta:
-                            raise RuntimeError("Risposta vuota dal modello")
-                        st.session_state["final_chat_messages"].append({"role": "assistant", "content": risposta})
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(f"❌ Errore AI: {exc}")
+                        except Exception as exc:
+                            _exc_s = str(exc).lower()
+                            if "429" in _exc_s or "too_many" in _exc_s or "queue" in _exc_s:
+                                st.warning("⚠️ Servizio AI momentaneamente sovraccarico, riprova tra qualche secondo.")
+                            else:
+                                st.error(f"❌ Errore AI: {exc}")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
