@@ -402,31 +402,33 @@ def fetch_specs_ai(
             offerta.specs = {}
         return offerte
 
-    def _fetch_single_specs(offerta: Offerta) -> tuple[Offerta, dict[str, object]]:
-        prompt = (
-            f"Sei un database di schede tecniche. Per '{offerta.nome}' restituisci SOLO un JSON con: "
-            "display, processore, ram, storage, batteria, fotocamera, peso, os. "
-            "Campi sconosciuti: null. Solo JSON, nessun testo extra."
+    # Singola chiamata batch: invia tutti i nomi prodotto in un'unica richiesta AI
+    # molto più veloce rispetto a N chiamate singole (era la causa principale di lentezza)
+    nomi = [o.nome for o in offerte]
+    elenco = "\n".join(f"{i+1}. {n}" for i, n in enumerate(nomi))
+    batch_prompt = (
+        "Sei un database di schede tecniche. Per ciascun prodotto nell'elenco numerato "
+        "restituisci SOLO un oggetto JSON valido con i valori indicizzati 1,2,3… "
+        "dove ogni valore è un oggetto con: display, processore, ram, storage, batteria, fotocamera, peso, os. "
+        "Campi sconosciuti: null. Solo JSON, nessun testo extra.\n"
+        f"Elenco prodotti:\n{elenco}"
+    )
+    try:
+        completion = cerebras_client.chat.completions.create(
+            model="gpt-oss-120b",
+            messages=[{"role": "user", "content": batch_prompt}],
+            temperature=0,
         )
-        try:
-            completion = cerebras_client.chat.completions.create(
-                model="gpt-oss-120b",
-                messages=[
-                    {"role": "system", "content": prompt},
-                ],
-                temperature=0,
-            )
-            content = completion.choices[0].message.content if completion and completion.choices else ""
-            specs = _extract_json_object(str(content or ""))
-            return offerta, specs
-        except Exception:
-            return offerta, {}
-
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = [executor.submit(_fetch_single_specs, offerta) for offerta in offerte]
-        for future in as_completed(futures):
-            offerta, specs = future.result()
+        content = str(completion.choices[0].message.content or "") if completion and completion.choices else ""
+        # Il JSON ritornato è tipo {"1": {...}, "2": {...}}
+        outer = _extract_json_object(content)
+        for i, offerta in enumerate(offerte):
+            key = str(i + 1)
+            specs = outer.get(key, {})
             offerta.specs = specs if isinstance(specs, dict) else {}
+    except Exception:
+        for offerta in offerte:
+            offerta.specs = {}
 
     return offerte
 
@@ -2405,26 +2407,35 @@ def cerca_offerte(
     # Lancio scraper in parallelo sulle fonti selezionate
     offerte: list[Offerta] = []
     future_to_label: dict = {}
+    def _timed_call(fn: Callable, label: str, *args, **kwargs):
+        t0 = time.perf_counter()
+        try:
+            res = fn(*args, **kwargs)
+        finally:
+            elapsed = time.perf_counter() - t0
+            # Solo print: il thread non può accedere a st.session_state (ScriptRunContext warning)
+            print(f"[scrape] {label}: {elapsed:.2f}s")
+        return res
     with ThreadPoolExecutor(max_workers=7) as executor:
         if "trovaprezzi" in fonti_norm:
-            future_to_label[executor.submit(scrape_trovaprezzi, query, prezzo_min, budget_max, query_tokens)] = "Trovaprezzi.it"
+            future_to_label[executor.submit(_timed_call, scrape_trovaprezzi, "Trovaprezzi.it", query, prezzo_min, budget_max, query_tokens)] = "Trovaprezzi.it"
         if "amazon" in fonti_norm:
-            future_to_label[executor.submit(scrape_amazon, query, prezzo_min, budget_max, query_tokens, condizione)] = "Amazon.it"
+            future_to_label[executor.submit(_timed_call, scrape_amazon, "Amazon.it", query, prezzo_min, budget_max, query_tokens, condizione)] = "Amazon.it"
         if "ebay" in fonti_norm:
             if app_id and cert_id:
-                future_to_label[executor.submit(scrape_ebay, query, prezzo_min, budget_max, condizione, query_tokens, app_id, cert_id)] = "eBay.it"
+                future_to_label[executor.submit(_timed_call, scrape_ebay, "eBay.it", query, prezzo_min, budget_max, condizione, query_tokens, app_id, cert_id)] = "eBay.it"
             else:
                 print("    ⚠️  eBay non configurato — chiavi mancanti.")
                 if progress_callback:
                     progress_callback("eBay.it", -2)
         if "vinted" in fonti_norm:
-            future_to_label[executor.submit(scrape_vinted, query, prezzo_min, budget_max, query_tokens, condizione)] = "Vinted.it"
+            future_to_label[executor.submit(_timed_call, scrape_vinted, "Vinted.it", query, prezzo_min, budget_max, query_tokens, condizione)] = "Vinted.it"
         if "euronics" in fonti_norm:
-            future_to_label[executor.submit(scrape_euronics, query, prezzo_min, budget_max, query_tokens)] = "Euronics.it"
+            future_to_label[executor.submit(_timed_call, scrape_euronics, "Euronics.it", query, prezzo_min, budget_max, query_tokens)] = "Euronics.it"
         if "unieuro" in fonti_norm:
-            future_to_label[executor.submit(scrape_unieuro, query, prezzo_min, budget_max, query_tokens)] = "Unieuro.it"
+            future_to_label[executor.submit(_timed_call, scrape_unieuro, "Unieuro.it", query, prezzo_min, budget_max, query_tokens)] = "Unieuro.it"
         if "mediaworld" in fonti_norm:
-            future_to_label[executor.submit(scrape_mediaworld, query, prezzo_min, budget_max, query_tokens, condizione)] = "MediaWorld.it"
+            future_to_label[executor.submit(_timed_call, scrape_mediaworld, "MediaWorld.it", query, prezzo_min, budget_max, query_tokens, condizione)] = "MediaWorld.it"
 
         for future in as_completed(future_to_label):
             label = future_to_label[future]
@@ -2452,6 +2463,18 @@ def cerca_offerte(
     if filtri_ai_effettivi:
         offerte = filtra_risultati_con_ai(offerte, filtri_ai_effettivi)
         print(f"  🎯 Dopo filtro/ranking AI: {len(offerte)}")
+
+    # Filtro post-scraping condizione: rimuove ricondizionati/usati se l'utente vuole solo "nuovo"
+    _KW_RICONDIZIONATO = {
+        "ricondizionato", "refurbished", "rigenerato", "reconditioned",
+        "second life", "open box", "ricondizionata", "usato", "used",
+    }
+    if condizione == "nuovo":
+        offerte = [o for o in offerte if not any(k in o.nome.lower() for k in _KW_RICONDIZIONATO)]
+        print(f"  🏷️  Dopo filtro 'nuovo' (no ricondizionati): {len(offerte)}")
+    elif condizione == "usato":
+        # Per usato su Amazon/store fisici filtra solo ricondizionati espliciti; eBay usa già conditionIds
+        pass
 
     # Deduplicazione
     offerte = _deduplica(offerte)

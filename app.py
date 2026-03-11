@@ -1060,8 +1060,11 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
             "- Se manca tipo prodotto OPPURE budget: fai UNA SOLA domanda specifica\n"
             "- NON chiedere cose gia' dette\n"
             "- Dopo max 3 domande vai sempre a pronto:true\n"
+            "REGOLE QUERY:\n"
             "- Il campo 'query' deve essere BREVE: tipo/dimensione/marca, MAX 5 parole, NO frasi, NO budget\n"
-            "  Es: 'notebook 14 pollici windows', 'iphone 17 128gb', 'cuffie wireless anc'\n"
+            "- Se l'utente menziona due modelli alternativi (es 'iphone 16 o 17', 'notebook 14 o 15'): usa la query PIU' GENERICA\n"
+            "  che li cattura entrambi. Non fissare il numero di modello specifico — lascia che lo scraper trovi entrambi.\n"
+            "  Esempi: 'iphone 16 o 17' → query 'iphone 128gb', '14 o 15 pollici' → 'notebook windows'\n"
             "- Le specifiche tecniche (RAM, storage...) vanno in 'filtri_ai', NON nella query\n"
             "- Le preferenze utente (uso, materiale, marca...) vanno in 'contesto_extra' (stringa)\n"
             "Rispondi SOLO in JSON valido:\n"
@@ -1393,6 +1396,9 @@ def _run_search(
     st.session_state["filtro_prezzo_range_tabella"] = None
     st.session_state["filtro_condizione_tabella"] = "tutti"
     st.session_state["comparatore_selezione"] = []
+    # Reset chat AI post-ricerca e flag auto top-3 ad ogni nuova ricerca
+    st.session_state["final_chat_messages"] = []
+    st.session_state["auto_recommend_tried"] = False
 
     try:
         with st.status("⏳ Ricerca in corso sulle fonti selezionate...", expanded=True) as search_status:
@@ -1529,10 +1535,12 @@ if not _presearch_done:
     if cerebras_client is None:
         st.info("💡 Per la chat assistita imposta CEREBRAS_API_KEY in secrets o variabile ambiente.")
 
-    for _msg in st.session_state.get("presearch_messages", []):
-        _role = "assistant" if _msg.get("role") == "assistant" else "user"
-        with st.chat_message(_role):
-            st.write(_msg.get("content", ""))
+    c_left, c_mid, c_right = st.columns([1, 6, 1])
+    with c_mid:
+        for _msg in st.session_state.get("presearch_messages", []):
+            _role = "assistant" if _msg.get("role") == "assistant" else "user"
+            with st.chat_message(_role):
+                st.write(_msg.get("content", ""))
 
     st.divider()
 
@@ -1637,10 +1645,12 @@ if not st.session_state.get("ricerca_effettuata", False):
         if not _presearch_done
         else "Vuoi affinare la query o il budget? Scrivi qui..."
     )
-    presearch_input = st.chat_input(_pre_placeholder, key="presearch_input")
-    if presearch_input:
-        _run_presearch_step(presearch_input, api_key)
-        st.rerun()
+    _c1, _c2, _c3 = st.columns([1, 6, 1])
+    with _c2:
+        presearch_input = st.chat_input(_pre_placeholder, key="presearch_input")
+        if presearch_input:
+            _run_presearch_step(presearch_input, api_key)
+            st.rerun()
 
 st.markdown("</div>", unsafe_allow_html=True)
 
