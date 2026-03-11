@@ -1,5 +1,5 @@
 """
-app.py — Interfaccia Streamlit per offerte_tech.py
+app.py — Interfaccia Streamlit per Trova Prezzi
 ===================================================
 Avvio:
     streamlit run app.py
@@ -35,8 +35,8 @@ except ImportError as _e:
     st.stop()
 
 st.set_page_config(
-    page_title="Offerte Tech Italia",
-    page_icon="🛒",
+    page_title="Trova Prezzi",
+    page_icon="🔍",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -617,8 +617,9 @@ def _init_state() -> None:
         "presearch_messages": [
             {
                 "role": "assistant",
-                "content": "Descrivimi liberamente cosa cerchi. Ti faro una domanda per volta e preparo la query finale. "
-                "Se hai specifiche tecniche precise (es. 16GB RAM, 512GB SSD) le usero come filtro separato per trovare risultati piu precisi.",
+                "content": "Raccontami cosa cerchi su Trova Prezzi — qualsiasi tipo di prodotto "
+                "(tech, abbigliamento, elettrodomestici, sport, libri...). "
+                "Ti faccio al massimo 2 domande e poi avvio la ricerca.",
             }
         ],
         "presearch_question_count": 0,
@@ -807,8 +808,18 @@ def _infer_categoria_from_query(query: str) -> str:
         "ssd", "gpu", "tablet", "pc", "cuffie", "smartwatch", "fotocamera", "console"
     )):
         return "tech"
-    if any(token in lower for token in ("giacca", "maglia", "vestito", "felpa", "scarpe", "sneaker", "pantaloni", "camicia")):
+    if any(token in lower for token in ("giacca", "maglia", "vestito", "felpa", "pantaloni", "camicia")):
         return "abbigliamento"
+    if any(t in lower for t in ("scarpe", "sneaker", "stivali", "sandali")):
+        return "scarpe"
+    if any(t in lower for t in ("tv", "televisore", "smart tv", "oled", "qled", "schermo")):
+        return "televisore"
+    if any(t in lower for t in ("frigo", "frigorifero", "lavatrice", "forno", "lavastoviglie")):
+        return "elettrodomestico"
+    if any(t in lower for t in ("libro", "romanzo", "fumetto", "manga")):
+        return "libri"
+    if any(t in lower for t in ("bici", "tapis", "manubri", "pallone", "running", "trail")):
+        return "sport"
     return "altro"
 
 
@@ -819,8 +830,8 @@ def _sanitize_presearch_payload(payload: dict[str, Any], transcript: str) -> dic
         intent = parse_search_intent(transcript)
         query = str(intent.get("query", "") or "").strip()
     query = " ".join(query.split()[:5])
-    categoria = str(payload.get("categoria", "altro") or "altro").strip().lower()
-    if categoria not in {"tech", "abbigliamento", "altro"}:
+    categoria = str(payload.get("categoria", "") or "").strip().lower()
+    if not categoria:
         categoria = _infer_categoria_from_query(query)
 
     try:
@@ -957,6 +968,9 @@ def _presearch_fallback() -> dict[str, Any]:
         "notebook", "laptop", "smartphone", "telefono", "iphone", "monitor",
         "tablet", "cuffie", "scarpe", "felpa", "giacca", "mouse", "tastiera",
         "ssd", "pc", "console", "smartwatch",
+        "frigorifero", "lavatrice", "forno", "tv", "televisore",
+        "libro", "romanzo", "sneaker", "bici", "divano",
+        "crema", "profumo",
     ))
 
     # Estrai filtri_ai (specs) dal transcript
@@ -994,7 +1008,9 @@ def _presearch_fallback() -> dict[str, Any]:
     product_tokens = []
     for kw in ("notebook", "laptop", "smartphone", "iphone", "samsung", "xiaomi",
                "monitor", "tablet", "cuffie", "mouse", "tastiera", "ssd", "pc",
-               "console", "smartwatch", "scarpe", "felpa", "giacca"):
+               "console", "smartwatch", "scarpe", "felpa", "giacca",
+               "frigorifero", "lavatrice", "forno", "tv", "televisore",
+               "libro", "romanzo", "sneaker", "bici", "divano", "crema", "profumo"):
         if kw in transcript:
             product_tokens.append(kw)
             break
@@ -1054,7 +1070,7 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
             "per dargli una RACCOMANDAZIONE FINALE motivata e personalizzata.\n"
             "Per farlo devi conoscere: 1) categoria/tipo prodotto, 2) uso principale, 3) budget, "
             "4) preferenze fisiche/hardware.\n"
-            "Categoria tech: smartphone, laptop, notebook, tablet, PC, monitor, SSD, cuffie, smartwatch, fotocamera, console.\n"
+            "Categorie supportate: smartphone, laptop, tablet, televisore, elettrodomestico, abbigliamento, scarpe, sport, libri, beauty, casa, altro.\n"
             "REGOLE IMPORTANTI:\n"
             "- Se il messaggio contiene gia' tipo prodotto + budget/range e almeno 1 altra preferenza: vai SUBITO a pronto:true\n"
             "- Se manca tipo prodotto OPPURE budget: fai UNA SOLA domanda specifica\n"
@@ -1070,7 +1086,7 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
             "Rispondi SOLO in JSON valido:\n"
             "- Se servono ancora info: {\"domanda\": \"...\", \"pronto\": false}\n"
             "- Se hai abbastanza info: {\"pronto\": true, \"query\": \"...\", \"prezzo_min\": N, \"budget_max\": N, "
-            "\"categoria\": \"tech|abbigliamento|altro\", \"condizione\": \"nuovo|usato|tutti\", "
+            "\"categoria\": \"tech|abbigliamento|televisore|elettrodomestico|scarpe|sport|libri|beauty|casa|altro\", \"condizione\": \"nuovo|usato|tutti\", "
             "\"filtri_ai\": {}, \"contesto_extra\": \"...\"}\n"
             f"Cronologia conversazione finora:\n{history_text}\n\nNuovo messaggio utente: {cleaned}"
         )
@@ -1356,7 +1372,7 @@ def _run_search(
     st.session_state["log_ricerca"] = ""
 
     categoria = str(st.session_state.get("categoria", "altro") or "altro")
-    if categoria not in {"tech", "abbigliamento", "altro"}:
+    if not categoria:
         categoria = _infer_categoria_from_query(query)
 
     try:
@@ -1466,11 +1482,10 @@ st.markdown(
     <div class='hero-shell'>
         <div class='hero-grid'>
             <div>
-                <span class='hero-kicker'>shopping assistant</span>
-                <h1 class='hero-title'>Offerte Tech Italia</h1>
+                <span class='hero-kicker'>trova prezzi</span>
+                <h1 class='hero-title'>Trova Prezzi</h1>
                 <p class='hero-copy'>
-                    Descrivi cosa cerchi, lascia che la chat rifinisca query e budget, poi confronta offerte reali da piu fonti
-                    con un layout piu leggibile, specs arricchite e una raccomandazione finale coerente con le tue priorita.
+                    Cerca qualsiasi prodotto su più negozi italiani e online: confronta prezzi reali, ricevi una raccomandazione AI e scegli l'offerta migliore.
                 </p>
             </div>
             <div class='hero-note'>
@@ -1486,6 +1501,7 @@ st.markdown(
 )
 
 chips = [
+    "Tutti i prodotti",
     "Amazon",
     "eBay",
     "Vinted",
@@ -1920,5 +1936,5 @@ if st.session_state.get("ricerca_effettuata", False):
 
 st.write("")
 st.caption(
-    "Offerte Tech Italia · Scraper con delay tra richieste · I prezzi sono indicativi e vanno sempre verificati sul sito del venditore."
+    "Trova Prezzi · Scraper con delay tra richieste · I prezzi sono indicativi e vanno sempre verificati sul sito del venditore."
 )

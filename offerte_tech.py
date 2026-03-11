@@ -1,7 +1,7 @@
 """
-offerte_tech.py — Price Scraper per prodotti tech italiani
-=========================================================
-Cerca offerte su trovaprezzi.it e amazon.it, filtra per
+offerte_tech.py — Price Scraper universale per Trova Prezzi
+===========================================================
+Cerca offerte su più fonti italiane, filtra per
 rilevanza e budget, ordina per prezzo crescente.
 
 Installazione dipendenze:
@@ -132,40 +132,7 @@ _TECH_BRANDS = {
     "oneplus", "huawei", "honor", "oppo", "realme", "motorola", "nothing",
 }
 
-# Categorie statiche trovaprezzi utilizzabili con requests + BeautifulSoup.
-# Chiave: token query, valore: path categoria valido sul sito.
-CATEGORIE_TROVAPREZZI: dict[str, str] = {
-    "notebook": "notebook/offerte/notebook",
-    "laptop": "notebook/offerte/notebook",
-    "ssd": "ssd/offerte/ssd",
-    "smartphone": "smartphone/offerte/smartphone",
-    "telefono": "smartphone/offerte/smartphone",
-    "iphone": "smartphone/offerte/smartphone",
-    "samsung": "smartphone/offerte/smartphone",
-    "xiaomi": "smartphone/offerte/smartphone",
-    "pixel": "smartphone/offerte/smartphone",
-    "android": "smartphone/offerte/smartphone",
-    "monitor": "monitor/offerte/monitor",
-    "gpu": "schede-video/offerte/schede-video",
-    "scheda": "schede-video/offerte/schede-video",
-    "ram": "memorie-ram/offerte/memorie-ram",
-    "router": "router/offerte/router",
-    "wifi": "router/offerte/router",
-    "smartwatch": "smartwatch/offerte/smartwatch",
-    "cuffie": "cuffie/offerte/cuffie",
-    "auricolari": "cuffie/offerte/cuffie",
-    "airpods": "cuffie/offerte/cuffie",
-    "earbuds": "cuffie/offerte/cuffie",
-    "mouse": "mouse/offerte/mouse",
-    "tastiera": "tastiere/offerte/tastiere",
-    "webcam": "webcam/offerte/webcam",
-    "stampante": "stampanti/offerte/stampanti",
-    "hard": "hard-disk-esterni/offerte/hard-disk-esterni",
-    "hdd": "hard-disk-esterni/offerte/hard-disk-esterni",
-    "disco": "hard-disk-esterni/offerte/hard-disk-esterni",
-    "tablet": "tablet/offerte/tablet",
-    "tv": "televisori-lcd-plasma/offerte/televisori",
-}
+
 
 
 # ===========================================================================
@@ -319,13 +286,8 @@ def _within_price_range(prezzo: float, prezzo_min: float, budget_max: Optional[f
 
 
 def _normalize_category(categoria: str) -> str:
-    """Normalizza categorie granulari verso tech / abbigliamento / altro."""
-    categoria_norm = str(categoria or "").strip().lower()
-    if categoria_norm in {"tech", "smartphone", "laptop", "tablet", "monitor", "console", "pc"}:
-        return "tech"
-    if categoria_norm in {"abbigliamento", "scarpe", "moda"}:
-        return "abbigliamento"
-    return "altro"
+    """Restituisce la categoria normalizzata (lowercase, stripped) senza mappature fisse."""
+    return str(categoria or "").strip().lower()
 
 
 def _extract_json_object(raw: str) -> dict[str, object]:
@@ -382,15 +344,11 @@ def fetch_specs_ai(
     categoria: str,
     cerebras_client: Optional[object],
 ) -> list[Offerta]:
-    """Arricchisce le offerte con specs in parallelo in base alla categoria."""
+    """Arricchisce le offerte con specs tramite una singola chiamata AI batch."""
     if not offerte:
         return offerte
 
     categoria_norm = _normalize_category(categoria)
-    if categoria_norm == "altro":
-        for offerta in offerte:
-            offerta.specs = {}
-        return offerte
 
     if categoria_norm == "abbigliamento":
         for offerta in offerte:
@@ -402,14 +360,17 @@ def fetch_specs_ai(
             offerta.specs = {}
         return offerte
 
-    # Singola chiamata batch: invia tutti i nomi prodotto in un'unica richiesta AI
-    # molto più veloce rispetto a N chiamate singole (era la causa principale di lentezza)
+    # Singola chiamata batch universale: invia tutti i nomi prodotto in un'unica richiesta AI
     nomi = [o.nome for o in offerte]
     elenco = "\n".join(f"{i+1}. {n}" for i, n in enumerate(nomi))
     batch_prompt = (
-        "Sei un database di schede tecniche. Per ciascun prodotto nell'elenco numerato "
-        "restituisci SOLO un oggetto JSON valido con i valori indicizzati 1,2,3… "
-        "dove ogni valore è un oggetto con: display, processore, ram, storage, batteria, fotocamera, peso, os. "
+        "Sei un database prodotti. Per ciascun prodotto nell'elenco numerato "
+        "restituisci SOLO un oggetto JSON valido con indici 1,2,3…\n"
+        "Ogni valore è un oggetto con le specifiche più rilevanti per quella categoria di prodotto.\n"
+        "Esempi: tech → processore, ram, storage, display, os; "
+        "abbigliamento → brand, taglia, colore, materiale; "
+        "elettrodomestici → marca, potenza, dimensioni, classe_energetica; "
+        "scarpe → brand, taglia, materiale, uso.\n"
         "Campi sconosciuti: null. Solo JSON, nessun testo extra.\n"
         f"Elenco prodotti:\n{elenco}"
     )
@@ -469,9 +430,23 @@ def is_relevant(nome: str, query_tokens: list[str], strict_specs: bool = True) -
 
     Con strict_specs=False, i token di specifica tecnica (es. '16gb', 'ram')
     vengono saltati — le specs verranno verificate tramite AI enrichment.
+
+    Per query corte (<=2 token), basta che almeno 1 token sia presente (OR logic)
+    per supportare query generiche tipo 'scarpe', 'libro', ecc.
     """
     nome_lower = nome.lower()
     brand_tokens = [token for token in query_tokens if token in _TECH_BRANDS]
+    # Per query corte senza brand tech specifico, applica logica OR:
+    # basta un token per considerare rilevante (supporta query generiche come "scarpe", "libro")
+    if len(query_tokens) <= 2 and not brand_tokens:
+        for token in query_tokens:
+            if not strict_specs and _is_spec_token(token):
+                continue
+            varianti = _ALIASES.get(token, {token})
+            varianti.add(token)
+            if any(v in nome_lower for v in varianti):
+                return True
+        return False
     for token in query_tokens:
         if not strict_specs and _is_spec_token(token):
             continue
@@ -493,12 +468,6 @@ def _random_delay() -> None:
     time.sleep(random.uniform(DELAY_MIN, DELAY_MAX))
 
 
-def _select_trovaprezzi_categoria(query_tokens: list[str]) -> Optional[str]:
-    """Seleziona il path categoria trovaprezzi in base ai token query."""
-    for token in query_tokens:
-        if token in CATEGORIE_TROVAPREZZI:
-            return CATEGORIE_TROVAPREZZI[token]
-    return None
 
 
 def _get_ebay_token(app_id: str, cert_id: str) -> str:
@@ -687,6 +656,37 @@ def scrape_trovaprezzi(
             if any(kw in page_title_p.lower() for kw in ("sorry", "captcha", "robot", "unusual traffic", "404")):
                 return 0
             cards_p = soup_p.select("a.suggested_product[href]")
+            if not cards_p:
+                cards_p = soup_p.select("[class*='product'][href]")
+            if not cards_p:
+                # Fallback JSON-LD
+                for _script in soup_p.find_all("script", {"type": "application/ld+json"}):
+                    try:
+                        _ld = json.loads(str(_script.string or ""))
+                        _ld_items = _ld if isinstance(_ld, list) else ([_ld] if isinstance(_ld, dict) else [])
+                        for _ld_item in _ld_items:
+                            if not isinstance(_ld_item, dict):
+                                continue
+                            _nome = str(_ld_item.get("name", "") or "").strip()
+                            _url = str(_ld_item.get("url", "") or "").strip()
+                            _offers = _ld_item.get("offers", {}) or {}
+                            if isinstance(_offers, list):
+                                _offers = _offers[0] if _offers else {}
+                            _prezzo = parse_price(str(_offers.get("price", "") or ""))
+                            if not _nome or not _url or not math.isfinite(_prezzo):
+                                continue
+                            if _url in seen_links:
+                                continue
+                            seen_links.add(_url)
+                            if not is_relevant(_nome, tp_tokens, strict_specs=False):
+                                continue
+                            if not _within_price_range(_prezzo, prezzo_min, budget_max):
+                                continue
+                            risultati.append(Offerta(nome=_nome, prezzo=_prezzo, negozio="Trovaprezzi", link=_url, fonte="trovaprezzi.it", spedizione="n.d."))
+                            added += 1
+                    except Exception:
+                        continue
+                return added
             added = 0
             for card in cards_p:
                 try:
@@ -772,13 +772,13 @@ def scrape_amazon(
     """
     Scraper per amazon.it.
 
-    Usa la pagina di ricerca standard nella categoria 'computers'.
+    Ricerca su tutte le categorie Amazon (nessun filtro categoria hardcoded).
 
     NOTE SELETTORI (validi a marzo 2026):
         Ogni prodotto è un <div data-component-type="s-search-result">.
         Aggiornare i selettori qui se Amazon cambia il layout.
     """
-    url = f"https://www.amazon.it/s?k={quote_plus(query)}&i=computers"
+    url = f"https://www.amazon.it/s?k={quote_plus(query)}"
     if condizione == "nuovo":
         url += "&rh=p_n_condition-type%3A1294423031"
     elif condizione == "usato":
@@ -800,6 +800,16 @@ def scrape_amazon(
         base_headers["Cache-Control"] = "max-age=0"
 
         with requests.Session() as session:
+            # Step 1: visita la homepage per ottenere cookies reali (riduce blocchi anti-bot)
+            try:
+                _home_headers = dict(base_headers)
+                _home_headers["Referer"] = "https://www.google.it/"
+                session.get("https://www.amazon.it/", headers=_home_headers, timeout=TIMEOUT)
+                time.sleep(random.uniform(0.8, 1.5))
+            except Exception:
+                pass
+
+            # Step 2: ora fa la ricerca con i cookies della sessione
             search_headers = dict(base_headers)
             search_headers["Referer"] = "https://www.amazon.it/"
             resp = fetch_with_retry(url, search_headers, session=session)
@@ -918,13 +928,16 @@ def scrape_amazon(
         print(f"    ❌ Amazon.it: errore HTTP {status}.")
         if status == 503 and st is not None:
             try:
-                st.info(
-                    "ℹ️ **Amazon.it non raggiungibile** — Amazon blocca le richieste "
-                    "provenienti da server cloud. Usa eBay o Trovaprezzi, oppure avvia "
-                    "l'app in locale (`streamlit run app.py`) per includere Amazon."
+                st.warning(
+                    "⚠️ **Amazon.it non disponibile da cloud** — Amazon blocca le richieste dai server cloud "
+                    "(Heroku, Railway, ecc.). Le altre fonti (eBay, Trovaprezzi, Euronics, MediaWorld) "
+                    "funzionano normalmente. Per includere Amazon, esegui l'app in locale con: "
+                    "`streamlit run app.py`"
                 )
             except Exception:
                 pass
+        if status == 503:
+            print("    ❌ Amazon.it: bloccato da cloud (HTTP 503) — funziona solo in locale.")
     except Exception as exc:
         print(f"    ❌ Amazon.it: errore inatteso → {exc}")
 
@@ -1198,16 +1211,8 @@ def scrape_euronics(
         Prezzo:      span.price-formatted.mr-2  (prezzo principale, non accessori)
         Link:        a.text-dark[href] o primo a[href] (relativo → prepend euronics.it)
 
-    Euronics include nella pagina di ricerca sia notebook sia accessori
-    (borse, zaini…): si esegue un filtro per .tile-category per tenere solo
-    le categorie di prodotto laptop/notebook.
+    Euronics vende tech, TV, audio, gaming, elettrodomestici: accetta tutti i prodotti.
     """
-    # Categorie Euronics che identificano laptop/notebook (non accessori)
-    _EURONICS_LAPTOP_CATS = {
-        "notebook", "notebook gaming", "notebook convertibili 2-in-1",
-        "ultrabook", "chromebook", "laptop",
-    }
-
     url = f"https://www.euronics.it/search?q={quote_plus(query)}"
     print(f"\n🔍 Cerco su Euronics.it: \"{query}\"")
     risultati: list[Offerta] = []
@@ -1245,11 +1250,6 @@ def scrape_euronics(
             for card in cards:
                 try:
                     # Filtra accessori: accetta solo categorie laptop/notebook
-                    cat_tag = card.select_one(".tile-category")
-                    cat_text = cat_tag.get_text(strip=True).lower() if cat_tag else ""
-                    if cat_text and not any(kw in cat_text for kw in _EURONICS_LAPTOP_CATS):
-                        continue
-
                     # Nome: span.tile-name
                     nome_tag = (
                         card.select_one("span.tile-name") or
@@ -1380,6 +1380,38 @@ def scrape_unieuro(
     try:
         headers = get_headers()
         headers["Referer"] = "https://www.unieuro.it/"
+
+        # Tenta l'API REST interna prima del parsing HTML
+        _api_url = f"https://www.unieuro.it/umbraco/api/search/GetSearchResult?q={quote_plus(query)}&start=0&count=24&sortBy=relevance"
+        try:
+            _api_resp = fetch_with_retry(_api_url, {**headers, "Accept": "application/json"})
+            if _api_resp.status_code == 200:
+                _api_data = _api_resp.json()
+                _items = _api_data.get("products", _api_data.get("items", _api_data.get("results", [])))
+                for _item in _items:
+                    if not isinstance(_item, dict):
+                        continue
+                    nome = str(_item.get("productName") or _item.get("name") or "").strip()
+                    if not nome:
+                        continue
+                    prezzo = parse_price(str(_item.get("salePrice") or _item.get("price") or ""))
+                    if not math.isfinite(prezzo):
+                        continue
+                    link_path = str(_item.get("url") or _item.get("productUrl") or "").strip()
+                    if not link_path:
+                        continue
+                    link = link_path if link_path.startswith("http") else f"https://www.unieuro.it{link_path}"
+                    if not is_relevant(nome, query_tokens, strict_specs=False):
+                        continue
+                    if not _within_price_range(prezzo, prezzo_min, budget_max):
+                        continue
+                    risultati.append(Offerta(nome=nome, prezzo=prezzo, negozio="Unieuro", link=link, fonte="unieuro.it", spedizione="n.d."))
+                if risultati:
+                    print(f"    ✅ Unieuro.it (API REST): {len(risultati)} risultati validi")
+                    _random_delay()
+                    return risultati
+        except Exception:
+            pass
 
         resp = fetch_with_retry(url, headers)
         if resp.status_code in (401, 403, 429, 503):
@@ -1596,19 +1628,24 @@ def scrape_mediaworld(
                         continue
                     seen_links.add(link)
 
-                    # Prezzo: formato MW è "Consigliato X,–\xa0€Y,00€Z,00"
-                    # Estrai tutti i prezzi nel formato "NNN,NN" e prendi il minimo
-                    # (il minimo è il prezzo reale, non quello MSRP "Consigliato")
-                    price_text = art.get_text(" ", strip=True).replace("\u00a0", " ")
-                    raw_prices = re.findall(r"\d{2,4},\d{2}", price_text)
-                    prices: list[float] = []
-                    for rp in raw_prices:
-                        p = parse_price(rp)
-                        if math.isfinite(p) and p > 20:  # filtra ",00" spurio
-                            prices.append(p)
-                    if not prices:
+                    # Prezzo: prova prima il selettore specifico, poi fallback regex
+                    price_tag = art.select_one('[data-test="product-price"]') or art.select_one('[data-test*="price"]')
+                    if price_tag:
+                        prezzo = parse_price(price_tag.get_text(" ", strip=True))
+                    else:
+                        # fallback regex sul testo grezzo
+                        price_text = art.get_text(" ", strip=True).replace("\u00a0", " ")
+                        raw_prices = re.findall(r"\d{2,4},\d{2}", price_text)
+                        prices: list[float] = []
+                        for rp in raw_prices:
+                            p = parse_price(rp)
+                            if math.isfinite(p) and p > 20:  # filtra ",00" spurio
+                                prices.append(p)
+                        if not prices:
+                            continue
+                        prezzo = min(prices)
+                    if not math.isfinite(prezzo):
                         continue
-                    prezzo = min(prices)
 
                     if not is_relevant(nome, query_tokens, strict_specs=False):
                         continue
@@ -1843,6 +1880,26 @@ def detect_category_and_questions(testo_utente: str) -> dict[str, object]:
             "Hai preferenze di marca o variante?",
             "Qual e l'uso principale?",
         ],
+        "televisore": [
+            "Che diagonale cerchi (es. 55, 65 pollici)?",
+            "Preferisci OLED, QLED o LED?",
+        ],
+        "libri": [
+            "Preferisci versione cartacea o ebook?",
+            "Hai preferenze di edizione o lingua?",
+        ],
+        "sport": [
+            "Per quale sport o attività?",
+            "Hai una taglia o misura?",
+        ],
+        "casa": [
+            "Hai preferenze di colore o stile?",
+            "Che dimensioni cerchi?",
+        ],
+        "beauty": [
+            "Hai preferenze di marca?",
+            "Per che tipo di pelle/uso è?",
+        ],
         "altro": [
             "Hai preferenze di colore/storage/variante?",
             "Preferisci nuovo o usato?",
@@ -1871,6 +1928,16 @@ def detect_category_and_questions(testo_utente: str) -> dict[str, object]:
             return "abbigliamento"
         if any(k in lower_text for k in ("frigorifero", "lavatrice", "forno", "aspirapolvere")):
             return "elettrodomestico"
+        if any(k in lower_text for k in ("tv", "televisore", "smart tv", "oled", "qled")):
+            return "televisore"
+        if any(k in lower_text for k in ("libro", "romanzo", "fumetto")):
+            return "libri"
+        if any(k in lower_text for k in ("bici", "tapis roulant", "manubri", "pallone")):
+            return "sport"
+        if any(k in lower_text for k in ("divano", "lampada", "tenda", "scrivania")):
+            return "casa"
+        if any(k in lower_text for k in ("crema", "profumo", "shampoo")):
+            return "beauty"
         return "altro"
 
     def _questions_for_missing(categoria: str, lower_text: str) -> tuple[list[str], bool]:
@@ -1959,9 +2026,9 @@ def detect_category_and_questions(testo_utente: str) -> dict[str, object]:
             "- scarpe: numero e uso\n"
             "- abbigliamento: taglia e colore\n"
             "- laptop: uso principale e peso/portabilita\n\n"
-            "Restituisci SOLO JSON con chiavi: categoria (string tra smartphone, laptop, "
-            "abbigliamento, scarpe, elettrodomestico, altro), domande (array di max 2 stringhe), "
-            "preferenze_chiare (bool)."
+            "Restituisci SOLO JSON con chiavi: categoria (string tra smartphone, laptop, tablet, televisore, "
+            "elettrodomestico, abbigliamento, scarpe, sport, libri, beauty, casa, altro), "
+            "domande (array di max 2 stringhe), preferenze_chiare (bool)."
         )
         completion = client.chat.completions.create(
             model="gpt-oss-120b",
