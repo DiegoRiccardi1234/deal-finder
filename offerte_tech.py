@@ -1193,12 +1193,21 @@ def scrape_euronics(
 
     NOTE SELETTORI (validi a marzo 2026):
         URL ricerca: /search?q=
-        Container:   .product-tile
-        Nome:        span.tile-name   (dentro .pdp-link > a)
-        Prezzo:      span.price-formatted  (dentro .price-container)
-        Link:        a.text-dark[href]  (relativo → prepend https://www.euronics.it)
-    Fallback: JSON-LD application/ld+json
+        Container:   .product-tile  con filtro .tile-category ∈ categorie laptop
+        Nome:        span.tile-name
+        Prezzo:      span.price-formatted.mr-2  (prezzo principale, non accessori)
+        Link:        a.text-dark[href] o primo a[href] (relativo → prepend euronics.it)
+
+    Euronics include nella pagina di ricerca sia notebook sia accessori
+    (borse, zaini…): si esegue un filtro per .tile-category per tenere solo
+    le categorie di prodotto laptop/notebook.
     """
+    # Categorie Euronics che identificano laptop/notebook (non accessori)
+    _EURONICS_LAPTOP_CATS = {
+        "notebook", "notebook gaming", "notebook convertibili 2-in-1",
+        "ultrabook", "chromebook", "laptop",
+    }
+
     url = f"https://www.euronics.it/search?q={quote_plus(query)}"
     print(f"\n🔍 Cerco su Euronics.it: \"{query}\"")
     risultati: list[Offerta] = []
@@ -1215,7 +1224,7 @@ def scrape_euronics(
 
         soup = BeautifulSoup(resp.text, "html.parser")
 
-        page_title = (soup.title.string or "") if soup.title else ""
+        page_title = str((soup.title.string or "") if soup.title else "")
         if any(kw in page_title.lower() for kw in ("captcha", "robot", "sorry", "access denied", "404")):
             print("    ⚠️  Euronics.it: blocco anti-bot o pagina non trovata, salto la fonte.")
             return risultati
@@ -1226,13 +1235,25 @@ def scrape_euronics(
         if cards:
             print(f"    ✅ Trovate {len(cards)} card su Euronics.it")
             seen_links: set[str] = set()
+            # Token senza parole-categoria: Euronics filtra già per notebook/laptop.
+            # Manteniamo solo token di dimensione/brand (es. "14") per is_relevant.
+            _euronics_cat_words = {
+                "notebook", "laptop", "smartphone", "tablet", "telefono",
+                "cellulare", "monitor", "cuffie", "auricolari", "pc", "ultrabook",
+            }
+            eu_tokens = [t for t in query_tokens if t not in _euronics_cat_words] or query_tokens
             for card in cards:
                 try:
-                    # Nome: span.tile-name dentro il link principale
+                    # Filtra accessori: accetta solo categorie laptop/notebook
+                    cat_tag = card.select_one(".tile-category")
+                    cat_text = cat_tag.get_text(strip=True).lower() if cat_tag else ""
+                    if cat_text and not any(kw in cat_text for kw in _EURONICS_LAPTOP_CATS):
+                        continue
+
+                    # Nome: span.tile-name
                     nome_tag = (
                         card.select_one("span.tile-name") or
                         card.select_one("[class*='tile-name']") or
-                        card.select_one(".pdp-link a span") or
                         card.select_one("h2") or
                         card.select_one("h3")
                     )
@@ -1242,17 +1263,16 @@ def scrape_euronics(
                     if not nome:
                         continue
 
-                    # Prezzo: span.price-formatted (primo hit, contiene "€ X.XXX,XX")
+                    # Prezzo: span.price-formatted.mr-2 (classe specifica del prezzo principale)
                     prezzo_tag = (
+                        card.select_one("span.price-formatted.mr-2") or
                         card.select_one("span.price-formatted") or
                         card.select_one("[class*='price-formatted']") or
-                        card.select_one("[class*='price-new']") or
                         card.select_one("[class*='price']")
                     )
                     if not prezzo_tag:
                         continue
-                    prezzo_raw = prezzo_tag.get_text(" ", strip=True)
-                    prezzo = parse_price(prezzo_raw)
+                    prezzo = parse_price(prezzo_tag.get_text(" ", strip=True))
                     if not math.isfinite(prezzo):
                         continue
 
@@ -1268,7 +1288,7 @@ def scrape_euronics(
                         continue
                     seen_links.add(link)
 
-                    if not is_relevant(nome, query_tokens, strict_specs=False):
+                    if not is_relevant(nome, eu_tokens, strict_specs=False):
                         continue
                     if not _within_price_range(prezzo, prezzo_min, budget_max):
                         continue
@@ -1510,11 +1530,12 @@ def scrape_mediaworld(
     Scraper per MediaWorld.it.
 
     Parsing multi-strategia (priorità decrescente):
-      1. JSON-LD <script type="application/ld+json"> @type=ItemList (confermato a marzo 2026)
-         → URL cerca: /it/search.html?q=  redirect a /it/list/{slug}?pageNumber=0
-         → ItemList.itemListElement[].item → name, url, offers.price (numerico)
-      2. Selettori CSS dei product card (fallback)
-      3. JSON-LD Product singoli (fallback)
+      1. article[data-test="mms-product-card"] (confermato a marzo 2026):
+           - Nome:    [data-test="product-title"]
+           - Link:   primo a[href] nell'article
+           - Prezzo: regex su testo grezzo "Consigliato X,–€Y,00€Z,00" → min(prezzi)
+      2. JSON-LD <script type="application/ld+json"> @type=ItemList
+      3. CSS selettori generici come last-resort
     """
     url = f"https://www.mediaworld.it/it/search.html?q={quote_plus(query)}&sortby=rating&pageNumber=0"
     print(f"\n🔍 Cerco su MediaWorld.it: \"{query}\"")
@@ -1537,7 +1558,67 @@ def scrape_mediaworld(
             print("    ⚠️  MediaWorld.it: blocco anti-bot, salto la fonte.")
             return risultati
 
-        # ── Strategia 1: JSON-LD con @type="ItemList" ──
+        # ── Strategia 1: article[data-test="mms-product-card"] ──
+        articles = soup.select('article[data-test="mms-product-card"]')
+        if not articles:
+            articles = soup.select("article")  # fallback senza data-test
+
+        if articles:
+            seen_links: set[str] = set()
+            for art in articles:
+                try:
+                    # Nome: data-test="product-title"
+                    nome_tag = art.select_one('[data-test="product-title"]')
+                    if not nome_tag:
+                        continue
+                    nome = nome_tag.get_text(strip=True)
+                    if not nome:
+                        continue
+
+                    # Link: primo a[href] nell'article
+                    link_tag = art.select_one("a[href]")
+                    if not link_tag:
+                        continue
+                    href = str(link_tag.get("href", "") or "")
+                    if not href:
+                        continue
+                    link = href if href.startswith("http") else f"https://www.mediaworld.it{href}"
+                    if link in seen_links:
+                        continue
+                    seen_links.add(link)
+
+                    # Prezzo: formato MW è "Consigliato X,–\xa0€Y,00€Z,00"
+                    # Estrai tutti i prezzi nel formato "NNN,NN" e prendi il minimo
+                    # (il minimo è il prezzo reale, non quello MSRP "Consigliato")
+                    price_text = art.get_text(" ", strip=True).replace("\u00a0", " ")
+                    raw_prices = re.findall(r"\d{2,4},\d{2}", price_text)
+                    prices: list[float] = []
+                    for rp in raw_prices:
+                        p = parse_price(rp)
+                        if math.isfinite(p) and p > 20:  # filtra ",00" spurio
+                            prices.append(p)
+                    if not prices:
+                        continue
+                    prezzo = min(prices)
+
+                    if not is_relevant(nome, query_tokens, strict_specs=False):
+                        continue
+                    if not _within_price_range(prezzo, prezzo_min, budget_max):
+                        continue
+
+                    risultati.append(Offerta(
+                        nome=nome, prezzo=prezzo, negozio="MediaWorld",
+                        link=link, fonte="mediaworld.it", spedizione="n.d.",
+                    ))
+                except (AttributeError, TypeError):
+                    continue
+
+            if risultati:
+                print(f"    ✅ MediaWorld.it (article): {len(risultati)} risultati validi")
+                _random_delay()
+                return risultati
+
+        # ── Strategia 2: JSON-LD con @type="ItemList" ──
         for script in soup.find_all("script", {"type": "application/ld+json"}):
             try:
                 data = json.loads(str(script.string or ""))
