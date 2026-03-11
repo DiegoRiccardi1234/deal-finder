@@ -1534,11 +1534,6 @@ if not _presearch_done:
         with st.chat_message(_role):
             st.write(_msg.get("content", ""))
 
-    presearch_input = st.chat_input("Descrivi prodotto, uso, vincoli e preferenze", key="presearch_input")
-    if presearch_input:
-        _run_presearch_step(presearch_input, api_key)
-        st.rerun()
-
     st.divider()
 
     with st.expander("🔧 Cerca senza chat (inserimento manuale)", expanded=False):
@@ -1635,6 +1630,17 @@ else:
 
     avvia_ricerca = st.button("🔍 Cerca offerte", type="primary", width="stretch",
                               disabled=not query_input)
+    st.caption("💬 Puoi affinare la query o il budget scrivendo nell'input in basso prima di cercare.")
+if not st.session_state.get("ricerca_effettuata", False):
+    _pre_placeholder = (
+        "Descrivi prodotto, uso, vincoli e preferenze"
+        if not _presearch_done
+        else "Vuoi affinare la query o il budget? Scrivi qui..."
+    )
+    presearch_input = st.chat_input(_pre_placeholder, key="presearch_input")
+    if presearch_input:
+        _run_presearch_step(presearch_input, api_key)
+        st.rerun()
 
 st.markdown("</div>", unsafe_allow_html=True)
 
