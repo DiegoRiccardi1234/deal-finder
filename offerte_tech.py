@@ -28,7 +28,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Callable, Optional
 from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 
 import requests
@@ -671,68 +671,74 @@ def scrape_trovaprezzi(
 
         resp.raise_for_status()
 
-        soup = BeautifulSoup(resp.text, "html.parser")
-        page_title = str((soup.title.string or "") if soup.title else "")
-        if any(kw in page_title.lower() for kw in ("sorry", "captcha", "robot", "unusual traffic", "404")):
-            print("    ⚠️  Trovaprezzi.it: blocco anti-bot o pagina non trovata, salto la fonte.")
-            return risultati
+        base_url = resp.url  # URL finale dopo redirect (usato per la paginazione)
 
-        # Prodotti: ogni <a class="suggested_product" href="..."> è un prodotto aggregato
-        cards = soup.select("a.suggested_product[href]")
-
-        if not cards:
-            print("    ⚠️  Trovaprezzi.it: nessun risultato parsabile (selettori cambiati o blocco).")
-            return risultati
-
-        print(f"    ✅ Trovate {len(cards)} card su Trovaprezzi.it")
         seen_links: set[str] = set()
-        # Trovaprezzi filtra già per categoria: omettiamo i token-categoria dall'is_relevant
-        # (es. "notebook" è già implicito nel fatto che la ricerca atterri nella cat. notebook).
-        # Verifichiamo solo le specifiche secondarie (dimensione, brand, ecc.).
         _tp_cat_words = {"notebook", "laptop", "smartphone", "tablet", "telefono",
                          "cellulare", "monitor", "cuffie", "auricolari", "pc"}
         tp_tokens = [t for t in query_tokens if t not in _tp_cat_words] or query_tokens
-        for card in cards:
-            try:
-                nome_tag = card.select_one(".name") or card.select_one("[class*='name']")
-                if not nome_tag:
-                    continue
-                nome = nome_tag.get_text(strip=True)
-                if not nome:
-                    continue
 
-                # Prezzo "da X.XXX,XX €" → parse_price gestisce il prefisso "da"
-                prezzo_tag = card.select_one(".price_range") or card.select_one("[class*='price']")
-                prezzo_txt = prezzo_tag.get_text(" ", strip=True) if prezzo_tag else ""
-                prezzo = parse_price(prezzo_txt)
-                if not math.isfinite(prezzo):
+        def _parse_page_tp(html: str) -> int:
+            """Parsa una pagina trovaprezzi, aggiunge offerte valide, ritorna il numero aggiunto."""
+            soup_p = BeautifulSoup(html, "html.parser")
+            page_title_p = str((soup_p.title.string or "") if soup_p.title else "")
+            if any(kw in page_title_p.lower() for kw in ("sorry", "captcha", "robot", "unusual traffic", "404")):
+                return 0
+            cards_p = soup_p.select("a.suggested_product[href]")
+            added = 0
+            for card in cards_p:
+                try:
+                    nome_tag = card.select_one(".name") or card.select_one("[class*='name']")
+                    if not nome_tag:
+                        continue
+                    nome = nome_tag.get_text(strip=True)
+                    if not nome:
+                        continue
+                    prezzo_tag = card.select_one(".price_range") or card.select_one("[class*='price']")
+                    prezzo_txt = prezzo_tag.get_text(" ", strip=True) if prezzo_tag else ""
+                    prezzo = parse_price(prezzo_txt)
+                    if not math.isfinite(prezzo):
+                        continue
+                    href = str(card.get("href", "") or "")
+                    if not href:
+                        continue
+                    link = href if href.startswith("http") else f"https://www.trovaprezzi.it{href}"
+                    if link in seen_links:
+                        continue
+                    seen_links.add(link)
+                    if not is_relevant(nome, tp_tokens, strict_specs=False):
+                        continue
+                    if not _within_price_range(prezzo, prezzo_min, budget_max):
+                        continue
+                    risultati.append(Offerta(
+                        nome=nome, prezzo=prezzo, negozio="Trovaprezzi",
+                        link=link, fonte="trovaprezzi.it", spedizione="n.d.",
+                    ))
+                    added += 1
+                except (AttributeError, TypeError):
                     continue
+            return added
 
-                href = str(card.get("href", "") or "")
-                if not href:
-                    continue
-                link = href if href.startswith("http") else f"https://www.trovaprezzi.it{href}"
-                if link in seen_links:
-                    continue
-                seen_links.add(link)
-
-                if not is_relevant(nome, tp_tokens, strict_specs=False):
-                    continue
-                if not _within_price_range(prezzo, prezzo_min, budget_max):
-                    continue
-
-                risultati.append(
-                    Offerta(
-                        nome=nome,
-                        prezzo=prezzo,
-                        negozio="Trovaprezzi",
-                        link=link,
-                        fonte="trovaprezzi.it",
-                        spedizione="n.d.",
-                    )
-                )
-            except (AttributeError, TypeError):
-                continue
+        p1 = _parse_page_tp(resp.text)
+        if not p1:
+            print("    ⚠️  Trovaprezzi.it: nessun risultato parsabile (selettori cambiati o blocco).")
+        else:
+            print(f"    ✅ Trovate {len(risultati)} card su Trovaprezzi.it")
+            # Paginazione: prova pagine 2 e 3 (stop se vuota o errore)
+            for _pn in range(2, 4):
+                _sep = "&" if "?" in base_url else "?"
+                _page_url = f"{base_url}{_sep}paginaCorrente={_pn}"
+                try:
+                    _pr = fetch_with_retry(_page_url, {**headers, "Referer": base_url})
+                    if _pr.status_code != 200:
+                        break
+                    _added = _parse_page_tp(_pr.text)
+                    if not _added:
+                        break
+                    print(f"    ✅ Trovaprezzi.it p.{_pn}: +{_added} offerte")
+                    _random_delay()
+                except Exception:
+                    break
 
         if not risultati:
             print("    ⚠️  Trovaprezzi.it: risultati vuoti dopo parsing.")
@@ -2348,6 +2354,7 @@ def cerca_offerte(
     cerebras_client: Optional[object] = None,
     app_id: str = "",
     cert_id: str = "",
+    progress_callback: Optional[Callable[[str, int], None]] = None,
 ) -> list[Offerta]:
     """
     Cerca offerte tech su trovaprezzi.it e amazon.it.
@@ -2396,31 +2403,39 @@ def cerca_offerte(
 
     # Lancio scraper in parallelo sulle fonti selezionate
     offerte: list[Offerta] = []
-    jobs = []
+    future_to_label: dict = {}
     with ThreadPoolExecutor(max_workers=7) as executor:
         if "trovaprezzi" in fonti_norm:
-            jobs.append(executor.submit(scrape_trovaprezzi, query, prezzo_min, budget_max, query_tokens))
+            future_to_label[executor.submit(scrape_trovaprezzi, query, prezzo_min, budget_max, query_tokens)] = "Trovaprezzi.it"
         if "amazon" in fonti_norm:
-            jobs.append(executor.submit(scrape_amazon, query, prezzo_min, budget_max, query_tokens, condizione))
+            future_to_label[executor.submit(scrape_amazon, query, prezzo_min, budget_max, query_tokens, condizione)] = "Amazon.it"
         if "ebay" in fonti_norm:
             if app_id and cert_id:
-                jobs.append(executor.submit(scrape_ebay, query, prezzo_min, budget_max, condizione, query_tokens, app_id, cert_id))
+                future_to_label[executor.submit(scrape_ebay, query, prezzo_min, budget_max, condizione, query_tokens, app_id, cert_id)] = "eBay.it"
             else:
                 print("    ⚠️  eBay non configurato — chiavi mancanti.")
+                if progress_callback:
+                    progress_callback("eBay.it", -2)
         if "vinted" in fonti_norm:
-            jobs.append(executor.submit(scrape_vinted, query, prezzo_min, budget_max, query_tokens, condizione))
+            future_to_label[executor.submit(scrape_vinted, query, prezzo_min, budget_max, query_tokens, condizione)] = "Vinted.it"
         if "euronics" in fonti_norm:
-            jobs.append(executor.submit(scrape_euronics, query, prezzo_min, budget_max, query_tokens))
+            future_to_label[executor.submit(scrape_euronics, query, prezzo_min, budget_max, query_tokens)] = "Euronics.it"
         if "unieuro" in fonti_norm:
-            jobs.append(executor.submit(scrape_unieuro, query, prezzo_min, budget_max, query_tokens))
+            future_to_label[executor.submit(scrape_unieuro, query, prezzo_min, budget_max, query_tokens)] = "Unieuro.it"
         if "mediaworld" in fonti_norm:
-            jobs.append(executor.submit(scrape_mediaworld, query, prezzo_min, budget_max, query_tokens))
+            future_to_label[executor.submit(scrape_mediaworld, query, prezzo_min, budget_max, query_tokens)] = "MediaWorld.it"
 
-        for future in as_completed(jobs):
+        for future in as_completed(future_to_label):
+            label = future_to_label[future]
             try:
-                offerte += future.result()
+                new_results = future.result()
+                offerte += new_results
+                if progress_callback:
+                    progress_callback(label, len(new_results))
             except Exception as exc:
-                print(f"    ⚠️  Una fonte ha generato un errore inatteso: {exc}")
+                print(f"    ⚠️  {label}: errore inatteso: {exc}")
+                if progress_callback:
+                    progress_callback(label, -1)
 
     print(f"\n  📥 Totale risultati grezzi (post-filtro): {len(offerte)}")
 

@@ -11,6 +11,7 @@ import io
 import json
 import os
 import re
+import time
 from typing import Any, Optional
 
 import streamlit as st
@@ -618,6 +619,14 @@ def _init_state() -> None:
         "filtri_ai": {},
         "filtri_ai_ultima_ricerca": {},
         "auto_recommend_tried": False,
+        # Cache ricerca
+        "_search_cache": {},
+        # Filtri post-ricerca
+        "filtro_fonti_tabella": [],
+        "filtro_prezzo_range_tabella": None,
+        "filtro_condizione_tabella": "tutti",
+        # Comparatore
+        "comparatore_selezione": [],
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -1257,32 +1266,81 @@ def _run_search(
         st.session_state["filtri_ai_ultima_ricerca"] = st.session_state.get("filtri_ai", {})
         return
 
-    with st.spinner("⏳ Sto cercando sulle fonti selezionate..."):
-        try:
-            with contextlib.redirect_stdout(log_buffer):
-                risultati = cerca_offerte(
-                    query=query,
-                    budget_max=float(budget_max),
-                    prezzo_min=float(prezzo_min),
-                    filtri_ai=st.session_state.get("filtri_ai", {}),
-                    top_n=int(top_n),
-                    export_csv=False,
-                    condizione=condizione,
-                    fonti=fonti_backend,
-                    categoria=categoria,
-                    cerebras_client=cerebras_client,
-                    app_id=ebay_app_id,
-                    cert_id=ebay_cert_id,
+    # ── Cache: stessa ricerca entro 5 minuti → riusa i risultati ──────────────
+    _cache_key = (
+        query.strip().lower(), int(prezzo_min), int(budget_max),
+        condizione, tuple(sorted(fonti_backend)),
+    )
+    _cache = st.session_state.get("_search_cache", {})
+    if _cache.get("key") == _cache_key and (time.time() - float(_cache.get("ts", 0))) < 300:
+        st.session_state["risultati"] = _cache["risultati"]
+        st.session_state["log_ricerca"] = _cache.get("log", "")
+        st.session_state["filtri_ai_ultima_ricerca"] = st.session_state.get("filtri_ai", {})
+        st.toast("⚡ Risultati dalla cache (< 5 min) — clicca di nuovo Cerca per aggiornare.")
+        return
+
+    # Reset filtri tabella per la nuova ricerca
+    st.session_state["filtro_fonti_tabella"] = []
+    st.session_state["filtro_prezzo_range_tabella"] = None
+    st.session_state["filtro_condizione_tabella"] = "tutti"
+    st.session_state["comparatore_selezione"] = []
+
+    try:
+        with st.status("⏳ Ricerca in corso sulle fonti selezionate...", expanded=True) as search_status:
+
+            def on_source_done(source_label: str, count: int) -> None:
+                if count > 0:
+                    st.write(f"✅ **{source_label}** → {count} {'risultato' if count == 1 else 'risultati'}")
+                elif count == -2:
+                    st.write(f"⚙️ **{source_label}** → non configurato (chiavi API mancanti)")
+                elif count == -1:
+                    st.write(f"❌ **{source_label}** → errore inatteso durante lo scraping")
+                else:
+                    st.write(f"⚪ **{source_label}** → nessun risultato nel range selezionato")
+
+            try:
+                with contextlib.redirect_stdout(log_buffer):
+                    risultati = cerca_offerte(
+                        query=query,
+                        budget_max=float(budget_max),
+                        prezzo_min=float(prezzo_min),
+                        filtri_ai=st.session_state.get("filtri_ai", {}),
+                        top_n=int(top_n),
+                        export_csv=False,
+                        condizione=condizione,
+                        fonti=fonti_backend,
+                        categoria=categoria,
+                        cerebras_client=cerebras_client,
+                        app_id=ebay_app_id,
+                        cert_id=ebay_cert_id,
+                        progress_callback=on_source_done,
+                    )
+                n = len(risultati)
+                search_status.update(
+                    label=f"✅ Ricerca completata — {n} {'offerta trovata' if n == 1 else 'offerte trovate'}",
+                    state="complete",
+                    expanded=False,
                 )
-            st.session_state["risultati"] = risultati
-            st.session_state["log_ricerca"] = log_buffer.getvalue()
-            st.session_state["filtri_ai_ultima_ricerca"] = st.session_state.get("filtri_ai", {})
-        except Exception as exc:
-            st.session_state["log_ricerca"] = log_buffer.getvalue()
-            st.error(
-                f"❌ Si e verificato un errore durante la ricerca:\n\n```\n{exc}\n```\n\n"
-                "Verifica la connessione internet e riprova."
-            )
+            except Exception:
+                search_status.update(label="❌ Errore durante la ricerca", state="error")
+                raise
+
+        st.session_state["risultati"] = risultati
+        st.session_state["log_ricerca"] = log_buffer.getvalue()
+        st.session_state["filtri_ai_ultima_ricerca"] = st.session_state.get("filtri_ai", {})
+        # Salva in cache per 5 minuti
+        st.session_state["_search_cache"] = {
+            "key": _cache_key,
+            "ts": time.time(),
+            "risultati": risultati,
+            "log": log_buffer.getvalue(),
+        }
+    except Exception as exc:
+        st.session_state["log_ricerca"] = log_buffer.getvalue()
+        st.error(
+            f"❌ Si e verificato un errore durante la ricerca:\n\n```\n{exc}\n```\n\n"
+            "Verifica la connessione internet e riprova."
+        )
 
 
 api_key = _get_cerebras_api_key()
@@ -1500,51 +1558,156 @@ if st.session_state.get("ricerca_effettuata", False):
             "⚠️ Nessuna offerta trovata. Prova ad allargare il range prezzo, semplificare la query o ripetere il tentativo tra qualche secondo."
         )
     else:
-        prezzo_min_ris = min(offerta.prezzo for offerta in offerte)
-        negozio_min = next(offerta.negozio for offerta in offerte if offerta.prezzo == prezzo_min_ris)
-        fonti_uniche = len({offerta.fonte for offerta in offerte})
+        # ── Filtri post-ricerca ─────────────────────────────────────────────
+        with st.expander("🔍 Filtra risultati", expanded=False):
+            _fc1, _fc2, _fc3 = st.columns([2, 1, 1])
+            _fonti_disp = sorted({o.fonte for o in offerte})
+            _filtro_fonti = _fc1.multiselect(
+                "Fonte", options=_fonti_disp, key="filtro_fonti_tabella",
+                placeholder="Tutte le fonti...",
+            )
+            _p_min_r = float(min(o.prezzo for o in offerte))
+            _p_max_r = float(max(o.prezzo for o in offerte))
+            _saved_range = st.session_state.get("filtro_prezzo_range_tabella")
+            if (
+                isinstance(_saved_range, (list, tuple)) and len(_saved_range) == 2
+                and _p_min_r <= float(_saved_range[0]) <= _p_max_r
+                and float(_saved_range[0]) <= float(_saved_range[1]) <= _p_max_r
+            ):
+                _init_range = (float(_saved_range[0]), float(_saved_range[1]))
+            else:
+                _init_range = (_p_min_r, _p_max_r)
+            if _p_min_r < _p_max_r:
+                st.session_state["filtro_prezzo_range_tabella"] = _init_range
+                _filtro_prezzo: tuple[float, float] = _fc2.slider(
+                    "Prezzo €", min_value=_p_min_r, max_value=_p_max_r,
+                    key="filtro_prezzo_range_tabella", format="€%.0f",
+                )
+            else:
+                _filtro_prezzo = (_p_min_r, _p_max_r)
+            _filtro_cond = _fc3.radio(
+                "Condizione", ["tutti", "nuovo", "usato"],
+                key="filtro_condizione_tabella", horizontal=True,
+            )
 
-        st.subheader(f"{len(offerte)} offerte trovate per “{st.session_state.get('ultima_query', '')}”")
+        def _infer_cond_offerta(o: Offerta) -> str:
+            if o.fonte in ("vinted.it",):
+                return "usato"
+            _nl = o.nome.lower()
+            if any(_k in _nl for _k in ("usato", "ricondizionato", "refurbished", "rigenerato", "used")):
+                return "usato"
+            return "nuovo"
+
+        offerte_vis = [
+            o for o in offerte
+            if (not _filtro_fonti or o.fonte in _filtro_fonti)
+            and _filtro_prezzo[0] <= o.prezzo <= _filtro_prezzo[1]
+            and (_filtro_cond == "tutti" or _infer_cond_offerta(o) == _filtro_cond)
+        ]
+
+        _metriche_src = offerte_vis if offerte_vis else offerte
+        prezzo_min_ris = min(o.prezzo for o in _metriche_src)
+        negozio_min = next(o.negozio for o in _metriche_src if o.prezzo == prezzo_min_ris)
+        fonti_uniche = len({o.fonte for o in _metriche_src})
+        _n_vis, _n_tot = len(offerte_vis), len(offerte)
+        _label_count = f"{_n_vis}/{_n_tot}" if _n_vis < _n_tot else str(_n_vis)
+
+        st.subheader(f"{_label_count} offerte trovate per “{st.session_state.get('ultima_query', '')}”")
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Risultati", str(len(offerte)))
+        m1.metric("Risultati", _label_count)
         m2.metric("Prezzo piu basso", _format_price(prezzo_min_ris))
         m3.metric("Negozio migliore", negozio_min)
         m4.metric("Fonti attive", str(fonti_uniche))
 
-        records = _offerte_to_records(offerte)
-        st.dataframe(
-            records,
-            width="stretch",
-            hide_index=True,
-            height=min(90 + len(records) * 38, 620),
-            column_config={
-                "#": st.column_config.NumberColumn("#", width="small", format="%d"),
-                "Prodotto": st.column_config.TextColumn("Prodotto", width="large"),
-                "Prezzo €": st.column_config.NumberColumn("Prezzo", width="small", format="€ %.2f"),
-                "Spedizione": st.column_config.TextColumn("Spedizione", width="medium"),
-                "Negozio": st.column_config.TextColumn("Negozio", width="medium"),
-                "Fonte": st.column_config.TextColumn("Fonte", width="small"),
-                "Specs": st.column_config.TextColumn("Specs", width="large"),
-                "Link": st.column_config.LinkColumn("Link", display_text="Apri →", width="small"),
-            },
-        )
+        if not offerte_vis:
+            st.info("ℹ️ Nessun risultato con i filtri correnti. Modifica o rimuovi i filtri.")
+        else:
+            records = _offerte_to_records(offerte_vis)
+            st.dataframe(
+                records,
+                width="stretch",
+                hide_index=True,
+                height=min(90 + len(records) * 38, 620),
+                column_config={
+                    "#": st.column_config.NumberColumn("#", width="small", format="%d"),
+                    "Prodotto": st.column_config.TextColumn("Prodotto", width="large"),
+                    "Prezzo €": st.column_config.NumberColumn("Prezzo", width="small", format="€ %.2f"),
+                    "Spedizione": st.column_config.TextColumn("Spedizione", width="medium"),
+                    "Negozio": st.column_config.TextColumn("Negozio", width="medium"),
+                    "Fonte": st.column_config.TextColumn("Fonte", width="small"),
+                    "Specs": st.column_config.TextColumn("Specs", width="large"),
+                    "Link": st.column_config.LinkColumn("Link", display_text="Apri →", width="small"),
+                },
+            )
 
-        risultati_con_alternativa = [offerta for offerta in offerte if str(offerta.alternativa or "").strip()]
-        if risultati_con_alternativa:
-            st.markdown("**Alternative smart rilevate**")
-            for offerta in risultati_con_alternativa:
-                st.warning(f"{offerta.nome}: {offerta.alternativa}")
+            # ── Comparatore fianco a fianco ─────────────────────────────────
+            _link_labels = {
+                o.link: f"{o.nome[:60]}{'...' if len(o.nome) > 60 else ''} — {_format_price(o.prezzo)}"
+                for o in offerte_vis
+            }
+            _selezione_links = st.multiselect(
+                "🔁 Confronto prodotti — seleziona 2–4 per confrontarli fianco a fianco",
+                options=list(_link_labels.keys()),
+                format_func=lambda lk: _link_labels.get(lk, lk),
+                key="comparatore_selezione",
+                max_selections=4,
+                placeholder="Seleziona 2, 3 o 4 prodotti...",
+            )
+            _offerte_confronto = [o for o in offerte_vis if o.link in _selezione_links]
+            if len(_offerte_confronto) >= 2:
+                st.markdown("**Confronto fianco a fianco**")
+                _ccols = st.columns(len(_offerte_confronto))
+                for _ccol, _co in zip(_ccols, _offerte_confronto):
+                    _ccol.markdown(f"**{_co.nome[:80]}**")
+                    _ccol.metric("Prezzo", _format_price(_co.prezzo))
+                    _ccol.markdown(f"🏪 {_co.negozio} · {_co.fonte}")
+                    _ccol.markdown(f"📦 Spedizione: {_co.spedizione}")
+                    _ccol.markdown(f"[Apri {_ARROW}]({_co.link})")
+                    if _co.specs:
+                        _ccol.markdown("---")
+                        for _sk, _sv in _co.specs.items():
+                            if _sv not in (None, "", [], {}):
+                                _ccol.markdown(f"**{str(_sk).replace('_', ' ').capitalize()}**: {_sv}")
 
-        _render_specs_grid(offerte)
+            # ── Storico prezzi Amazon (CamelCamelCamel) ────────────────────
+            import re as _re
+            _amazon_asin_pairs: list = []
+            for _ao in offerte_vis:
+                if "amazon.it" in _ao.link.lower():
+                    _m = _re.search(r"/dp/([A-Z0-9]{10})", _ao.link)
+                    if _m:
+                        _amazon_asin_pairs.append((_ao, _m.group(1)))
+            if _amazon_asin_pairs:
+                with st.expander("📈 Storico prezzi Amazon (CamelCamelCamel)", expanded=False):
+                    for _cao, _asin in _amazon_asin_pairs[:5]:
+                        st.markdown(f"**{_cao.nome[:80]}** — {_format_price(_cao.prezzo)}")
+                        _chart_url = (
+                            f"https://charts.camelcamelcamel.com/it/{_asin}/amazon.png"
+                            f"?force=1&zero=0&w=800&h=200&desired=false&legend=1&ilt=1&tp=all&fo=0&lang=it"
+                        )
+                        st.image(_chart_url, use_container_width=True)
+                        st.caption(
+                            f"[Apri storico completo su CamelCamelCamel →](https://camelcamelcamel.com/product/{_asin})"
+                        )
+                        st.divider()
 
-        csv_bytes = _offerte_to_csv_bytes(offerte)
+            risultati_con_alternativa = [o for o in offerte_vis if str(o.alternativa or "").strip()]
+            if risultati_con_alternativa:
+                st.markdown("**Alternative smart rilevate**")
+                for offerta in risultati_con_alternativa:
+                    st.warning(f"{offerta.nome}: {offerta.alternativa}")
+
+            _render_specs_grid(offerte_vis)
+
+        _offerte_export = offerte_vis if offerte_vis else offerte
+        csv_bytes = _offerte_to_csv_bytes(_offerte_export)
         nome_file = f"offerte_{st.session_state.get('ultima_query', 'ricerca')[:30].replace(' ', '_')}.csv"
         st.download_button(
             label="Esporta CSV",
             data=csv_bytes,
             file_name=nome_file,
             mime="text/csv",
-            help=f"Scarica {len(offerte)} risultati in formato CSV compatibile Excel.",
+            help=f"Scarica {len(_offerte_export)} risultati in formato CSV compatibile Excel.",
         )
 
         st.write("")
