@@ -724,8 +724,8 @@ def scrape_trovaprezzi(
             print("    ⚠️  Trovaprezzi.it: nessun risultato parsabile (selettori cambiati o blocco).")
         else:
             print(f"    ✅ Trovate {len(risultati)} card su Trovaprezzi.it")
-            # Paginazione: prova pagine 2 e 3 (stop se vuota o errore)
-            for _pn in range(2, 4):
+            # Paginazione: prova pagina 2 (stop se vuota o errore)
+            for _pn in range(2, 3):
                 _sep = "&" if "?" in base_url else "?"
                 _page_url = f"{base_url}{_sep}paginaCorrente={_pn}"
                 try:
@@ -1531,6 +1531,7 @@ def scrape_mediaworld(
     prezzo_min: float,
     budget_max: Optional[float],
     query_tokens: list[str],
+    condizione: str = "tutti",
 ) -> list[Offerta]:
     """
     Scraper per MediaWorld.it.
@@ -1546,6 +1547,14 @@ def scrape_mediaworld(
     url = f"https://www.mediaworld.it/it/search.html?q={quote_plus(query)}&sortby=rating&pageNumber=0"
     print(f"\n🔍 Cerco su MediaWorld.it: \"{query}\"")
     risultati: list[Offerta] = []
+    _KW_USATO_MW = {"ricondizionato", "usato", "second life", "refurbished", "open box", "seconda vita"}
+
+    def _cond_filter(r: list[Offerta]) -> list[Offerta]:
+        if condizione == "tutti":
+            return r
+        if condizione == "usato":
+            return [o for o in r if any(k in o.nome.lower() for k in _KW_USATO_MW)]
+        return [o for o in r if not any(k in o.nome.lower() for k in _KW_USATO_MW)]
 
     try:
         headers = get_headers()
@@ -1622,7 +1631,7 @@ def scrape_mediaworld(
             if risultati:
                 print(f"    ✅ MediaWorld.it (article): {len(risultati)} risultati validi")
                 _random_delay()
-                return risultati
+                return _cond_filter(risultati)
 
         # ── Strategia 2: JSON-LD con @type="ItemList" ──
         for script in soup.find_all("script", {"type": "application/ld+json"}):
@@ -1672,7 +1681,7 @@ def scrape_mediaworld(
                 if risultati:
                     print(f"    ✅ MediaWorld.it (JSON-LD ItemList): {len(risultati)} risultati validi")
                     _random_delay()
-                    return risultati
+                    return _cond_filter(risultati)
 
             except Exception:
                 continue
@@ -1784,7 +1793,7 @@ def scrape_mediaworld(
         print(f"    ❌ MediaWorld.it: errore inatteso → {exc}")
 
     _random_delay()
-    return risultati
+    return _cond_filter(risultati)
 
 
 # ===========================================================================
@@ -2423,7 +2432,7 @@ def cerca_offerte(
         if "unieuro" in fonti_norm:
             future_to_label[executor.submit(scrape_unieuro, query, prezzo_min, budget_max, query_tokens)] = "Unieuro.it"
         if "mediaworld" in fonti_norm:
-            future_to_label[executor.submit(scrape_mediaworld, query, prezzo_min, budget_max, query_tokens)] = "MediaWorld.it"
+            future_to_label[executor.submit(scrape_mediaworld, query, prezzo_min, budget_max, query_tokens, condizione)] = "MediaWorld.it"
 
         for future in as_completed(future_to_label):
             label = future_to_label[future]

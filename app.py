@@ -803,6 +803,17 @@ def _sanitize_presearch_payload(payload: dict[str, Any], transcript: str) -> dic
             if key and val:
                 filtri_ai[key] = val
 
+    # Estrai condizione dal JSON AI oppure dal transcript come fallback
+    raw_cond = str(payload.get("condizione", "") or "").strip().lower()
+    if raw_cond in {"nuovo", "usato"}:
+        condizione = raw_cond
+    elif re.search(r"\busato\b|ricondizionato|second.hand", transcript):
+        condizione = "usato"
+    elif re.search(r"\bnuovo\b|nuovissimo|sigillato|mai aperto", transcript):
+        condizione = "nuovo"
+    else:
+        condizione = "tutti"
+
     return {
         "pronto": bool(payload.get("pronto", False)),
         "domanda": str(payload.get("domanda", "") or "").strip(),
@@ -811,6 +822,7 @@ def _sanitize_presearch_payload(payload: dict[str, Any], transcript: str) -> dic
         "budget_max": budget_max,
         "categoria": categoria,
         "filtri_ai": filtri_ai,
+        "condizione": condizione,
     }
 
 
@@ -856,6 +868,9 @@ def _apply_presearch_result(result: dict[str, Any]) -> None:
     st.session_state["budget_max"] = sanitized["budget_max"]
     st.session_state["categoria"] = sanitized["categoria"]
     st.session_state["filtri_ai"] = sanitized.get("filtri_ai", {})
+    # Applica condizione estratta dalla chat (non sovrascrive se già impostata manualmente)
+    if sanitized.get("condizione") and sanitized["condizione"] != "tutti":
+        st.session_state["condizione"] = sanitized["condizione"]
     st.session_state["presearch_ready"] = True
     st.session_state["_query_prefilled"] = sanitized["query"]
     st.session_state["ultima_query"] = sanitized["query"]
@@ -868,6 +883,7 @@ def _apply_presearch_result(result: dict[str, Any]) -> None:
         "query_finale": sanitized["query"],
         "prezzo_min": sanitized["prezzo_min"],
         "budget_max": sanitized["budget_max"],
+        "condizione": sanitized.get("condizione", "tutti"),
     }
 
 
@@ -909,6 +925,18 @@ def _presearch_fallback() -> dict[str, Any]:
     tb_match = re.search(r"(\d)\s*tb", transcript)
     if tb_match:
         filtri_ai["storage"] = f"{tb_match.group(1)}tb"
+    display_match = re.search(r"(\d{2})\s*(?:pollici|inch|\")", transcript)
+    if display_match:
+        filtri_ai["display"] = f"{display_match.group(1)}\""
+    proc_match = re.search(r"\b(i[357]|i9|ryzen\s*[357]|m[123]|snapdragon|celeron|pentium)\b", transcript)
+    if proc_match:
+        filtri_ai["processore"] = proc_match.group(1)
+    # Estrai condizione
+    condizione_match = "tutti"
+    if re.search(r"\busato\b|ricondizionato|second.hand", transcript):
+        condizione_match = "usato"
+    elif re.search(r"\bnuovo\b|nuovissimo|sigillato|mai aperto", transcript):
+        condizione_match = "nuovo"
 
     if turni < 1 and not has_budget:
         return {"pronto": False, "domanda": "Qual e il tuo budget ideale o il range di prezzo?"}
@@ -945,6 +973,7 @@ def _presearch_fallback() -> dict[str, Any]:
         "budget_max": budget_max,
         "categoria": _infer_categoria_from_query(query),
         "filtri_ai": filtri_ai,
+        "condizione": condizione_match,
     }
 
 
@@ -990,7 +1019,7 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
             "Rispondi SOLO in JSON valido:\n"
             "- Se servono ancora info: {\"domanda\": \"...\", \"pronto\": false}\n"
             "- Se hai abbastanza info: {\"pronto\": true, \"query\": \"...\", \"prezzo_min\": N, \"budget_max\": N, "
-            "\"categoria\": \"tech|abbigliamento|altro\", \"filtri_ai\": {}}\n"
+            "\"categoria\": \"tech|abbigliamento|altro\", \"condizione\": \"nuovo|usato|tutti\", \"filtri_ai\": {}}\n"
             f"Cronologia conversazione finora:\n{history_text}\n\nNuovo messaggio utente: {cleaned}"
         )
         user_payload = {
@@ -1076,12 +1105,21 @@ def _call_final_recommendation(
     preferenze_utente: dict[str, Any],
     messages: list[dict[str, str]],
 ) -> str:
+    # Includi la trascrizione chat pre-ricerca nel contesto per personalizzare meglio il consiglio
+    trascrizione = str(preferenze_utente.get("trascrizione", "") or "").strip()
+    contesto_utente = json.dumps({
+        k: v for k, v in preferenze_utente.items() if k != "messaggi"
+    }, ensure_ascii=False)
+    context_block = f"PREFERENZE UTENTE: {contesto_utente}\n"
+    if trascrizione:
+        context_block += f"CONVERSAZIONE PRE-RICERCA (usa per capire tono e priorita dell'utente):\n{trascrizione}\n"
     system_prompt = (
-        "Sei un consulente shopping esperto. Hai questi dati:\n"
-        f"PREFERENZE UTENTE: {json.dumps(preferenze_utente, ensure_ascii=False)}\n"
-        f"PRODOTTI DISPONIBILI (max 10 piu economici):\n{json.dumps(_build_products_payload(offerte), ensure_ascii=False)}\n"
-        "Rispondi con una raccomandazione motivata, cita nome e prezzo del prodotto consigliato, "
-        "confronta almeno 2-3 parametri rilevanti per l'utente. Sii conciso e diretto."
+        "Sei un consulente shopping esperto italiano. Hai questi dati:\n"
+        f"{context_block}"
+        f"PRODOTTI TROVATI (ordinati per prezzo):\n{json.dumps(_build_products_payload(offerte), ensure_ascii=False)}\n"
+        "Rispondi in italiano con una raccomandazione motivata e personalizzata sulle esigenze emerse dalla conversazione. "
+        "Cita nome e prezzo dei prodotti consigliati, confronta almeno 2-3 parametri rilevanti per l'utente. "
+        "Sii diretto e concreto."
     )
     payload = [{"role": "system", "content": system_prompt}] + messages
     completion = cerebras_client.chat.completions.create(
@@ -1685,7 +1723,7 @@ if st.session_state.get("ricerca_effettuata", False):
                             f"https://charts.camelcamelcamel.com/it/{_asin}/amazon.png"
                             f"?force=1&zero=0&w=800&h=200&desired=false&legend=1&ilt=1&tp=all&fo=0&lang=it"
                         )
-                        st.image(_chart_url, use_container_width=True)
+                        st.image(_chart_url, width="stretch")
                         st.caption(
                             f"[Apri storico completo su CamelCamelCamel →](https://camelcamelcamel.com/product/{_asin})"
                         )
