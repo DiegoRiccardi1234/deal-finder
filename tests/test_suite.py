@@ -11,6 +11,7 @@ from offerte_tech import (
     cerca_offerte,
     fetch_specs_ai,
     is_relevant,
+    parse_comparison_query,
     parse_price,
     scrape_euronics,
     scrape_mediaworld,
@@ -217,6 +218,24 @@ def test_cerca_offerte_nuove_fonti_integrate(monkeypatch: pytest.MonkeyPatch) ->
     # Ordine per prezzo crescente
     prezzi = [o.prezzo for o in risultati]
     assert prezzi == sorted(prezzi)
+
+
+def test_parse_comparison_query() -> None:
+    """Verifica che parse_comparison_query rilevi correttamente le query di confronto."""
+    # vs standard
+    assert parse_comparison_query("iphone 15 vs iphone 16") == ["iphone 15", "iphone 16"]
+    # vs con tre elementi
+    parts = parse_comparison_query("iphone 14 vs iphone 15 vs iphone 16")
+    assert len(parts) == 3
+    assert "iphone 14" in parts
+    # confronta ... e ...
+    parts2 = parse_comparison_query("confronta samsung galaxy s24 e iphone 16")
+    assert len(parts2) == 2
+    # versus
+    assert parse_comparison_query("notebook dell versus notebook asus") == ["notebook dell", "notebook asus"]
+    # query normale → lista vuota
+    assert parse_comparison_query("notebook 14 pollici") == []
+    assert parse_comparison_query("iphone 16") == []
 
 
 def _open_home(page: Page, base_url: str) -> None:

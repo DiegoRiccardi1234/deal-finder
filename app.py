@@ -25,7 +25,7 @@ except Exception:
 CEREBRAS_MODEL = "gpt-oss-120b"
 
 try:
-    from offerte_tech import Offerta, cerca_offerte, parse_search_intent
+    from offerte_tech import Offerta, cerca_offerte, parse_search_intent, parse_comparison_query
 except ImportError as _e:
     st.error(
         f"❌ Impossibile importare offerte_tech.py: {_e}\n\n"
@@ -609,7 +609,7 @@ def _init_state() -> None:
         "condizione": "tutti",
         "ultimo_prezzo_min": 0,
         "ultimo_prezzo_max": 800,
-        "ultimo_top_n": 10,
+        "ultimo_top_n": 20,
         "fonti_selezionate": ["Amazon", "eBay", "Vinted", "Trovaprezzi", "Euronics", "Unieuro", "MediaWorld"],
         "price_min_input": 0,
         "budget_max_input": 800,
@@ -641,6 +641,10 @@ def _init_state() -> None:
         "filtro_condizione_tabella": "tutti",
         # Comparatore
         "comparatore_selezione": [],
+        # Confronto multiplo (vs mode)
+        "comparison_mode": False,
+        "comparison_queries": [],
+        "comparison_results": {},
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -883,8 +887,8 @@ def _sanitize_presearch_payload(payload: dict[str, Any], transcript: str) -> dic
 def _sync_from_numbers() -> None:
     min_value = int(st.session_state.get("price_min_input", 0) or 0)
     max_value = int(st.session_state.get("budget_max_input", 800) or 800)
-    min_value = max(0, min(min_value, 3000))
-    max_value = max(min_value, min(max_value, 3000))
+    min_value = max(0, min(min_value, 5000))
+    max_value = max(min_value, min(max_value, 5000))
     st.session_state["price_min_input"] = min_value
     st.session_state["budget_max_input"] = max_value
     st.session_state["price_range_slider"] = (min_value, max_value)
@@ -914,6 +918,9 @@ def _reset_presearch_chat() -> None:
     st.session_state["budget_max"] = int(st.session_state.get("budget_max_input", 800))
     st.session_state["_query_prefilled"] = ""
     st.session_state["condizione"] = "tutti"
+    st.session_state["comparison_mode"] = False
+    st.session_state["comparison_queries"] = []
+    st.session_state["comparison_results"] = {}
 
 
 def _apply_presearch_result(result: dict[str, Any]) -> None:
@@ -928,6 +935,7 @@ def _apply_presearch_result(result: dict[str, Any]) -> None:
     if sanitized.get("condizione") and sanitized["condizione"] != "tutti":
         st.session_state["condizione"] = sanitized["condizione"]
     st.session_state["presearch_ready"] = True
+    st.session_state["ultimo_top_n"] = 20
     st.session_state["_query_prefilled"] = sanitized["query"]
     st.session_state["ultima_query"] = sanitized["query"]
     st.session_state["price_min_input"] = sanitized["prezzo_min"]
@@ -966,12 +974,32 @@ def _presearch_fallback() -> dict[str, Any]:
     has_budget = m_range or m_min or m_max
     has_product = any(kw in transcript for kw in (
         "notebook", "laptop", "smartphone", "telefono", "iphone", "monitor",
-        "tablet", "cuffie", "scarpe", "felpa", "giacca", "mouse", "tastiera",
+        "tablet", "cuffie", "auricolari", "scarpe", "felpa", "giacca", "mouse", "tastiera",
         "ssd", "pc", "console", "smartwatch",
         "frigorifero", "lavatrice", "forno", "tv", "televisore",
         "libro", "romanzo", "sneaker", "bici", "divano",
         "crema", "profumo",
     ))
+
+    # Stima prezzo_min ragionevole in base al tipo prodotto rilevato nel transcript
+    if prezzo_min == 0 and has_product:
+        _is_used = bool(re.search(r"\busato\b|ricondizionato|second.hand", transcript))
+        if "iphone" in transcript or "macbook" in transcript:
+            prezzo_min = 300 if _is_used else 700
+        elif any(kw in transcript for kw in ("notebook", "laptop", "pc")):
+            prezzo_min = 200 if _is_used else 250
+        elif any(kw in transcript for kw in ("smartphone", "telefono", "samsung", "xiaomi")):
+            prezzo_min = 80 if _is_used else 150
+        elif any(kw in transcript for kw in ("tablet",)):
+            prezzo_min = 80 if _is_used else 100
+        elif any(kw in transcript for kw in ("tv", "televisore")):
+            prezzo_min = 150 if _is_used else 200
+        elif any(kw in transcript for kw in ("console",)):
+            prezzo_min = 100 if _is_used else 200
+        elif any(kw in transcript for kw in ("smartwatch",)):
+            prezzo_min = 40 if _is_used else 80
+        elif any(kw in transcript for kw in ("cuffie", "auricolari")):
+            prezzo_min = 15 if _is_used else 30
 
     # Estrai filtri_ai (specs) dal transcript
     filtri_ai: dict[str, str] = {}
@@ -1052,6 +1080,34 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
     preferenze["trascrizione"] = transcript
     st.session_state["preferenze_utente"] = preferenze
 
+    # ── Detect confronto (es. "iphone 15 vs iphone 16") ──────────────────
+    comp_queries = parse_comparison_query(cleaned)
+    if comp_queries:
+        _cq_label = " · ".join(comp_queries)
+        st.session_state["comparison_mode"] = True
+        st.session_state["comparison_queries"] = comp_queries
+        st.session_state["presearch_ready"] = True
+        st.session_state["ultimo_top_n"] = 20
+        st.session_state["query_ottimizzata"] = comp_queries[0]
+        _comp_display = " vs ".join(comp_queries)
+        st.session_state["_query_prefilled"] = _comp_display
+        st.session_state["ultima_query"] = _comp_display
+        st.session_state["prezzo_min"] = 0
+        st.session_state["budget_max"] = 2000
+        st.session_state["price_min_input"] = 0
+        st.session_state["budget_max_input"] = 2000
+        st.session_state["price_range_slider"] = (0, 2000)
+        st.session_state["presearch_messages"].append({
+            "role": "assistant",
+            "content": (
+                f"Ho rilevato una ricerca confronto fra **{len(comp_queries)} prodotti**!\n\n"
+                f"Cercherò in parallelo: **{_cq_label}**\n\n"
+                "Puoi modificare il range prezzo, poi clicca **Cerca offerte** "
+                "per vedere i risultati fianco a fianco."
+            ),
+        })
+        return
+
     history_text = "\n".join(
         [
             f"{'Assistente' if message.get('role') == 'assistant' else 'Utente'}: {message.get('content', '')}"
@@ -1077,6 +1133,11 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
             "- NON chiedere cose gia' dette\n"
             "- Dopo max 3 domande vai sempre a pronto:true\n"
             "REGOLE QUERY:\n"
+            "- Il campo 'prezzo_min' DEVE essere REALISTICO in base a tipo prodotto + condizione:\n"
+            "  iPhone nuovo→700, usato→300 | MacBook/laptop gaming nuovo→900, usato→400\n"
+            "  Smartphone Android top→400, fascia media→150 | Laptop base/office→250\n"
+            "  Smartwatch→80 | Tablet→100 | TV 50+\"→300 | Cuffie→30 | Console→200\n"
+            "  NON usare MAI 0 come prezzo_min — stima sempre un minimo ragionevole\n"
             "- Il campo 'query' deve essere BREVE: tipo/dimensione/marca, MAX 5 parole, NO frasi, NO budget\n"
             "- Se l'utente menziona due modelli alternativi (es 'iphone 16 o 17', 'notebook 14 o 15'): usa la query PIU' GENERICA\n"
             "  che li cattura entrambi. Non fissare il numero di modello specifico — lascia che lo scraper trovi entrambi.\n"
@@ -1353,6 +1414,81 @@ def _render_specs_grid(offerte: list[Offerta]) -> None:
             )
 
 
+def _run_comparison_search(
+    *,
+    queries: list[str],
+    prezzo_min: int,
+    budget_max: int,
+    top_n: int,
+    condizione: str,
+    fonti_backend: list[str],
+    cerebras_client: Optional[object],
+) -> None:
+    """Esegue ricerche separate per ciascuna query di confronto e salva i risultati."""
+    st.session_state["ricerca_effettuata"] = True
+    st.session_state["comparison_results"] = {}
+    st.session_state["risultati"] = []
+    st.session_state["log_ricerca"] = ""
+    st.session_state["final_chat_messages"] = []
+    st.session_state["auto_recommend_tried"] = False
+
+    try:
+        ebay_app_id = str(st.secrets.get("EBAY_APP_ID", "") or "")
+    except Exception:
+        ebay_app_id = ""
+    try:
+        ebay_cert_id = str(st.secrets.get("EBAY_CERT_ID", "") or "")
+    except Exception:
+        ebay_cert_id = ""
+    ebay_app_id = ebay_app_id or os.environ.get("EBAY_APP_ID", "")
+    ebay_cert_id = ebay_cert_id or os.environ.get("EBAY_CERT_ID", "")
+
+    categoria = str(st.session_state.get("categoria", "altro") or "altro")
+    all_results: dict[str, list[Offerta]] = {}
+    combined_log = ""
+
+    with st.status(f"⏳ Confronto in corso per {len(queries)} prodotti...", expanded=True) as cmp_status:
+        for q in queries:
+            st.write(f"🔍 Cercando **{q}**...")
+            log_buf = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(log_buf):
+                    res = cerca_offerte(
+                        query=q,
+                        budget_max=float(budget_max),
+                        prezzo_min=float(prezzo_min),
+                        top_n=top_n,
+                        condizione=condizione,
+                        fonti=fonti_backend,
+                        categoria=categoria,
+                        cerebras_client=cerebras_client,
+                        app_id=ebay_app_id,
+                        cert_id=ebay_cert_id,
+                    )
+                all_results[q] = res
+                combined_log += f"\n--- {q} ---\n" + log_buf.getvalue()
+                st.write(f"  ✅ **{q}** → {len(res)} risultati")
+            except Exception as exc:
+                all_results[q] = []
+                st.write(f"  ❌ **{q}** → errore: {exc}")
+
+        total = sum(len(v) for v in all_results.values())
+        cmp_status.update(
+            label=f"✅ Confronto completato — {total} offerte totali",
+            state="complete",
+            expanded=False,
+        )
+
+    st.session_state["comparison_results"] = all_results
+    st.session_state["log_ricerca"] = combined_log
+    # Popola anche risultati flat (utile per export CSV e raccomandazione AI)
+    flat = []
+    for results_list in all_results.values():
+        flat.extend(results_list)
+    flat.sort(key=lambda o: o.prezzo)
+    st.session_state["risultati"] = flat
+
+
 def _run_search(
     *,
     query: str,
@@ -1576,12 +1712,12 @@ if not _presearch_done:
         if query_input:
             _pc = st.columns(2, gap="medium")
             with _pc[0]:
-                st.number_input("Prezzo minimo (€)", min_value=0, max_value=3000, step=10,
+                st.number_input("Prezzo minimo (€)", min_value=0, max_value=5000, step=10,
                                 key="price_min_input", on_change=_sync_from_numbers)
             with _pc[1]:
-                st.number_input("Budget massimo (€)", min_value=0, max_value=3000, step=10,
+                st.number_input("Budget massimo (€)", min_value=0, max_value=5000, step=10,
                                 key="budget_max_input", on_change=_sync_from_numbers)
-            st.slider("Range prezzo", min_value=0, max_value=3000, step=10,
+            st.slider("Range prezzo", min_value=0, max_value=5000, step=10,
                       key="price_range_slider", on_change=_sync_from_slider)
             _lc = st.columns([1, 1.15], gap="medium")
             with _lc[0]:
@@ -1628,13 +1764,13 @@ else:
 
     price_cols = st.columns(2, gap="medium")
     with price_cols[0]:
-        st.number_input("Prezzo minimo (€)", min_value=0, max_value=3000, step=10,
+        st.number_input("Prezzo minimo (€)", min_value=0, max_value=5000, step=10,
                         key="price_min_input", on_change=_sync_from_numbers)
     with price_cols[1]:
-        st.number_input("Budget massimo (€)", min_value=0, max_value=3000, step=10,
+        st.number_input("Budget massimo (€)", min_value=0, max_value=5000, step=10,
                         key="budget_max_input", on_change=_sync_from_numbers)
 
-    st.slider("Range prezzo sincronizzato", min_value=0, max_value=3000, step=10,
+    st.slider("Range prezzo sincronizzato", min_value=0, max_value=5000, step=10,
               key="price_range_slider", on_change=_sync_from_slider)
 
     lower_cols = st.columns([1, 1.15], gap="medium")
@@ -1676,24 +1812,13 @@ st.markdown("</div>", unsafe_allow_html=True)
 
 search_triggered = avvia_ricerca or bool(st.session_state.pop("run_ai_query", False))
 if search_triggered:
-    # Preferisce sempre la query ottimizzata dalla chat; se assente, sanitizza l'input manuale
-    _opt_q = st.session_state.get("query_ottimizzata", "").strip()
-    if _opt_q:
-        current_query = _opt_q
-    else:
-        _raw_words = query_input.split()
-        if len(_raw_words) > 7:
-            current_query = " ".join(_raw_words[:7])
-            st.info(f"💡 Query semplificata per la ricerca: **{current_query}**")
-        else:
-            current_query = query_input
     current_min = int(st.session_state.get("price_min_input", 0) or 0)
     current_max = int(st.session_state.get("budget_max_input", 800) or 800)
-    if not current_query:
-        st.warning("⚠️ Inserisci o genera una query prima di procedere.")
-    else:
-        _run_search(
-            query=current_query,
+
+    # Modalità confronto (es. "iphone 15 vs iphone 16")
+    if st.session_state.get("comparison_mode") and st.session_state.get("comparison_queries"):
+        _run_comparison_search(
+            queries=st.session_state["comparison_queries"],
             prezzo_min=current_min,
             budget_max=current_max,
             top_n=int(top_n_input),
@@ -1701,10 +1826,70 @@ if search_triggered:
             fonti_backend=fonti_backend,
             cerebras_client=cerebras_client,
         )
+    else:
+        # Ricerca normale
+        _opt_q = st.session_state.get("query_ottimizzata", "").strip()
+        if _opt_q:
+            current_query = _opt_q
+        else:
+            _raw_words = query_input.split()
+            if len(_raw_words) > 7:
+                current_query = " ".join(_raw_words[:7])
+                st.info(f"💡 Query semplificata per la ricerca: **{current_query}**")
+            else:
+                current_query = query_input
+        if not current_query:
+            st.warning("⚠️ Inserisci o genera una query prima di procedere.")
+        else:
+            _run_search(
+                query=current_query,
+                prezzo_min=current_min,
+                budget_max=current_max,
+                top_n=int(top_n_input),
+                condizione=condizione,
+                fonti_backend=fonti_backend,
+                cerebras_client=cerebras_client,
+            )
 
 if st.session_state.get("ricerca_effettuata", False):
     st.write("")
     st.markdown("<div class='section-card'>", unsafe_allow_html=True)
+
+    # ── Modalità confronto: risultati side-by-side (sopra la tabella normale) ──
+    if st.session_state.get("comparison_mode") and st.session_state.get("comparison_results"):
+        _cmp_results: dict[str, list[Offerta]] = st.session_state["comparison_results"]
+        _cmp_queries = list(_cmp_results.keys())
+        n_cols = len(_cmp_queries)
+
+        st.markdown(
+            "<div class='section-heading'><h3>⚔️ Confronto Prodotti</h3>"
+            "<p>Risultati affiancati per ogni prodotto ricercato.</p></div>",
+            unsafe_allow_html=True,
+        )
+
+        cmp_cols = st.columns(n_cols, gap="medium")
+        for col_idx, q in enumerate(_cmp_queries):
+            res_list = _cmp_results.get(q, [])
+            with cmp_cols[col_idx]:
+                st.markdown(f"#### 🔹 {q.title()}")
+                if not res_list:
+                    st.warning("Nessun risultato trovato.")
+                else:
+                    best = res_list[0]
+                    st.metric("Miglior prezzo", _format_price(best.prezzo), delta=None)
+                    st.caption(f"{best.nome} · {best.negozio}")
+                    for offerta in res_list[:10]:
+                        _price_str = _format_price(offerta.prezzo)
+                        st.markdown(
+                            f"**{_price_str}** — [{offerta.nome[:45]}]({offerta.link})  \n"
+                            f"<small>{offerta.negozio} · {offerta.fonte}</small>",
+                            unsafe_allow_html=True,
+                        )
+                    if len(res_list) > 10:
+                        st.caption(f"... e altri {len(res_list) - 10} risultati.")
+
+        st.divider()
+
     st.markdown(
         "<div class='section-heading'><h3>Risultati</h3><p>Tabella ordinabile, log catturato dalla ricerca e dettaglio specs quando disponibile.</p></div>",
         unsafe_allow_html=True,
@@ -1719,7 +1904,7 @@ if st.session_state.get("ricerca_effettuata", False):
         st.warning(
             "⚠️ Nessuna offerta trovata. Prova ad allargare il range prezzo, semplificare la query o ripetere il tentativo tra qualche secondo."
         )
-    else:
+    if offerte:
         # ── Filtri post-ricerca ─────────────────────────────────────────────
         with st.expander("🔍 Filtra risultati", expanded=False):
             _fc1, _fc2, _fc3 = st.columns([2, 1, 1])

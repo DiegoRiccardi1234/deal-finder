@@ -423,6 +423,32 @@ def tokenize_query(query: str) -> list[str]:
     return [t for t in tokens if t not in _STOPWORDS and len(t) > 1]
 
 
+def parse_comparison_query(query: str) -> list[str]:
+    """
+    Rileva query di confronto e restituisce la lista di sotto-query individuali.
+
+    Supporta: "iphone 15 vs iphone 16 vs iphone 17", "confronta X e Y", "X versus Y".
+    Restituisce lista vuota se non è una query di confronto.
+
+    Es: "iphone 15 vs iphone 16" → ["iphone 15", "iphone 16"]
+    """
+    stripped = query.strip()
+    lower = stripped.lower()
+
+    # Split su "vs", "versus", "contro"
+    parts = re.split(r'\s+vs\.?\s+|\s+versus\s+|\s+contro\s+', lower)
+
+    # Gestisci "confronta X e Y e Z" / "compare X e Y"
+    if len(parts) == 1:
+        m = re.match(r'^(?:confronta|compare|compara)\s+(.+)', lower)
+        if m:
+            body = m.group(1)
+            parts = re.split(r'\s+e\s+|\s+ed\s+|\s*,\s*', body)
+
+    parts = [p.strip() for p in parts if p.strip() and len(p.strip()) >= 2]
+    return parts if len(parts) >= 2 else []
+
+
 def is_relevant(nome: str, query_tokens: list[str], strict_specs: bool = True) -> bool:
     """
     Filtro di rilevanza: i token della query devono essere presenti nel nome
@@ -1206,12 +1232,13 @@ def scrape_euronics(
 
     NOTE SELETTORI (validi a marzo 2026):
         URL ricerca: /search?q=
-        Container:   .product-tile  con filtro .tile-category ∈ categorie laptop
+        Container:   div.new-product-tile.flex-fill  (grid view — evita i duplicati della list-view)
         Nome:        span.tile-name
-        Prezzo:      span.price-formatted.mr-2  (prezzo principale, non accessori)
-        Link:        a.text-dark[href] o primo a[href] (relativo → prepend euronics.it)
+        Prezzo:      span.value  (visibile nella pagina, es. "€ 879,00")
+        Link:        a[href] (relativo → prepend euronics.it)
 
-    Euronics vende tech, TV, audio, gaming, elettrodomestici: accetta tutti i prodotti.
+    FIX STORICO: Accept-Encoding: identity è obbligatorio — senza, il server restituisce
+    una pagina compressa/minimizzata di 38KB (bot-detection) invece dei 686KB reali.
     """
     url = f"https://www.euronics.it/search?q={quote_plus(query)}"
     print(f"\n🔍 Cerco su Euronics.it: \"{query}\"")
@@ -1220,6 +1247,7 @@ def scrape_euronics(
     try:
         headers = get_headers()
         headers["Referer"] = "https://www.euronics.it/"
+        headers["Accept-Encoding"] = "identity"  # FIX: senza questo, risposta bot-detection 38KB
 
         resp = fetch_with_retry(url, headers)
         if resp.status_code in (401, 403, 429, 503):
@@ -1234,8 +1262,13 @@ def scrape_euronics(
             print("    ⚠️  Euronics.it: blocco anti-bot o pagina non trovata, salto la fonte.")
             return risultati
 
-        # ── Strategia 1: CSS selettori .product-tile ──
-        cards = soup.select(".product-tile")
+        # ── Strategia 1: CSS selettori div.new-product-tile.flex-fill ──
+        # Seleziona solo le card griglia (evita duplicati della list-view: .new-product-tile-list)
+        cards = soup.select("div.new-product-tile.flex-fill")
+        if not cards:
+            # Fallback: qualsiasi tile con classe new-product-tile (esclude esplicitamente list)
+            cards = [c for c in soup.select("[class*='new-product-tile']")
+                     if "new-product-tile-list" not in " ".join(c.get("class") or [])]
 
         if cards:
             print(f"    ✅ Trovate {len(cards)} card su Euronics.it")
@@ -1263,10 +1296,10 @@ def scrape_euronics(
                     if not nome:
                         continue
 
-                    # Prezzo: span.price-formatted.mr-2 (classe specifica del prezzo principale)
+                    # Prezzo: span.value (il prezzo visibile sulla pagina, es. "€ 879,00")
                     prezzo_tag = (
-                        card.select_one("span.price-formatted.mr-2") or
-                        card.select_one("span.price-formatted") or
+                        card.select_one("span.value") or
+                        card.select_one("[class*='price'] span.value") or
                         card.select_one("[class*='price-formatted']") or
                         card.select_one("[class*='price']")
                     )
@@ -1276,8 +1309,8 @@ def scrape_euronics(
                     if not math.isfinite(prezzo):
                         continue
 
-                    # Link: prima a[href] nel card
-                    link_tag = card.select_one("a.text-dark[href]") or card.select_one("a[href]")
+                    # Link: primo a[href] nel card (href relativo → prepend base url)
+                    link_tag = card.select_one("a.link-pdp[href]") or card.select_one("a[href]")
                     if not link_tag:
                         continue
                     href = str(link_tag.get("href", "") or "")
@@ -1629,21 +1662,42 @@ def scrape_mediaworld(
                     seen_links.add(link)
 
                     # Prezzo: prova prima il selettore specifico, poi fallback regex
+                    # MediaWorld mostra sia il prezzo pieno sia le rate mensili (/mese).
+                    # Occorre ignorare le rate e prendere il prezzo intero.
+                    _RATE_KW = ("/mese", "mese", "/rata", "rata", "/mo", "mensil")
+
+                    def _strip_rate_context(raw: str, context: str) -> bool:
+                        """Restituisce True se 'raw' appare vicino a keyword da rata."""
+                        idx = context.find(raw)
+                        if idx == -1:
+                            return False
+                        window = context[idx: idx + len(raw) + 20].lower()
+                        return any(k in window for k in _RATE_KW)
+
                     price_tag = art.select_one('[data-test="product-price"]') or art.select_one('[data-test*="price"]')
+                    price_text_full = art.get_text(" ", strip=True).replace("\u00a0", " ")
                     if price_tag:
-                        prezzo = parse_price(price_tag.get_text(" ", strip=True))
-                    else:
-                        # fallback regex sul testo grezzo
-                        price_text = art.get_text(" ", strip=True).replace("\u00a0", " ")
-                        raw_prices = re.findall(r"\d{2,4},\d{2}", price_text)
+                        pt_text = price_tag.get_text(" ", strip=True).replace("\u00a0", " ")
+                        # Se il testo del tag contiene indicatori di rata, ignora il tag
+                        # e leggi il prezzo dal testo completo dell'article
+                        if any(k in pt_text.lower() for k in _RATE_KW):
+                            price_tag = None  # forza fallback
+                        else:
+                            prezzo = parse_price(pt_text)
+                    if not price_tag:
+                        # fallback regex sul testo grezzo, escludendo le rate
+                        raw_prices = re.findall(r"\d{1,4},\d{2}", price_text_full)
                         prices: list[float] = []
                         for rp in raw_prices:
+                            if _strip_rate_context(rp, price_text_full):
+                                continue
                             p = parse_price(rp)
-                            if math.isfinite(p) and p > 20:  # filtra ",00" spurio
+                            if math.isfinite(p) and p > 20:
                                 prices.append(p)
                         if not prices:
                             continue
-                        prezzo = min(prices)
+                        # Prende il massimo: le rate sono sempre il valore minore
+                        prezzo = max(prices)
                     if not math.isfinite(prezzo):
                         continue
 
