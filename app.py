@@ -1318,14 +1318,18 @@ def _offerte_to_records(offerte: list[Offerta]) -> list[dict[str, Any]]:
 
 
 def _render_specs_grid(offerte: list[Offerta]) -> None:
-    offerte_con_specs = [offerta for offerta in offerte if offerta.specs]
+    """Renders una griglia delle specifiche per le offerte con dati specs."""
+    # Filtra solo le offerte che hanno specifiche valide
+    offerte_con_specs = [o for o in offerte if o.specs and isinstance(o.specs, dict) and any(v not in (None, "", [], {}) for v in o.specs.values())]
     if not offerte_con_specs:
+        st.info("📋 Nessun dato di specifiche rilevato per i prodotti.")
         return
 
     st.markdown(
         "<div class='section-heading'><h3>Specs rilevate</h3><p>Arricchimento automatico basato sulla categoria della ricerca.</p></div>",
         unsafe_allow_html=True,
     )
+    # Mostra al massimo 6 prodotti nella grid
     preview = offerte_con_specs[:6]
     for start in range(0, len(preview), 2):
         cols = st.columns(2, gap="medium")
@@ -1334,7 +1338,7 @@ def _render_specs_grid(offerte: list[Offerta]) -> None:
             for key, value in offerta.specs.items():
                 if value in (None, "", [], {}):
                     continue
-                label = str(key).replace("_", " ").capitalize()
+                label = str(key).replace("_", " ").title()
                 specs_rows.append(f"<p><strong>{label}</strong>: {value}</p>")
             specs_html = "".join(specs_rows) or "<p>Specifiche non disponibili.</p>"
             cols[idx].markdown(

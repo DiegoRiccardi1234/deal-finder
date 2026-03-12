@@ -1,12 +1,19 @@
-# Python
+# Python cache
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+# Virtual environment (ignored by IDE)
 .venv/
 
 # Streamlit secrets
 .streamlit/secrets.toml
 
-#skills
+# GitHub skills directory
 .github/skills
+
+# Skills lock file
+skills-lock.json
+.agents/
+.claude/
