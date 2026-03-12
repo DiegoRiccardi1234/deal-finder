@@ -610,7 +610,7 @@ def _init_state() -> None:
         "ultimo_prezzo_min": 0,
         "ultimo_prezzo_max": 800,
         "ultimo_top_n": 20,
-        "fonti_selezionate": ["Amazon", "eBay", "Vinted", "Trovaprezzi", "Euronics", "Unieuro", "MediaWorld"],
+        "fonti_selezionate": ["Amazon", "eBay", "Vinted", "Euronics", "Unieuro", "MediaWorld"],
         "price_min_input": 0,
         "budget_max_input": 800,
         "price_range_slider": (0, 800),
@@ -693,7 +693,7 @@ class _MockChatCompletions:
         system_prompt = next((message.get("content", "") for message in messages if message.get("role") == "system"), "")
         user_payload = messages[-1].get("content", "") if messages else ""
 
-        if "Sei un assistente shopping esperto italiano" in system_prompt:
+        if "Sei un consulente acquisti esperto italiano" in system_prompt or "Sei un assistente shopping esperto italiano" in system_prompt:
             try:
                 payload = json.loads(user_payload)
             except Exception:
@@ -1083,25 +1083,48 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
     # ── Detect confronto (es. "iphone 15 vs iphone 16") ──────────────────
     comp_queries = parse_comparison_query(cleaned)
     if comp_queries:
+        # Estrai budget dal messaggio utente
+        _budget_m = re.search(r'(?:massimo|max|budget|sotto|meno di|fino a)\s*(\d+)\s*(?:euro|€)?', cleaned.lower())
+        _budget = min(int(_budget_m.group(1)), 5000) if _budget_m else 2000
+        # Estrai condizione
+        _cond = "tutti"
+        if re.search(r'\bnuov[oai]\b', cleaned.lower()):
+            _cond = "nuovo"
+        elif re.search(r'\busat[oai]\b', cleaned.lower()):
+            _cond = "usato"
+        # Stima prezzo_min in base al tipo prodotto
+        _pmin = 0
+        _combined_lower = ' '.join(comp_queries).lower()
+        if 'iphone' in _combined_lower:
+            _pmin = 500 if _cond != 'usato' else 200
+        elif any(kw in _combined_lower for kw in ('macbook', 'laptop', 'notebook')):
+            _pmin = 400 if _cond != 'usato' else 200
+        elif any(kw in _combined_lower for kw in ('samsung', 'galaxy', 'pixel')):
+            _pmin = 300 if _cond != 'usato' else 150
+        elif any(kw in _combined_lower for kw in ('ipad', 'tablet')):
+            _pmin = 200 if _cond != 'usato' else 100
+
         _cq_label = " · ".join(comp_queries)
+        _comp_display = " vs ".join(comp_queries)
         st.session_state["comparison_mode"] = True
         st.session_state["comparison_queries"] = comp_queries
         st.session_state["presearch_ready"] = True
         st.session_state["ultimo_top_n"] = 20
         st.session_state["query_ottimizzata"] = comp_queries[0]
-        _comp_display = " vs ".join(comp_queries)
         st.session_state["_query_prefilled"] = _comp_display
         st.session_state["ultima_query"] = _comp_display
-        st.session_state["prezzo_min"] = 0
-        st.session_state["budget_max"] = 2000
-        st.session_state["price_min_input"] = 0
-        st.session_state["budget_max_input"] = 2000
-        st.session_state["price_range_slider"] = (0, 2000)
+        st.session_state["prezzo_min"] = _pmin
+        st.session_state["budget_max"] = _budget
+        st.session_state["price_min_input"] = _pmin
+        st.session_state["budget_max_input"] = _budget
+        st.session_state["price_range_slider"] = (_pmin, _budget)
+        st.session_state["condizione"] = _cond
         st.session_state["presearch_messages"].append({
             "role": "assistant",
             "content": (
                 f"Ho rilevato una ricerca confronto fra **{len(comp_queries)} prodotti**!\n\n"
                 f"Cercherò in parallelo: **{_cq_label}**\n\n"
+                f"Range prezzo: {_pmin}€ – {_budget}€ · Condizione: {_cond}\n\n"
                 "Puoi modificare il range prezzo, poi clicca **Cerca offerte** "
                 "per vedere i risultati fianco a fianco."
             ),
@@ -1285,7 +1308,7 @@ def _build_mock_results(query: str, categoria: str, prezzo_min: int, budget_max:
             prezzo=749.0,
             negozio="Mock Galaxy Shop",
             link="https://example.com/galaxy-s25",
-            fonte="trovaprezzi",
+            fonte="amazon.it",
             spedizione="Gratuita ✅",
             specs={"display": "6.2\" AMOLED", "processore": "Snapdragon", "ram": "12 GB", "storage": "256 GB"},
         ),
@@ -1645,7 +1668,6 @@ chips = [
     "Amazon",
     "eBay",
     "Vinted",
-    "Trovaprezzi",
     "Euronics",
     "Unieuro",
     "MediaWorld",
@@ -1664,12 +1686,11 @@ _presearch_done = st.session_state.get("presearch_ready", False)
 query_input: str = ""
 top_n_input: int = int(st.session_state.get("ultimo_top_n", 10))
 condizione: str = st.session_state.get("condizione", "tutti")
-_fonti_def = ["Amazon", "eBay", "Vinted", "Trovaprezzi", "Euronics", "Unieuro", "MediaWorld"]
+_fonti_def = ["Amazon", "eBay", "Vinted", "Euronics", "Unieuro", "MediaWorld"]
 fonti_selezionate: list[str] = list(st.session_state.get("fonti_selezionate", _fonti_def))
 _fonti_map = {
     "Amazon": "amazon", "eBay": "ebay", "Vinted": "vinted",
-    "Trovaprezzi": "trovaprezzi", "Euronics": "euronics",
-    "Unieuro": "unieuro", "MediaWorld": "mediaworld",
+    "Euronics": "euronics", "Unieuro": "unieuro", "MediaWorld": "mediaworld",
 }
 fonti_backend: list[str] = [_fonti_map[f] for f in fonti_selezionate if f in _fonti_map]
 avvia_ricerca: bool = False
@@ -1744,7 +1765,13 @@ else:
     _cond_p = st.session_state.get("condizione", "tutti")
     _filtri_p = st.session_state.get("filtri_ai", {})
     _filtri_str = " · ".join(f"{k}: {v}" for k, v in _filtri_p.items()) if _filtri_p else ""
-    _parts = [f"**{_q_opt}**", f"{_bmin_p}€–{_bmax_p}€", _cond_p]
+    # In comparison mode, mostra tutte le query
+    if st.session_state.get("comparison_mode"):
+        _cmp_qs = st.session_state.get("comparison_queries", [])
+        _q_label = " vs ".join(_cmp_qs) if _cmp_qs else _q_opt
+    else:
+        _q_label = _q_opt
+    _parts = [f"**{_q_label}**", f"{_bmin_p}€–{_bmax_p}€", _cond_p]
     if _filtri_str:
         _parts.append(_filtri_str)
 

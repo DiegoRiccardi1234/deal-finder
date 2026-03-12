@@ -55,13 +55,13 @@ try:
 except Exception:
     _FALLBACK_UAS = [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) "
-        "Gecko/20100101 Firefox/124.0",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 "
-        "(KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+        "(KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:136.0) "
+        "Gecko/20100101 Firefox/136.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7) AppleWebKit/605.1.15 "
+        "(KHTML, like Gecko) Version/18.3 Safari/605.1.15",
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "(KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
     ]
     def _random_ua() -> str:
         return random.choice(_FALLBACK_UAS)
@@ -427,25 +427,78 @@ def parse_comparison_query(query: str) -> list[str]:
     """
     Rileva query di confronto e restituisce la lista di sotto-query individuali.
 
-    Supporta: "iphone 15 vs iphone 16 vs iphone 17", "confronta X e Y", "X versus Y".
+    Supporta:
+    - "iphone 15 vs iphone 16 vs iphone 17"  (vs/versus/contro)
+    - "confronta X e Y e Z" / "compare X e Y"
+    - "iphone 16 o 17 fammi un confronto"    (confronto + X o Y nel testo)
+    - "fammi un confronto tra iphone 16 e 17"
+
     Restituisce lista vuota se non è una query di confronto.
 
     Es: "iphone 15 vs iphone 16" → ["iphone 15", "iphone 16"]
+        "iphone 16 o 17 fammi un confronto" → ["iphone 16", "iphone 17"]
     """
     stripped = query.strip()
     lower = stripped.lower()
 
-    # Split su "vs", "versus", "contro"
+    _STOPWORDS_IT = {
+        'un', 'una', 'il', 'la', 'lo', 'i', 'le', 'gli', 'e', 'o',
+        'di', 'da', 'in', 'a', 'su', 'per', 'con', 'tra', 'fra',
+        'del', 'della', 'dei', 'delle', 'agli', 'allo', 'alle',
+        'come', 'se', 'ma', 'che', 'chi', 'cui', 'ne', 'ci', 'non',
+        'mi', 'ti', 'si', 'vi', 'li', 'me', 'te', 'loro',
+    }
+
+    # ── Pattern 1: esplicito "vs", "versus", "contro" ─────────────────────
     parts = re.split(r'\s+vs\.?\s+|\s+versus\s+|\s+contro\s+', lower)
 
-    # Gestisci "confronta X e Y e Z" / "compare X e Y"
+    # ── Pattern 2: "confronta/compare X e Y" all'inizio ──────────────────
     if len(parts) == 1:
         m = re.match(r'^(?:confronta|compare|compara)\s+(.+)', lower)
         if m:
             body = m.group(1)
+            # rimuovi "tra" iniziale: "confronta tra X e Y" → "X e Y"
+            body = re.sub(r'^tra\s+|^fra\s+', '', body)
             parts = re.split(r'\s+e\s+|\s+ed\s+|\s*,\s*', body)
 
-    parts = [p.strip() for p in parts if p.strip() and len(p.strip()) >= 2]
+    # ── Pattern 3: "confronto"/"confrontare" in testo + "PROD V1 o V2" ───
+    # Gestisce: "iphone 16 o 17 fammi un confronto"
+    #            "fammi un confronto tra iphone 16 e 17"
+    if len(parts) == 1 and re.search(r'\bconfronto\b|\bconfrontare\b|\bconfrontami\b', lower):
+        # Cerca "NOME VERSIONE1 o VERSIONE2" oppure "NOME VERSIONE1 e VERSIONE2"
+        # dove almeno una versione contiene cifre (numero di modello)
+        m = re.search(r'\b(\w+)\s+(\w+)\s+(?:o|e)\s+(\w+)\b', lower)
+        if m:
+            base, v1, v2 = m.group(1), m.group(2), m.group(3)
+            # Salta se la base è una stopword
+            if base not in _STOPWORDS_IT and v1 not in _STOPWORDS_IT and v2 not in _STOPWORDS_IT:
+                # Almeno una versione deve contenere cifre (modello) o essere un prodotto reale
+                if re.search(r'\d', v1 + v2):
+                    parts = [f"{base} {v1}", f"{base} {v2}"]
+
+        # Fallback: "confronto tra X e Y" con "tra/fra" nel testo
+        if len(parts) == 1:
+            m2 = re.search(r'\btra\s+(.+?)\s+(?:e|ed)\s+(.+?)(?:\s*[,?!]|$)', lower)
+            if m2:
+                p1 = m2.group(1).strip()
+                p2 = m2.group(2).strip().split()[0]  # prendi solo la prima parola se è un numero
+                if p1 and p2 and p1 not in _STOPWORDS_IT:
+                    # Controlla se p2 potrebbe essere continuazione di p1 (es. "iphone 16 tra ... e 17")
+                    parts = [p1, f"{p1.split()[0]} {p2}" if re.search(r'^\d+', p2) else p2]
+
+    # Pulizia: tronca al primo segno di punteggiatura e rimuovi frasi discorsive
+    def _clean_cmp(p: str) -> str:
+        p = re.split(r'[,?!;]', p)[0].strip()
+        p = re.sub(
+            r'\s+(?:quale|qual|come|cosa|dove|quando|fammi|dimmi|voglio|vorrei|'
+            r'consiglio|conviene|scegliere|prendere|meglio|migliore|secondo|dei|due).*$',
+            '', p, flags=re.IGNORECASE,
+        )
+        words = p.split()
+        return ' '.join(words[:6]) if len(words) > 6 else p.strip()
+
+    parts = [_clean_cmp(p.strip()) for p in parts]
+    parts = [p for p in parts if p and len(p) >= 2]
     return parts if len(parts) >= 2 else []
 
 
@@ -815,8 +868,15 @@ def scrape_amazon(
     risultati: list[Offerta] = []
 
     try:
+        # UA desktop Chrome coerente con i sec-ch-ua headers (evita incongruenze
+        # con UA mobile che _random_ua() può generare, causando blocchi Amazon).
+        _AMAZON_UA = (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
+        )
         base_headers = get_headers()
-        base_headers["sec-ch-ua"] = '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"'
+        base_headers["User-Agent"] = _AMAZON_UA
+        base_headers["sec-ch-ua"] = '"Chromium";v="133", "Not(A:Brand";v="24", "Google Chrome";v="133"'
         base_headers["sec-ch-ua-mobile"] = "?0"
         base_headers["sec-ch-ua-platform"] = '"Windows"'
         base_headers["sec-fetch-dest"] = "document"
@@ -855,6 +915,20 @@ def scrape_amazon(
         # Parsing card prodotto
         # ---------------------------------------------------------------
         cards = soup.select('div[data-component-type="s-search-result"]')
+
+        if not cards:
+            # Retry una volta dopo breve pausa (anti-bot soft block)
+            time.sleep(random.uniform(2.0, 3.5))
+            try:
+                resp2 = fetch_with_retry(url, search_headers, session=session)
+                resp2.raise_for_status()
+                soup2 = BeautifulSoup(resp2.text, "html.parser")
+                cards = soup2.select('div[data-component-type="s-search-result"]')
+                if cards:
+                    soup = soup2
+                    print("    ♻️  Retry Amazon riuscito — trovate card al secondo tentativo")
+            except Exception:
+                pass
 
         if not cards:
             print("    ⚠️  Nessun prodotto trovato su Amazon — selettore cambiato o CAPTCHA.")
@@ -956,7 +1030,7 @@ def scrape_amazon(
             try:
                 st.warning(
                     "⚠️ **Amazon.it non disponibile da cloud** — Amazon blocca le richieste dai server cloud "
-                    "(Heroku, Railway, ecc.). Le altre fonti (eBay, Trovaprezzi, Euronics, MediaWorld) "
+                    "(Heroku, Railway, ecc.). Le altre fonti (eBay, Euronics, MediaWorld) "
                     "funzionano normalmente. Per includere Amazon, esegui l'app in locale con: "
                     "`streamlit run app.py`"
                 )
@@ -1418,7 +1492,8 @@ def scrape_unieuro(
         _api_url = f"https://www.unieuro.it/umbraco/api/search/GetSearchResult?q={quote_plus(query)}&start=0&count=24&sortBy=relevance"
         try:
             _api_resp = fetch_with_retry(_api_url, {**headers, "Accept": "application/json"})
-            if _api_resp.status_code == 200:
+            _ct = _api_resp.headers.get("content-type", "")
+            if _api_resp.status_code == 200 and "json" in _ct:
                 _api_data = _api_resp.json()
                 _items = _api_data.get("products", _api_data.get("items", _api_data.get("results", [])))
                 for _item in _items:
@@ -2481,7 +2556,7 @@ def cerca_offerte(
     progress_callback: Optional[Callable[[str, int], None]] = None,
 ) -> list[Offerta]:
     """
-    Cerca offerte tech su trovaprezzi.it e amazon.it.
+    Cerca offerte tech su amazon.it, ebay.it, euronics.it e mediaworld.it.
 
     Args:
         query:        Testo della ricerca (es. "notebook 14 pollici 16gb RAM").
@@ -2492,7 +2567,7 @@ def cerca_offerte(
         export_csv:   Se True, salva i risultati in un file CSV.
         csv_filename: Nome del file CSV di output (default: "offerte.csv").
         condizione:   Filtro stato prodotto Amazon: "tutti", "nuovo", "usato".
-        fonti:        Fonti da usare (amazon, ebay, vinted, trovaprezzi). None = tutte.
+        fonti:        Fonti da usare (amazon, ebay, vinted, euronics, unieuro, mediaworld). None = tutte.
         categoria:    Categoria normalizzata (tech, abbigliamento, altro).
         cerebras_client: Client Cerebras opzionale per l'arricchimento specs.
         app_id:       App ID eBay Browse API.
@@ -2522,7 +2597,7 @@ def cerca_offerte(
 
     fonti_norm = {f.strip().lower() for f in (fonti or []) if str(f).strip()}
     if not fonti_norm:
-        fonti_norm = {"amazon", "ebay", "vinted", "trovaprezzi"}
+        fonti_norm = {"amazon", "ebay", "vinted", "euronics", "unieuro", "mediaworld"}
     print(f"  🌐 Fonti attive: {', '.join(sorted(fonti_norm))}")
 
     # Lancio scraper in parallelo sulle fonti selezionate
@@ -2537,9 +2612,7 @@ def cerca_offerte(
             # Solo print: il thread non può accedere a st.session_state (ScriptRunContext warning)
             print(f"[scrape] {label}: {elapsed:.2f}s")
         return res
-    with ThreadPoolExecutor(max_workers=7) as executor:
-        if "trovaprezzi" in fonti_norm:
-            future_to_label[executor.submit(_timed_call, scrape_trovaprezzi, "Trovaprezzi.it", query, prezzo_min, budget_max, query_tokens)] = "Trovaprezzi.it"
+    with ThreadPoolExecutor(max_workers=6) as executor:
         if "amazon" in fonti_norm:
             future_to_label[executor.submit(_timed_call, scrape_amazon, "Amazon.it", query, prezzo_min, budget_max, query_tokens, condizione)] = "Amazon.it"
         if "ebay" in fonti_norm:
@@ -2635,7 +2708,7 @@ def cerca_offerte(
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="offerte_tech",
-        description="🛒 Cerca offerte tech su trovaprezzi.it e amazon.it",
+        description="🛒 Cerca offerte tech su amazon.it, ebay.it ed altri",
         formatter_class=argparse.RawTextHelpFormatter,
         epilog=(
             "Esempi:\n"
@@ -2673,7 +2746,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--fonti",
         nargs="+",
-        choices=["amazon", "ebay", "vinted", "trovaprezzi", "euronics", "unieuro", "mediaworld"],
+        choices=["amazon", "ebay", "vinted", "euronics", "unieuro", "mediaworld"],
         default=None,
         metavar="FONTE",
         help="Seleziona le fonti da consultare (default: tutte)",

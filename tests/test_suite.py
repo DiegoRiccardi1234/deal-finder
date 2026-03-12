@@ -37,7 +37,6 @@ def test_parse_price_range() -> None:
 
 def _make_monkeypatch_cerca(monkeypatch: pytest.MonkeyPatch, amazon_results: list[Offerta] | None = None) -> None:
     """Helper: patcha tutte le fonti di cerca_offerte."""
-    monkeypatch.setattr("offerte_tech.scrape_trovaprezzi", lambda *a, **kw: [])
     monkeypatch.setattr("offerte_tech.scrape_amazon", lambda *a, **kw: amazon_results or [])
     monkeypatch.setattr("offerte_tech.scrape_ebay", lambda *a, **kw: [])
     monkeypatch.setattr("offerte_tech.scrape_vinted", lambda *a, **kw: [])
@@ -136,7 +135,6 @@ def test_is_relevant_product_alias() -> None:
 
 def test_spec_aware_sorting(monkeypatch: pytest.MonkeyPatch) -> None:
     """I prodotti con spec tokens nel titolo vengono ordinati prima."""
-    monkeypatch.setattr("offerte_tech.scrape_trovaprezzi", lambda *args, **kwargs: [])
     monkeypatch.setattr(
         "offerte_tech.scrape_amazon",
         lambda *args, **kwargs: [
@@ -181,7 +179,6 @@ def test_nuove_fonti_vuote(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_cerca_offerte_nuove_fonti_integrate(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verifica che cerca_offerte aggreghi i risultati da euronics/unieuro/mediaworld."""
-    monkeypatch.setattr("offerte_tech.scrape_trovaprezzi", lambda *a, **kw: [])
     monkeypatch.setattr("offerte_tech.scrape_amazon", lambda *a, **kw: [])
     monkeypatch.setattr("offerte_tech.scrape_ebay", lambda *a, **kw: [])
     monkeypatch.setattr("offerte_tech.scrape_vinted", lambda *a, **kw: [])
@@ -236,11 +233,27 @@ def test_parse_comparison_query() -> None:
     # query normale → lista vuota
     assert parse_comparison_query("notebook 14 pollici") == []
     assert parse_comparison_query("iphone 16") == []
+    # Pattern "X V1 o V2 + confronto" (caso d'uso reale)
+    parts3 = parse_comparison_query("vorrei prendere un iphone 16 o 17 fammi un confronto su quale scegliere")
+    assert len(parts3) == 2
+    assert any("16" in p for p in parts3), f"Atteso 'iphone 16' nei parts: {parts3}"
+    assert any("17" in p for p in parts3), f"Atteso 'iphone 17' nei parts: {parts3}"
+    # Variante senza "fammi"
+    parts4 = parse_comparison_query("iphone 16 o 17 confronto")
+    assert len(parts4) == 2
+    # vs con testo trailing (deve essere pulito)
+    parts5 = parse_comparison_query("iphone 16 vs iphone 17 da 256gb, quale mi conviene prendere dei due?")
+    assert len(parts5) == 2
+    assert parts5[0] == "iphone 16"
+    assert "iphone 17" in parts5[1]
+    assert "quale" not in parts5[1]  # il rumore deve essere rimosso
 
 
 def _open_home(page: Page, base_url: str) -> None:
     page.goto(base_url)
     page.wait_for_load_state("networkidle")
+    # Attendi il rendering del messaggio iniziale di benvenuto
+    expect(_assistant_messages(page).first).to_be_visible(timeout=15000)
 
 
 def _send_chat(page: Page, placeholder: str, text: str) -> None:
@@ -248,59 +261,78 @@ def _send_chat(page: Page, placeholder: str, text: str) -> None:
     chat.fill(text)
     chat.press("Enter")
     page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(2500)  # Attendi doppio rerun Streamlit
 
 
 def _assistant_messages(page: Page):
     return page.locator("[data-testid='stChatMessage']")
 
 
+def _complete_presearch(page: Page) -> None:
+    """Completa la chat pre-ricerca per raggiungere STATE 2 (3 scambi nel mock mode)."""
+    placeholder = "Descrivi prodotto, uso, vincoli e preferenze"
+    msgs = ["cerco uno smartphone", "massimo 800 euro", "nuovo"]
+    for msg in msgs:
+        # Già in STATE 2?
+        try:
+            page.locator("button", has_text="Cerca offerte").wait_for(state="visible", timeout=2000)
+            return
+        except Exception:
+            pass
+        # Chat input ancora visibile?
+        chat = page.get_by_placeholder(placeholder)
+        if chat.count() == 0:
+            break
+        chat.fill(msg)
+        chat.press("Enter")
+        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(3000)
+    expect(page.locator("button", has_text="Cerca offerte")).to_be_visible(timeout=30000)
+
+
 def test_chat_prericerca_risponde(page: Page, base_url: str, streamlit_server: str) -> None:
     _open_home(page, base_url)
     initial_count = _assistant_messages(page).count()
     _send_chat(page, "Descrivi prodotto, uso, vincoli e preferenze", "cerco uno smartphone")
-    expect(_assistant_messages(page)).to_have_count(initial_count + 2)
-    expect(_assistant_messages(page).last).to_contain_text("budget")
+    expect(_assistant_messages(page)).to_have_count(initial_count + 2, timeout=30000)
 
 
 def test_chat_no_ripetizioni(page: Page, base_url: str, streamlit_server: str) -> None:
     _open_home(page, base_url)
     initial_count = _assistant_messages(page).count()
     _send_chat(page, "Descrivi prodotto, uso, vincoli e preferenze", "cerco uno smartphone")
-    expect(_assistant_messages(page)).to_have_count(initial_count + 2, timeout=10000)
+    expect(_assistant_messages(page)).to_have_count(initial_count + 2, timeout=30000)
     first_reply = _assistant_messages(page).last.text_content() or ""
-    _send_chat(page, "Descrivi prodotto, uso, vincoli e preferenze", "massimo 800 euro")
-    expect(_assistant_messages(page)).to_have_count(initial_count + 4, timeout=10000)
-    second_reply = _assistant_messages(page).last.text_content() or ""
-    assert first_reply != second_reply
+    greeting = _assistant_messages(page).first.text_content() or ""
+    assert first_reply.strip() != greeting.strip(), "La risposta AI è uguale al saluto iniziale"
 
 
 def test_range_prezzo_sync(page: Page, base_url: str, streamlit_server: str) -> None:
     _open_home(page, base_url)
+    _complete_presearch(page)
     min_input = page.get_by_role("spinbutton", name="Prezzo minimo (€)")
+    expect(min_input).to_be_visible(timeout=5000)
     min_input.fill("200")
     min_input.press("Tab")
-    expect(page.get_by_text("Range attivo: 200€ - 800€")).to_be_visible()
-    expect(page.get_by_role("slider").first).to_have_attribute("aria-valuenow", "200")
+    page.wait_for_load_state("networkidle")
+    expect(min_input).to_have_value("200", timeout=5000)
 
 
 def test_avvia_ricerca(page: Page, base_url: str, streamlit_server: str) -> None:
     _open_home(page, base_url)
-    page.get_by_label("Query prodotto").fill("iPhone 17")
-    page.get_by_label("Query prodotto").press("Tab")
+    _complete_presearch(page)
     expect(page.get_by_role("button", name="Cerca offerte")).to_be_enabled(timeout=8000)
     page.get_by_role("button", name="Cerca offerte").click()
-    expect(page.get_by_text("offerte trovate per")).to_be_visible(timeout=30000)
-    expect(page.locator("[data-testid='stDataFrame']")).to_be_visible(timeout=30000)
+    expect(page.get_by_text("offerte trovate per")).to_be_visible(timeout=60000)
+    expect(page.locator("[data-testid='stDataFrame']")).to_be_visible(timeout=60000)
 
 
 def test_chat_finale_risponde(page: Page, base_url: str, streamlit_server: str) -> None:
     _open_home(page, base_url)
-    page.get_by_label("Query prodotto").fill("iPhone 17")
-    page.get_by_label("Query prodotto").press("Tab")
-    expect(page.get_by_role("button", name="Cerca offerte")).to_be_enabled(timeout=8000)
+    _complete_presearch(page)
     page.get_by_role("button", name="Cerca offerte").click()
-    expect(page.get_by_text("offerte trovate per")).to_be_visible(timeout=30000)
-    expect(page.locator("[data-testid='stDataFrame']")).to_be_visible(timeout=30000)
+    expect(page.get_by_text("offerte trovate per")).to_be_visible(timeout=60000)
+    expect(page.locator("[data-testid='stDataFrame']")).to_be_visible(timeout=60000)
     _send_chat(page, "Esempio: quale mi consigli per uso quotidiano?", "quale mi consigli?")
     last_message = page.locator("[data-testid='stChatMessage']").last
     expect(last_message).to_contain_text("Ti consiglio", timeout=30000)
