@@ -40,6 +40,24 @@ except Exception:
     Cerebras = None
 
 try:
+    from cerebras_model import get_best_model as _get_best_model
+except Exception:
+    _get_best_model = None  # type: ignore[assignment]
+
+_CEREBRAS_MODEL_FALLBACK = "llama-3.3-70b"
+
+
+def _cerebras_model(client=None) -> str:
+    """Restituisce il miglior modello Cerebras disponibile (con cache)."""
+    if _get_best_model is not None:
+        try:
+            return _get_best_model(client)
+        except Exception:
+            pass
+    return _CEREBRAS_MODEL_FALLBACK
+
+
+try:
     import streamlit as st
 except Exception:
     st = None
@@ -116,6 +134,16 @@ _ALIASES: dict[str, set[str]] = {
     "cuffie": {"auricolari", "earbuds", "headphones"},
     "auricolari": {"cuffie", "earbuds", "headphones"},
     "monitor": {"display", "schermo"},
+    # Ottica / occhiali
+    "occhiali": {"sunglasses", "glasses", "eyewear", "eyeglasses", "spectacles"},
+    "sunglasses": {"occhiali", "occhiali da sole", "glasses"},
+    # Scarpe / abbigliamento
+    "scarpe": {"shoes", "sneakers", "calzature", "footwear"},
+    "scarpa": {"shoe", "sneaker", "calzatura"},
+    "abbigliamento": {"clothing", "clothes", "vestiti", "indumenti"},
+    "felpa": {"hoodie", "sweatshirt", "felpe"},
+    "giacca": {"jacket", "coat", "giubbotto"},
+    "pantaloni": {"pants", "trousers", "jeans"},
 }
 
 _SPEC_PATTERN = re.compile(r'^\d+(?:gb|tb)$')
@@ -516,7 +544,7 @@ def fetch_specs_ai(
     )
     try:
         completion = cerebras_client.chat.completions.create(
-            model="gpt-oss-120b",
+            model=_cerebras_model(cerebras_client),
             messages=[{"role": "user", "content": batch_prompt}],
             temperature=0,
         )
@@ -2431,7 +2459,7 @@ def detect_category_and_questions(testo_utente: str) -> dict[str, object]:
             "domande (array di max 2 stringhe), preferenze_chiare (bool)."
         )
         completion = client.chat.completions.create(
-            model="gpt-oss-120b",
+            model=_cerebras_model(client),
             messages=[
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": testo},
@@ -2573,7 +2601,7 @@ def parse_search_intent(risposta_utente: str) -> dict[str, object]:
             "filtri (object con attributi non cercabili direttamente, es colore/storage/taglia)."
         )
         completion = client.chat.completions.create(
-            model="gpt-oss-120b",
+            model=_cerebras_model(client),
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": testo},
@@ -2636,7 +2664,7 @@ def filtra_risultati_con_ai(risultati: list[Offerta], filtri: dict[str, str]) ->
                 "Rispondi SOLO JSON: {\"scores\": [{\"idx\":1,\"score\":7}, ...]}"
             )
             completion = client.chat.completions.create(
-                model="gpt-oss-120b",
+                model=_cerebras_model(client),
                 messages=[
                     {"role": "system", "content": prompt},
                     {
@@ -2933,10 +2961,13 @@ def cerca_offerte(
         if "mediaworld" in fonti_norm:
             future_to_label[executor.submit(_timed_call, scrape_mediaworld, "MediaWorld.it", query, prezzo_min, budget_max, query_tokens, condizione)] = "MediaWorld.it"
 
+        # Cap per-source: evita che una singola fonte (es. eBay con 50 risultati) soffochi le altre
+        _per_source_cap = max(top_n, 20)
         for future in as_completed(future_to_label):
             label = future_to_label[future]
             try:
                 new_results = future.result()
+                new_results = new_results[:_per_source_cap]
                 offerte += new_results
                 if progress_callback:
                     progress_callback(label, len(new_results))

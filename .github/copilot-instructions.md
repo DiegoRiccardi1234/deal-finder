@@ -47,9 +47,9 @@
 - Amazon su ambienti cloud può restituire HTTP 503 per blocco anti-bot: mostra un messaggio informativo Streamlit senza alterare la logica di retry.
 
 ## AI / Cerebras Conventions
-- Modello AI: `gpt-oss-120b` (Cerebras). NON usare il prefisso `openai/` — il nome corretto è sempre `"gpt-oss-120b"`.
-- Costante centrale in app.py: `CEREBRAS_MODEL = "gpt-oss-120b"`.
-- Tutti i `client.chat.completions.create(model=...)` in offerte_tech.py devono usare `"gpt-oss-120b"`.
+- Selezione modello dinamica via `cerebras_model.py` → `get_best_model(client)` interroga `/v1/models` e sceglie il modello con context_window più grande (con cache in-memory). Fallback statico: `llama-3.3-70b`.
+- Costante centrale in app.py: `CEREBRAS_MODEL = "llama-3.3-70b"` (fallback); a runtime si usa `_get_best_model(client)`.
+- In offerte_tech.py tutti i `client.chat.completions.create(model=...)` usano `_cerebras_model(client)` (helper locale che chiama `get_best_model`).
 - `_get_cerebras_client()` deve avere try/except per gestire errori di inizializzazione del client.
 - La chat pre-ricerca (`_run_presearch_step`) raccoglie: tipo prodotto, uso principale, budget, specifiche hardware. Obiettivo: raccogliere abbastanza info per la raccomandazione finale, non solo la query di ricerca.
 - `filtri_ai` (RAM, storage, display…) viene separato dalla query di ricerca per un matching più preciso.

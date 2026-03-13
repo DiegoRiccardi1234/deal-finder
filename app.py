@@ -22,7 +22,12 @@ try:
 except Exception:
     Cerebras = None
 
-CEREBRAS_MODEL = "gpt-oss-120b"
+try:
+    from cerebras_model import get_best_model as _get_best_model
+except Exception:
+    _get_best_model = None  # type: ignore[assignment]
+
+CEREBRAS_MODEL = "llama-3.3-70b"  # fallback statico
 
 try:
     from offerte_tech import Offerta, cerca_offerte, parse_search_intent, parse_comparison_query
@@ -801,8 +806,9 @@ def _cerebras_chat_with_retry(
     last_exc: Optional[BaseException] = None
     for attempt in range(1 + max_retries):
         try:
+            _model = _get_best_model(client) if _get_best_model else CEREBRAS_MODEL
             completion = client.chat.completions.create(  # type: ignore[attr-defined]
-                model=CEREBRAS_MODEL,
+                model=_model,
                 messages=messages,
                 temperature=temperature,
             )
