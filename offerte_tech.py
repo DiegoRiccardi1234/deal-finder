@@ -857,11 +857,10 @@ def scrape_amazon(
         Ogni prodotto è un <div data-component-type="s-search-result">.
         Aggiornare i selettori qui se Amazon cambia il layout.
     """
+    # Nota: il filtro URL `rh=p_n_condition-type` su Amazon.it produce spesso
+    # pagine "Nessun risultato" anche per query valide (es. iPhone recenti).
+    # Manteniamo una ricerca ampia e applichiamo il filtro condizione lato parser.
     url = f"https://www.amazon.it/s?k={quote_plus(query)}"
-    if condizione == "nuovo":
-        url += "&rh=p_n_condition-type%3A1294423031"
-    elif condizione == "usato":
-        url += "&rh=p_n_condition-type%3A1294424031"
 
     print(f"\n🔍 Cerco su Amazon.it: \"{query}\"")
 
@@ -899,42 +898,73 @@ def scrape_amazon(
             search_headers = dict(base_headers)
             search_headers["Referer"] = "https://www.amazon.it/"
             resp = fetch_with_retry(url, search_headers, session=session)
-        resp.raise_for_status()
 
-        soup = BeautifulSoup(resp.text, "html.parser")
+            # Fallback cloud-friendly: se desktop search viene bloccata con 503,
+            # prova endpoint mobile con header dedicati.
+            if resp.status_code == 503:
+                mobile_url = f"https://www.amazon.it/gp/aw/s?k={quote_plus(query)}"
+                mobile_headers = dict(base_headers)
+                mobile_headers["User-Agent"] = (
+                    "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/133.0.0.0 Mobile Safari/537.36"
+                )
+                mobile_headers["sec-ch-ua-mobile"] = "?1"
+                mobile_headers["sec-fetch-site"] = "same-origin"
+                mobile_headers["Referer"] = "https://www.amazon.it/"
+                try:
+                    resp_mobile = fetch_with_retry(mobile_url, mobile_headers, session=session, max_retries=1)
+                    if resp_mobile.status_code == 200:
+                        print("    ♻️  Amazon desktop bloccato (503): fallback mobile riuscito")
+                        resp = resp_mobile
+                except Exception:
+                    pass
 
-        # Controlla CAPTCHA / robot check
-        page_title = (soup.title.string or "") if soup.title else ""
-        body_snippet = soup.get_text(" ", strip=True).lower()[:2000]
-        if any(kw in page_title.lower() for kw in ("sorry", "robot", "captcha", "service unavailable")) or \
-           any(kw in body_snippet for kw in ("enter the characters", "tipo i caratteri", "not a robot", "unusual traffic")):
-            print("    ❌ Amazon.it ha restituito una pagina anti-bot.")
-            return risultati
+            resp.raise_for_status()
 
-        # ---------------------------------------------------------------
-        # Parsing card prodotto
-        # ---------------------------------------------------------------
-        cards = soup.select('div[data-component-type="s-search-result"]')
+            soup = BeautifulSoup(resp.text, "html.parser")
 
-        if not cards:
-            # Retry una volta dopo breve pausa (anti-bot soft block)
-            time.sleep(random.uniform(2.0, 3.5))
-            try:
-                resp2 = fetch_with_retry(url, search_headers, session=session)
-                resp2.raise_for_status()
-                soup2 = BeautifulSoup(resp2.text, "html.parser")
-                cards = soup2.select('div[data-component-type="s-search-result"]')
-                if cards:
-                    soup = soup2
-                    print("    ♻️  Retry Amazon riuscito — trovate card al secondo tentativo")
-            except Exception:
-                pass
+            # Controlla CAPTCHA / robot check
+            page_title = (soup.title.string or "") if soup.title else ""
+            body_snippet = soup.get_text(" ", strip=True).lower()[:2000]
+            if any(kw in page_title.lower() for kw in ("sorry", "robot", "captcha", "service unavailable")) or \
+               any(kw in body_snippet for kw in ("enter the characters", "tipo i caratteri", "not a robot", "unusual traffic")):
+                print("    ❌ Amazon.it ha restituito una pagina anti-bot.")
+                return risultati
+
+            # ---------------------------------------------------------------
+            # Parsing card prodotto
+            # ---------------------------------------------------------------
+            cards = soup.select('div[data-component-type="s-search-result"]')
+            if not cards:
+                # Fallback a selettori più permissivi in caso di layout variato.
+                cards = soup.select('div.s-result-item[data-asin]')
+
+            if not cards:
+                # Retry una volta dopo breve pausa (anti-bot soft block)
+                time.sleep(random.uniform(2.0, 3.5))
+                try:
+                    resp2 = fetch_with_retry(url, search_headers, session=session)
+                    resp2.raise_for_status()
+                    soup2 = BeautifulSoup(resp2.text, "html.parser")
+                    cards = soup2.select('div[data-component-type="s-search-result"]')
+                    if not cards:
+                        cards = soup2.select('div.s-result-item[data-asin]')
+                    if cards:
+                        soup = soup2
+                        print("    ♻️  Retry Amazon riuscito — trovate card al secondo tentativo")
+                except Exception:
+                    pass
 
         if not cards:
             print("    ⚠️  Nessun prodotto trovato su Amazon — selettore cambiato o CAPTCHA.")
             return risultati
 
         print(f"    ✅ Trovate {len(cards)} card grezze su Amazon.it")
+
+        _KW_RICONDIZIONATO = {
+            "ricondizionato", "refurbished", "rigenerato", "reconditioned",
+            "second life", "open box", "ricondizionata", "usato", "used",
+        }
 
         for card in cards:
             try:
@@ -944,6 +974,13 @@ def scrape_amazon(
                     continue
                 nome = nome_tag.get_text(strip=True)
                 if not nome:
+                    continue
+
+                card_text_lower = card.get_text(" ", strip=True).lower()
+                has_used_keyword = any(k in card_text_lower for k in _KW_RICONDIZIONATO)
+                if condizione == "nuovo" and has_used_keyword:
+                    continue
+                if condizione == "usato" and not has_used_keyword:
                     continue
 
                 # ----- Prezzo -----

@@ -19,6 +19,156 @@ from offerte_tech import (
 )
 
 
+class _FakeResponse:
+    def __init__(self, text: str, status_code: int = 200) -> None:
+        self.text = text
+        self.status_code = status_code
+        self.headers: dict[str, str] = {}
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+
+class _FakeSession:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.closed = True
+
+    def get(self, *args, **kwargs):
+        return _FakeResponse("<html></html>")
+
+
+def test_scrape_amazon_retry_second_attempt_with_open_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Il secondo tentativo Amazon deve avvenire con sessione ancora aperta."""
+    desktop_empty = "<html><body><div>no cards</div></body></html>"
+    desktop_with_card = (
+        '<html><body>'
+        '<div data-component-type="s-search-result">'
+        '<h2><span class="a-text-normal">Apple iPhone 16 128GB Nero</span></h2>'
+        '<span class="a-price"><span class="a-offscreen">€ 879,00</span></span>'
+        '<a class="a-link-normal" href="/dp/B0TEST1234/ref=abc"></a>'
+        "</div>"
+        "</body></html>"
+    )
+
+    calls: list[str] = []
+
+    def fake_fetch_with_retry(url: str, headers: dict[str, str], **kwargs):
+        session = kwargs.get("session")
+        if session is not None and getattr(session, "closed", False):
+            raise RuntimeError("session closed")
+        calls.append(url)
+        if len(calls) == 1:
+            return _FakeResponse(desktop_empty, 200)
+        if len(calls) == 2:
+            return _FakeResponse(desktop_with_card, 200)
+        return _FakeResponse(desktop_empty, 200)
+
+    monkeypatch.setattr("offerte_tech.fetch_with_retry", fake_fetch_with_retry)
+    monkeypatch.setattr("offerte_tech.requests.Session", _FakeSession)
+    monkeypatch.setattr("offerte_tech._random_delay", lambda: None)
+    monkeypatch.setattr("offerte_tech.time.sleep", lambda *_: None)
+
+    risultati = __import__("offerte_tech").scrape_amazon(
+        "iphone 16", prezzo_min=300, budget_max=1000, query_tokens=["iphone", "16"], condizione="nuovo"
+    )
+
+    assert len(calls) >= 2
+    assert len(risultati) == 1
+    assert risultati[0].prezzo == 879.0
+    assert "iphone 16" in risultati[0].nome.lower()
+
+
+def test_scrape_amazon_does_not_use_broken_rh_condition_filter(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Per evitare false pagine 'nessun risultato', Amazon non deve usare rh condition in URL."""
+    calls: list[str] = []
+
+    def fake_fetch_with_retry(url: str, headers: dict[str, str], **kwargs):
+        calls.append(url)
+        return _FakeResponse("<html><body></body></html>", 200)
+
+    monkeypatch.setattr("offerte_tech.fetch_with_retry", fake_fetch_with_retry)
+    monkeypatch.setattr("offerte_tech.requests.Session", _FakeSession)
+    monkeypatch.setattr("offerte_tech._random_delay", lambda: None)
+    monkeypatch.setattr("offerte_tech.time.sleep", lambda *_: None)
+
+    __import__("offerte_tech").scrape_amazon(
+        "iphone 16", prezzo_min=300, budget_max=1000, query_tokens=["iphone", "16"], condizione="nuovo"
+    )
+
+    assert calls
+    assert "p_n_condition-type" not in calls[0]
+
+
+def test_scrape_amazon_condizione_nuovo_filtra_ricondizionato(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Con condizione=nuovo lo scraper Amazon esclude i titoli ricondizionati/usati."""
+    html = (
+        '<html><body>'
+        '<div data-component-type="s-search-result">'
+        '<h2><span class="a-text-normal">Apple iPhone 16 128GB Nero</span></h2>'
+        '<span class="a-price"><span class="a-offscreen">€ 879,00</span></span>'
+        '<a class="a-link-normal" href="/dp/B0TEST1234/ref=abc"></a>'
+        "</div>"
+        '<div data-component-type="s-search-result">'
+        '<h2><span class="a-text-normal">Apple iPhone 16 Ricondizionato</span></h2>'
+        '<span class="a-price"><span class="a-offscreen">€ 699,00</span></span>'
+        '<a class="a-link-normal" href="/dp/B0TEST9999/ref=abc"></a>'
+        "</div>"
+        "</body></html>"
+    )
+
+    monkeypatch.setattr("offerte_tech.fetch_with_retry", lambda *a, **k: _FakeResponse(html, 200))
+    monkeypatch.setattr("offerte_tech.requests.Session", _FakeSession)
+    monkeypatch.setattr("offerte_tech._random_delay", lambda: None)
+    monkeypatch.setattr("offerte_tech.time.sleep", lambda *_: None)
+
+    risultati = __import__("offerte_tech").scrape_amazon(
+        "iphone 16", prezzo_min=300, budget_max=1000, query_tokens=["iphone", "16"], condizione="nuovo"
+    )
+
+    assert len(risultati) == 1
+    assert "ricondiz" not in risultati[0].nome.lower()
+
+
+def test_scrape_amazon_fallback_mobile_on_desktop_503(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Se Amazon desktop torna 503, lo scraper tenta automaticamente l'endpoint mobile."""
+    mobile_html = (
+        '<html><body>'
+        '<div data-component-type="s-search-result">'
+        '<h2><span class="a-text-normal">Apple iPhone 16 128GB Nero</span></h2>'
+        '<span class="a-price"><span class="a-offscreen">€ 879,00</span></span>'
+        '<a class="a-link-normal" href="/dp/B0TESTMOBILE/ref=abc"></a>'
+        "</div>"
+        "</body></html>"
+    )
+
+    calls: list[str] = []
+
+    def fake_fetch_with_retry(url: str, headers: dict[str, str], **kwargs):
+        calls.append(url)
+        if "/gp/aw/s?" in url:
+            return _FakeResponse(mobile_html, 200)
+        return _FakeResponse("<html><body>503</body></html>", 503)
+
+    monkeypatch.setattr("offerte_tech.fetch_with_retry", fake_fetch_with_retry)
+    monkeypatch.setattr("offerte_tech.requests.Session", _FakeSession)
+    monkeypatch.setattr("offerte_tech._random_delay", lambda: None)
+    monkeypatch.setattr("offerte_tech.time.sleep", lambda *_: None)
+
+    risultati = __import__("offerte_tech").scrape_amazon(
+        "iphone 16", prezzo_min=300, budget_max=1000, query_tokens=["iphone", "16"], condizione="nuovo"
+    )
+
+    assert any("/gp/aw/s?" in c for c in calls)
+    assert len(risultati) == 1
+
+
 def test_parse_price_europeo() -> None:
     assert parse_price("1.299,00") == 1299.0
 
