@@ -399,8 +399,15 @@ def _parse_target_range(value: str) -> Optional[tuple[float, float]]:
 
 def _passes_hard_spec_filters(offerta: Offerta, filtri: dict[str, str]) -> bool:
     """Applica vincoli tecnici hard per ridurre falsi positivi su notebook/smartphone."""
+    return len(_hard_spec_mismatch_reasons(offerta, filtri)) == 0
+
+
+def _hard_spec_mismatch_reasons(offerta: Offerta, filtri: dict[str, str]) -> list[str]:
+    """Restituisce i motivi di mismatch hard (RAM/storage/display), lista vuota se passa."""
     if not filtri:
-        return True
+        return []
+
+    reasons: list[str] = []
 
     search_text = f"{offerta.nome} " + " ".join(
         str(v) for v in (offerta.specs or {}).values() if v not in (None, "", [], {})
@@ -414,7 +421,8 @@ def _passes_hard_spec_filters(offerta: Offerta, filtri: dict[str, str]) -> bool:
             target = int(m.group(1))
             gb_vals = _extract_ram_gb_values(search_lower)
             if not gb_vals or max(gb_vals) < target:
-                return False
+                found = f"trovato={max(gb_vals)}GB" if gb_vals else "trovato=assente"
+                reasons.append(f"ram<{target}GB ({found})")
 
     storage_target = filtri.get("storage_gb") or filtri.get("storage")
     if storage_target:
@@ -425,7 +433,8 @@ def _passes_hard_spec_filters(offerta: Offerta, filtri: dict[str, str]) -> bool:
             if not gb_vals:
                 gb_vals = _extract_gb_values(search_lower)
             if not gb_vals or max(gb_vals) < target:
-                return False
+                found = f"trovato={max(gb_vals)}GB" if gb_vals else "trovato=assente"
+                reasons.append(f"storage<{target}GB ({found})")
 
     size_target = filtri.get("size_inches") or filtri.get("display")
     if size_target:
@@ -434,9 +443,10 @@ def _passes_hard_spec_filters(offerta: Offerta, filtri: dict[str, str]) -> bool:
             low, high = parsed_range
             inches_vals = _extract_inches_values(search_lower)
             if not inches_vals or not any(low <= v <= high for v in inches_vals):
-                return False
+                found = ",".join(f"{v:.1f}\"" for v in inches_vals) if inches_vals else "assente"
+                reasons.append(f"display fuori range {low:.1f}-{high:.1f}\" (trovato={found})")
 
-    return True
+    return reasons
 
 
 def _extract_clothing_specs(nome_prodotto: str) -> dict[str, object]:
@@ -615,6 +625,16 @@ def parse_comparison_query(query: str) -> list[str]:
                 if p1 and p2 and p1 not in _STOPWORDS_IT:
                     # Controlla se p2 potrebbe essere continuazione di p1 (es. "iphone 16 tra ... e 17")
                     parts = [p1, f"{p1.split()[0]} {p2}" if re.search(r'^\d+', p2) else p2]
+
+    # ── Pattern 4: confronto implicito senza keyword (es. "iphone 16 o 17") ──
+    if len(parts) == 1:
+        m3 = re.search(
+            r'\b(iphone|galaxy|pixel|xiaomi|redmi|poco)\s+(\d{1,2}[a-z]?)\s+(?:o|oppure)\s+(\d{1,2}[a-z]?)\b',
+            lower,
+        )
+        if m3:
+            base, v1, v2 = m3.group(1), m3.group(2), m3.group(3)
+            parts = [f"{base} {v1}", f"{base} {v2}"]
 
     # Pulizia: tronca al primo segno di punteggiatura e rimuovi frasi discorsive
     def _clean_cmp(p: str) -> str:
@@ -2582,8 +2602,25 @@ def filtra_risultati_con_ai(risultati: list[Offerta], filtri: dict[str, str]) ->
     if not risultati or not filtri:
         return risultati
 
-    # Filtro hard su vincoli tecnici (ram/storage/display) per evitare mismatch grossolani.
-    hard_filtered = [o for o in risultati if _passes_hard_spec_filters(o, filtri)]
+    # Filtro hard su vincoli tecnici (ram/storage/display) con log motivazionale.
+    hard_filtered: list[Offerta] = []
+    hard_dropped: list[tuple[Offerta, list[str]]] = []
+    for offerta in risultati:
+        reasons = _hard_spec_mismatch_reasons(offerta, filtri)
+        if reasons:
+            hard_dropped.append((offerta, reasons))
+        else:
+            hard_filtered.append(offerta)
+
+    if hard_dropped:
+        print(f"  🧾 Log filtro AI: scartate {len(hard_dropped)} offerte per hard constraints")
+        for offerta, reasons in hard_dropped[:20]:
+            short_name = offerta.nome[:90]
+            print(f"    - SCARTO hard | {short_name} | motivo: {', '.join(reasons)}")
+        extra = len(hard_dropped) - 20
+        if extra > 0:
+            print(f"    ... altri {extra} scarti hard non mostrati")
+
     if hard_filtered:
         risultati = hard_filtered
 
@@ -2657,6 +2694,15 @@ def filtra_risultati_con_ai(risultati: list[Offerta], filtri: dict[str, str]) ->
             scored.append((score, offerta))
 
     filtered = [(score, o) for score, o in scored if score >= 3]
+    dropped_by_score = [(score, o) for score, o in scored if score < 3]
+    if dropped_by_score:
+        print(f"  🧾 Log filtro AI: scartate {len(dropped_by_score)} offerte per score < 3")
+        for score, offerta in dropped_by_score[:20]:
+            short_name = offerta.nome[:90]
+            print(f"    - SCARTO score={score} | {short_name}")
+        extra = len(dropped_by_score) - 20
+        if extra > 0:
+            print(f"    ... altri {extra} scarti score non mostrati")
     # Se il filtro specs è troppo aggressivo e scarta tutto, ritorna tutti con ranking
     if not filtered and scored:
         scored.sort(key=lambda x: (-x[0], x[1].prezzo))

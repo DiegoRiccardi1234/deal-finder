@@ -645,6 +645,7 @@ def _init_state() -> None:
         "comparison_mode": False,
         "comparison_queries": [],
         "comparison_results": {},
+        "_pending_price_sync": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -652,6 +653,30 @@ def _init_state() -> None:
 
 
 _init_state()
+
+
+def _queue_price_sync(prezzo_min: int, budget_max: int) -> None:
+    """Accoda la sincronizzazione dei widget prezzo al prossimo rerun sicuro."""
+    pmin = max(0, min(int(prezzo_min), 5000))
+    pmax = max(pmin, min(int(budget_max), 5000))
+    st.session_state["prezzo_min"] = pmin
+    st.session_state["budget_max"] = pmax
+    st.session_state["_pending_price_sync"] = {"prezzo_min": pmin, "budget_max": pmax}
+
+
+def _flush_pending_price_sync() -> None:
+    """Applica eventuale sync prezzi prima che i widget vengano instanziati."""
+    pending = st.session_state.get("_pending_price_sync")
+    if not isinstance(pending, dict):
+        return
+    pmin = int(pending.get("prezzo_min", st.session_state.get("prezzo_min", 0)) or 0)
+    pmax = int(pending.get("budget_max", st.session_state.get("budget_max", 800)) or 800)
+    pmin = max(0, min(pmin, 5000))
+    pmax = max(pmin, min(pmax, 5000))
+    st.session_state["price_min_input"] = pmin
+    st.session_state["budget_max_input"] = pmax
+    st.session_state["price_range_slider"] = (pmin, pmax)
+    st.session_state["_pending_price_sync"] = None
 
 
 def _format_price(value: float) -> str:
@@ -947,9 +972,7 @@ def _apply_presearch_result(result: dict[str, Any]) -> None:
     st.session_state["ultimo_top_n"] = 20
     st.session_state["_query_prefilled"] = sanitized["query"]
     st.session_state["ultima_query"] = sanitized["query"]
-    st.session_state["price_min_input"] = sanitized["prezzo_min"]
-    st.session_state["budget_max_input"] = sanitized["budget_max"]
-    st.session_state["price_range_slider"] = (sanitized["prezzo_min"], sanitized["budget_max"])
+    _queue_price_sync(sanitized["prezzo_min"], sanitized["budget_max"])
     st.session_state["preferenze_utente"] = {
         **st.session_state.get("preferenze_utente", {}),
         "categoria": sanitized["categoria"],
@@ -1122,11 +1145,7 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
         st.session_state["query_ottimizzata"] = comp_queries[0]
         st.session_state["_query_prefilled"] = _comp_display
         st.session_state["ultima_query"] = _comp_display
-        st.session_state["prezzo_min"] = _pmin
-        st.session_state["budget_max"] = _budget
-        st.session_state["price_min_input"] = _pmin
-        st.session_state["budget_max_input"] = _budget
-        st.session_state["price_range_slider"] = (_pmin, _budget)
+        _queue_price_sync(_pmin, _budget)
         st.session_state["condizione"] = _cond
         st.session_state["presearch_messages"].append({
             "role": "assistant",
@@ -1759,6 +1778,9 @@ _fonti_map = {
 }
 fonti_backend: list[str] = [_fonti_map[f] for f in fonti_selezionate if f in _fonti_map]
 avvia_ricerca: bool = False
+
+# Applica eventuali aggiornamenti prezzo pendenti PRIMA della creazione widget.
+_flush_pending_price_sync()
 
 st.markdown("<div class='section-card'>", unsafe_allow_html=True)
 

@@ -341,6 +341,35 @@ def test_filtra_risultati_con_ai_hard_specs_notebook() -> None:
     assert not any('256gb ssd' in n for n in names)
 
 
+def test_filtra_risultati_con_ai_logga_motivi_scarto(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Il filtro deve loggare il motivo dello scarto (hard filter / score basso)."""
+    monkeypatch.setattr("offerte_tech._get_cerebras_client", lambda: None)
+
+    risultati = [
+        Offerta(nome='Notebook 17,3" 16GB RAM 512GB SSD', prezzo=579.0, negozio="A", link="https://x/1"),
+        Offerta(nome='Notebook 14" 16GB RAM 512GB SSD', prezzo=629.0, negozio="B", link="https://x/2"),
+        Offerta(nome='Notebook 14" 16GB RAM 512GB SSD colore silver', prezzo=649.0, negozio="C", link="https://x/3"),
+    ]
+    filtri_hard = {
+        "ram_gb": "16",
+        "storage_gb": "512",
+        "size_inches": "14-15",
+    }
+
+    _ = filtra_risultati_con_ai(risultati, filtri_hard)
+    out_hard = capsys.readouterr().out.lower()
+
+    _ = filtra_risultati_con_ai(risultati, {"colore": "rosa"})
+    out_score = capsys.readouterr().out.lower()
+
+    assert "scarto hard" in out_hard
+    assert "display" in out_hard
+    assert "scarto score" in out_score
+
+
 def test_nuove_fonti_vuote(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verifica che le nuove fonti (euronics/unieuro/mediaworld) restituiscano lista vuota su errore o blocco."""
     from unittest.mock import patch
@@ -423,6 +452,16 @@ def test_parse_comparison_query() -> None:
     assert parts5[0] == "iphone 16"
     assert "iphone 17" in parts5[1]
     assert "quale" not in parts5[1]  # il rumore deve essere rimosso
+
+
+def test_parse_comparison_query_implicita_senza_parola_confronto() -> None:
+    """Frasi con alternativa esplicita (es. iPhone 16 o 17) devono attivare il confronto."""
+    parts = parse_comparison_query(
+        "vorrei prendere un iphone 16 o 17, massimo 1000 euro. Quale mi consigli?"
+    )
+    assert len(parts) == 2
+    assert "iphone 16" in parts
+    assert "iphone 17" in parts
 
 
 def _open_home(page: Page, base_url: str) -> None:
@@ -532,3 +571,17 @@ def test_chat_finale_confronto_include_entrambi_modelli(page: Page, base_url: st
     all_text = page.locator("section[data-testid='stMain']").inner_text(timeout=30000).lower()
     assert "iphone 16" in all_text
     assert "iphone 17" in all_text
+
+
+def test_chat_refine_state2_non_crasha(page: Page, base_url: str, streamlit_server: str) -> None:
+    """In stato presearch completata, inviare un affinamento in chat non deve causare eccezioni Streamlit."""
+    _open_home(page, base_url)
+    _complete_presearch(page)
+
+    _send_chat(page, "Vuoi affinare la query o il budget? Scrivi qui...", "alza budget massimo a 1000")
+
+    expect(page.get_by_role("button", name="Cerca offerte")).to_be_visible(timeout=10000)
+    body_text = page.locator("section[data-testid='stMain']").inner_text(timeout=15000).lower()
+    assert "uncaught app execution" not in body_text
+
+
