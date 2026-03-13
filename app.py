@@ -610,7 +610,7 @@ def _init_state() -> None:
         "ultimo_prezzo_min": 0,
         "ultimo_prezzo_max": 800,
         "ultimo_top_n": 20,
-        "fonti_selezionate": ["Amazon", "eBay", "Vinted", "Euronics", "Unieuro", "MediaWorld"],
+        "fonti_selezionate": ["Amazon", "eBay", "Vinted", "Euronics", "MediaWorld"],
         "price_min_input": 0,
         "budget_max_input": 800,
         "price_range_slider": (0, 800),
@@ -1751,7 +1751,7 @@ _presearch_done = st.session_state.get("presearch_ready", False)
 query_input: str = ""
 top_n_input: int = int(st.session_state.get("ultimo_top_n", 10))
 condizione: str = st.session_state.get("condizione", "tutti")
-_fonti_def = ["Amazon", "eBay", "Vinted", "Euronics", "Unieuro", "MediaWorld"]
+_fonti_def = ["Amazon", "eBay", "Vinted", "Euronics", "MediaWorld", "Unieuro"]
 fonti_selezionate: list[str] = list(st.session_state.get("fonti_selezionate", _fonti_def))
 _fonti_map = {
     "Amazon": "amazon", "eBay": "ebay", "Vinted": "vinted",

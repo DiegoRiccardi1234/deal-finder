@@ -309,6 +309,136 @@ def _extract_json_object(raw: str) -> dict[str, object]:
             return {}
 
 
+def _extract_gb_values(text: str) -> list[int]:
+    """Estrae quantità in GB dal testo (es. RAM o storage)."""
+    values: list[int] = []
+    for m in re.finditer(r"(\d{2,4})\s*gb\b", text, flags=re.IGNORECASE):
+        try:
+            values.append(int(m.group(1)))
+        except Exception:
+            continue
+    for m in re.finditer(r"(\d{1,2})\s*tb\b", text, flags=re.IGNORECASE):
+        try:
+            values.append(int(m.group(1)) * 1024)
+        except Exception:
+            continue
+    return values
+
+
+def _extract_ram_gb_values(text: str) -> list[int]:
+    """Estrae valori RAM (GB) quando esplicitamente associati a RAM/memoria."""
+    values: list[int] = []
+    patterns = [
+        r"(\d{1,3})\s*gb\s*(?:di\s*)?ram\b",
+        r"memoria\s*(\d{1,3})\s*gb\b",
+    ]
+    for pattern in patterns:
+        for m in re.finditer(pattern, text, flags=re.IGNORECASE):
+            try:
+                values.append(int(m.group(1)))
+            except Exception:
+                continue
+    return values
+
+
+def _extract_storage_gb_values(text: str) -> list[int]:
+    """Estrae valori storage (GB/TB) associati a SSD/HDD/NVMe/disco."""
+    values: list[int] = []
+    for m in re.finditer(r"(\d{2,4})\s*gb\s*(?:ssd|hdd|nvme|emmc|disco|storage)\b", text, flags=re.IGNORECASE):
+        try:
+            values.append(int(m.group(1)))
+        except Exception:
+            continue
+    for m in re.finditer(r"(?:ssd|hdd|nvme|emmc|disco|storage)\s*(\d{2,4})\s*gb\b", text, flags=re.IGNORECASE):
+        try:
+            values.append(int(m.group(1)))
+        except Exception:
+            continue
+    for m in re.finditer(r"(\d{1,2})\s*tb\b", text, flags=re.IGNORECASE):
+        try:
+            values.append(int(m.group(1)) * 1024)
+        except Exception:
+            continue
+    return values
+
+
+def _extract_inches_values(text: str) -> list[float]:
+    """Estrae dimensioni display in pollici dal testo prodotto."""
+    values: list[float] = []
+    pattern = r"(\d{1,2}(?:[\.,]\d)?)\s*(?:\"|''|pollici\b)"
+    for m in re.finditer(pattern, text, flags=re.IGNORECASE):
+        raw = str(m.group(1)).replace(",", ".")
+        try:
+            values.append(float(raw))
+        except Exception:
+            continue
+    return values
+
+
+def _parse_target_range(value: str) -> Optional[tuple[float, float]]:
+    """Converte '14-15' / '14/15' / '14,15' in range numerico."""
+    txt = str(value or "").strip().lower()
+    if not txt:
+        return None
+    nums = re.findall(r"\d{1,2}(?:[\.,]\d)?", txt)
+    if not nums:
+        return None
+    parsed: list[float] = []
+    for n in nums:
+        try:
+            parsed.append(float(n.replace(",", ".")))
+        except Exception:
+            continue
+    if not parsed:
+        return None
+    if len(parsed) == 1:
+        v = parsed[0]
+        return (v - 0.2, v + 0.7)
+    return (min(parsed), max(parsed) + 0.7)
+
+
+def _passes_hard_spec_filters(offerta: Offerta, filtri: dict[str, str]) -> bool:
+    """Applica vincoli tecnici hard per ridurre falsi positivi su notebook/smartphone."""
+    if not filtri:
+        return True
+
+    search_text = f"{offerta.nome} " + " ".join(
+        str(v) for v in (offerta.specs or {}).values() if v not in (None, "", [], {})
+    )
+    search_lower = search_text.lower()
+
+    ram_target = filtri.get("ram_gb") or filtri.get("ram")
+    if ram_target:
+        m = re.search(r"(\d{1,3})", str(ram_target))
+        if m:
+            target = int(m.group(1))
+            gb_vals = _extract_ram_gb_values(search_lower)
+            if not gb_vals or max(gb_vals) < target:
+                return False
+
+    storage_target = filtri.get("storage_gb") or filtri.get("storage")
+    if storage_target:
+        m = re.search(r"(\d{2,4})", str(storage_target))
+        if m:
+            target = int(m.group(1))
+            gb_vals = _extract_storage_gb_values(search_lower)
+            if not gb_vals:
+                gb_vals = _extract_gb_values(search_lower)
+            if not gb_vals or max(gb_vals) < target:
+                return False
+
+    size_target = filtri.get("size_inches") or filtri.get("display")
+    if size_target:
+        parsed_range = _parse_target_range(str(size_target))
+        if parsed_range is not None:
+            low, high = parsed_range
+            inches_vals = _extract_inches_values(search_lower)
+            if not inches_vals or not any(low <= v <= high for v in inches_vals):
+                return False
+
+    return True
+
+
 def _extract_clothing_specs(nome_prodotto: str) -> dict[str, object]:
     """Estrae specifiche base da titoli abbigliamento senza usare AI."""
     nome = str(nome_prodotto or "").strip()
@@ -1521,6 +1651,85 @@ def scrape_unieuro(
     print(f"\n🔍 Cerco su Unieuro.it: \"{query}\"")
     risultati: list[Offerta] = []
 
+    def _scrape_unieuro_with_playwright() -> list[Offerta]:
+        """Fallback browser-rendered per pagine Ionic/Angular di Unieuro."""
+        out: list[Offerta] = []
+        try:
+            from playwright.sync_api import sync_playwright  # type: ignore
+        except Exception:
+            return out
+
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                page = browser.new_page(viewport={"width": 1366, "height": 1900})
+                page.goto(url, wait_until="domcontentloaded", timeout=15000)
+                page.wait_for_timeout(1500)
+                html = page.content()
+                browser.close()
+
+            soup_pw = BeautifulSoup(html, "html.parser")
+            cards_pw = (
+                soup_pw.select(".h-product") or
+                soup_pw.select("[data-productid]") or
+                soup_pw.select(".product-tile") or
+                soup_pw.select("article[class*='product']") or
+                soup_pw.select("[class*='ProductCard']")
+            )
+            seen_links: set[str] = set()
+            for card in cards_pw:
+                try:
+                    nome_tag = (
+                        card.select_one("[class*='product-name']") or
+                        card.select_one("[class*='ProductName']") or
+                        card.select_one("h2") or
+                        card.select_one("h3") or
+                        card.select_one("a[title]")
+                    )
+                    if not nome_tag:
+                        continue
+                    nome = nome_tag.get_text(strip=True) or str(nome_tag.get("title", "") or "")
+                    if not nome:
+                        continue
+
+                    prezzo_tag = (
+                        card.select_one("[class*='price-value']") or
+                        card.select_one("[class*='Price']") or
+                        card.select_one("[class*='price']") or
+                        card.select_one(".price")
+                    )
+                    if not prezzo_tag:
+                        continue
+                    prezzo = parse_price(prezzo_tag.get_text(" ", strip=True))
+                    if not math.isfinite(prezzo):
+                        continue
+
+                    link_tag = card.select_one("a[href]")
+                    if not link_tag:
+                        continue
+                    href = str(link_tag.get("href", "") or "")
+                    if not href:
+                        continue
+                    link = href if href.startswith("http") else f"https://www.unieuro.it{href}"
+                    if link in seen_links:
+                        continue
+                    seen_links.add(link)
+
+                    if not is_relevant(nome, query_tokens, strict_specs=False):
+                        continue
+                    if not _within_price_range(prezzo, prezzo_min, budget_max):
+                        continue
+
+                    out.append(Offerta(
+                        nome=nome, prezzo=prezzo, negozio="Unieuro",
+                        link=link, fonte="unieuro.it", spedizione="n.d.",
+                    ))
+                except (AttributeError, TypeError):
+                    continue
+        except Exception:
+            return []
+        return out
+
     try:
         headers = get_headers()
         headers["Referer"] = "https://www.unieuro.it/"
@@ -1573,7 +1782,12 @@ def scrape_unieuro(
             ("unieuro" in html_snip.lower() and "<ion-" in html_snip)
         )
         if is_ionic_spa:
-            print("    ℹ️  Unieuro.it: usa una webapp JavaScript (Ionic/Angular) che richiede rendering lato browser — fonte non disponibile senza Playwright.")
+            pw_results = _scrape_unieuro_with_playwright()
+            if pw_results:
+                print(f"    ✅ Unieuro.it (Playwright): {len(pw_results)} risultati validi")
+                _random_delay()
+                return pw_results
+            print("    ℹ️  Unieuro.it: webapp JS rilevata. Nessun risultato estratto via fallback browser.")
             return risultati
 
         soup = BeautifulSoup(resp.text, "html.parser")
@@ -2367,6 +2581,11 @@ def filtra_risultati_con_ai(risultati: list[Offerta], filtri: dict[str, str]) ->
     """
     if not risultati or not filtri:
         return risultati
+
+    # Filtro hard su vincoli tecnici (ram/storage/display) per evitare mismatch grossolani.
+    hard_filtered = [o for o in risultati if _passes_hard_spec_filters(o, filtri)]
+    if hard_filtered:
+        risultati = hard_filtered
 
     scored: list[tuple[int, Offerta]] = []
 

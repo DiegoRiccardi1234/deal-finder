@@ -9,6 +9,7 @@ from offerte_tech import (
     _deduplica,
     _is_spec_token,
     cerca_offerte,
+    filtra_risultati_con_ai,
     fetch_specs_ai,
     is_relevant,
     parse_comparison_query,
@@ -313,6 +314,31 @@ def test_spec_aware_sorting(monkeypatch: pytest.MonkeyPatch) -> None:
     assert len(risultati) == 2
     # Il prodotto con 16GB nel titolo deve essere primo nonostante costi di piu
     assert "16GB" in risultati[0].nome
+
+
+def test_filtra_risultati_con_ai_hard_specs_notebook() -> None:
+    """I filtri hard devono scartare notebook fuori dimensione/RAM/storage richiesti."""
+    risultati = [
+        Offerta(nome='Notebook 15,6" Intel i5 16GB RAM 512GB SSD', prezzo=599.0, negozio="A", link="https://x/1"),
+        Offerta(nome='Notebook 17,3" Intel i5 16GB RAM 512GB SSD', prezzo=579.0, negozio="B", link="https://x/2"),
+        Offerta(nome='Notebook 15,6" Intel i5 8GB RAM 512GB SSD', prezzo=499.0, negozio="C", link="https://x/3"),
+        Offerta(nome='Notebook 14" Intel i5 16GB RAM 256GB SSD', prezzo=469.0, negozio="D", link="https://x/4"),
+        Offerta(nome='Notebook 14" Intel i5 16GB RAM 1TB SSD', prezzo=649.0, negozio="E", link="https://x/5"),
+    ]
+    filtri = {
+        "ram_gb": "16",
+        "storage_gb": "512",
+        "size_inches": "14-15",
+    }
+
+    filtered = filtra_risultati_con_ai(risultati, filtri)
+    names = [o.nome.lower() for o in filtered]
+
+    assert any('15,6" intel i5 16gb ram 512gb' in n for n in names)
+    assert any('14" intel i5 16gb ram 1tb' in n for n in names)
+    assert not any('17,3"' in n for n in names)
+    assert not any('8gb ram' in n for n in names)
+    assert not any('256gb ssd' in n for n in names)
 
 
 def test_nuove_fonti_vuote(monkeypatch: pytest.MonkeyPatch) -> None:
