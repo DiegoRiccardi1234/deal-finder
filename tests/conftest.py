@@ -52,17 +52,17 @@ def cerebras_mock() -> MagicMock:
 
 @pytest.fixture(scope="session")
 def base_url() -> str:
-    return "http://localhost:8501"
+    return "http://localhost:9000"
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def streamlit_server(base_url: str) -> str:
     env = os.environ.copy()
     env["APP_TEST_MODE"] = "1"
     env.setdefault("PYTHONUNBUFFERED", "1")
 
     process = subprocess.Popen(
-        [sys.executable, "-m", "streamlit", "run", "app.py", "--server.headless", "true", "--server.port", "8501"],
+        [sys.executable, "-m", "streamlit", "run", "app.py", "--server.headless", "true", "--server.port", "9000"],
         cwd=ROOT_DIR,
         env=env,
         stdout=subprocess.PIPE,
