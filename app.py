@@ -725,12 +725,21 @@ class _MockChatCompletions:
             return _MockCompletionResponse(content)
 
         if "Sei un consulente shopping esperto" in system_prompt:
-            product_match = re.search(r'"nome":\s*"([^"]+)"', system_prompt)
-            product_name = product_match.group(1) if product_match else "Apple iPhone 17 128GB"
-            content = (
-                f"Ti consiglio {product_name} a € 799,00. Per uso quotidiano offre il prezzo migliore, uno storage adeguato "
-                "e un equilibrio piu convincente tra display, autonomia e praticita rispetto alle alternative."
-            )
+            product_names = re.findall(r'"nome":\s*"([^"]+)"', system_prompt)
+            has_iphone_16 = any("iphone 16" in name.lower() for name in product_names)
+            has_iphone_17 = any("iphone 17" in name.lower() for name in product_names)
+            if has_iphone_16 and has_iphone_17:
+                content = (
+                    "Confronto rapido: iPhone 16 e iPhone 17 sono entrambi validi. "
+                    "iPhone 16 conviene di più per prezzo/prestazioni, mentre iPhone 17 offre vantaggi su display e chip. "
+                    "Se vuoi restare sotto i 1000€, consiglio iPhone 16; scegli iPhone 17 se vuoi il modello più recente."
+                )
+            else:
+                product_name = product_names[0] if product_names else "Apple iPhone 17 128GB"
+                content = (
+                    f"Ti consiglio {product_name} a € 799,00. Per uso quotidiano offre il prezzo migliore, uno storage adeguato "
+                    "e un equilibrio piu convincente tra display, autonomia e praticita rispetto alle alternative."
+                )
             return _MockCompletionResponse(content)
 
         return _MockCompletionResponse("{}")
@@ -1257,6 +1266,49 @@ def _build_products_payload(offerte: list[Offerta]) -> list[dict[str, Any]]:
     ]
 
 
+def _build_comparison_payload() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Prepara payload bilanciato per raccomandazione AI in modalità confronto."""
+    if not st.session_state.get("comparison_mode"):
+        return [], []
+
+    cmp_results = st.session_state.get("comparison_results", {})
+    if not isinstance(cmp_results, dict) or not cmp_results:
+        return [], []
+
+    products_payload: list[dict[str, Any]] = []
+    summary_payload: list[dict[str, Any]] = []
+
+    for query, results in cmp_results.items():
+        if not isinstance(results, list):
+            continue
+        ordered = sorted(results, key=lambda item: item.prezzo)
+        if ordered:
+            summary_payload.append(
+                {
+                    "query": str(query),
+                    "best_name": ordered[0].nome,
+                    "best_price": round(ordered[0].prezzo, 2),
+                    "best_store": ordered[0].negozio,
+                    "count": len(ordered),
+                }
+            )
+
+        # Bilancia il contesto: massimo 4 offerte per ogni query del confronto.
+        for offerta in ordered[:4]:
+            products_payload.append(
+                {
+                    "query": str(query),
+                    "nome": offerta.nome,
+                    "prezzo": round(offerta.prezzo, 2),
+                    "negozio": offerta.negozio,
+                    "link": offerta.link,
+                    "specs": offerta.specs,
+                }
+            )
+
+    return products_payload, summary_payload
+
+
 def _call_final_recommendation(
     cerebras_client: object,
     offerte: list[Offerta],
@@ -1271,10 +1323,23 @@ def _call_final_recommendation(
     context_block = f"PREFERENZE UTENTE: {contesto_utente}\n"
     if trascrizione:
         context_block += f"CONVERSAZIONE PRE-RICERCA (usa per capire tono e priorita dell'utente):\n{trascrizione}\n"
+    comparison_products, comparison_summary = _build_comparison_payload()
+    products_payload = comparison_products if comparison_products else _build_products_payload(offerte)
+
+    comparison_block = ""
+    if comparison_summary:
+        comparison_block = (
+            "CONTESTO CONFRONTO ATTIVO:\n"
+            f"{json.dumps(comparison_summary, ensure_ascii=False)}\n"
+            "Nel confronto cita esplicitamente ogni modello richiesto dall'utente "
+            "(es. iPhone 16 e iPhone 17), anche se uno risulta meno conveniente.\n"
+        )
+
     system_prompt = (
         "Sei un consulente shopping esperto italiano. Hai questi dati:\n"
         f"{context_block}"
-        f"PRODOTTI TROVATI (ordinati per prezzo):\n{json.dumps(_build_products_payload(offerte), ensure_ascii=False)}\n"
+        f"{comparison_block}"
+        f"PRODOTTI TROVATI (ordinati per prezzo):\n{json.dumps(products_payload, ensure_ascii=False)}\n"
         "Rispondi in italiano con una raccomandazione motivata e personalizzata sulle esigenze emerse dalla conversazione. "
         "Cita nome e prezzo dei prodotti consigliati, confronta almeno 2-3 parametri rilevanti per l'utente. "
         "Sii diretto e concreto."

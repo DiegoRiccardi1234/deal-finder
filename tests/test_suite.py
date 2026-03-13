@@ -486,3 +486,23 @@ def test_chat_finale_risponde(page: Page, base_url: str, streamlit_server: str) 
     _send_chat(page, "Esempio: quale mi consigli per uso quotidiano?", "quale mi consigli?")
     last_message = page.locator("[data-testid='stChatMessage']").last
     expect(last_message).to_contain_text("Ti consiglio", timeout=30000)
+
+
+def test_chat_finale_confronto_include_entrambi_modelli(page: Page, base_url: str, streamlit_server: str) -> None:
+    _open_home(page, base_url)
+    _send_chat(page, "Descrivi prodotto, uso, vincoli e preferenze", "iphone 16 vs iphone 17 nuovo budget 1000")
+    expect(page.get_by_role("button", name="Cerca offerte")).to_be_enabled(timeout=10000)
+    page.get_by_role("button", name="Cerca offerte").click()
+
+    # Il contenuto della raccomandazione è in fondo pagina: scorri prima di validare.
+    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+    page.wait_for_timeout(2000)
+
+    advice_expander = page.get_by_text("💬 Consiglio AI")
+    if advice_expander.count() > 0:
+        advice_expander.first.click()
+        page.wait_for_timeout(1000)
+
+    all_text = page.locator("section[data-testid='stMain']").inner_text(timeout=30000).lower()
+    assert "iphone 16" in all_text
+    assert "iphone 17" in all_text
