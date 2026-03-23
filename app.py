@@ -48,6 +48,8 @@ except ImportError:
     def _save_search(**kw: Any) -> None:
         return None
 
+import os
+
 st.set_page_config(
     page_title="Trova Prezzi",
     page_icon="🔍",
@@ -59,8 +61,14 @@ _theme_mode = str(st.session_state.get("ui_theme", "light") or "light").strip().
 if _theme_mode not in {"light", "dark"}:
     _theme_mode = "light"
 
-with open("screen/styles.css", "r", encoding="utf-8") as f:
-    css = f.read()
+# Load CSS based on script location so it works in Streamlit Cloud
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+_css_path = os.path.join(_current_dir, "styles.css")
+if os.path.exists(_css_path):
+    with open(_css_path, "r", encoding="utf-8") as f:
+        css = f.read()
+else:
+    css = "" # Fallback se manca
 
 if _theme_mode == "dark":
     # Promuove le variabili dark a root sovrascrivendo quelle di default
