@@ -290,12 +290,65 @@
             margin: 1.8rem 0 2rem 0;
         }
 
+        /* ── Hero CTA buttons ── */
+        .hero-cta-row {
+            margin: 1.8rem 0 0.5rem 0;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 0.6rem;
+        }
+
+        .hero-cta-primary {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.85rem 1.8rem;
+            border-radius: 10px;
+            background: var(--button-bg);
+            color: var(--button-ink) !important;
+            font-weight: 700;
+            font-size: 1rem;
+            text-decoration: none !important;
+            transition: transform 0.15s ease, opacity 0.15s ease;
+        }
+
+        .hero-cta-primary:hover {
+            opacity: 0.88;
+            transform: translateY(-2px);
+            text-decoration: none !important;
+        }
+
+        .hero-cta-secondary {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.85rem 1.8rem;
+            border-radius: 10px;
+            background: transparent;
+            color: var(--ink) !important;
+            border: 1.5px solid rgba(0,0,0,0.18);
+            font-weight: 600;
+            font-size: 1rem;
+            text-decoration: none !important;
+            transition: border-color 0.15s ease, color 0.15s ease;
+        }
+
+        .hero-cta-secondary:hover {
+            border-color: var(--ink);
+            text-decoration: none !important;
+        }
+
         .feature-card {
             background: var(--surface-low);
             border-radius: var(--radius);
             box-shadow: var(--shadow);
             padding: 1.4rem 1.2rem;
             border-top: 3px solid var(--price-color);
+            transition: transform 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 28px 56px rgba(25, 28, 30, 0.13);
         }
 
         .feature-card h3 {
@@ -552,13 +605,31 @@
             border-radius: 12px;
             box-shadow: var(--shadow);
             min-height: 160px;
-            padding: 1rem;
+            padding: 1.4rem 1rem;
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
-            color: var(--muted);
             text-align: center;
-            font-weight: 600;
+        }
+
+        .how-card-icon {
+            font-size: 2.8rem;
+            margin-bottom: 0.6rem;
+            line-height: 1;
+        }
+
+        .how-card-label {
+            color: var(--ink);
+            font-weight: 700;
+            font-size: 0.97rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .how-card-sub {
+            color: var(--muted);
+            font-size: 0.82rem;
+            line-height: 1.4;
         }
 
         .how-cta {
@@ -759,4 +830,22 @@
 [data-theme="dark"] .stDownloadButton button {
     background: var(--button-bg);
     color: var(--button-ink);
+}
+
+[data-theme="dark"] .hero-cta-secondary {
+    color: var(--ink) !important;
+    border-color: rgba(255, 255, 255, 0.15);
+}
+
+[data-theme="dark"] .hero-cta-secondary:hover {
+    border-color: var(--primary);
+    color: var(--primary) !important;
+}
+
+[data-theme="dark"] .how-card-label {
+    color: var(--ink);
+}
+
+[data-theme="dark"] .feature-card:hover {
+    box-shadow: 0 28px 56px rgba(204, 255, 0, 0.08);
 }
