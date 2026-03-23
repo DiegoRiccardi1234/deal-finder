@@ -39,6 +39,15 @@ except ImportError as _e:
     )
     st.stop()
 
+try:
+    from search_history import load_history, save_search as _save_search
+except ImportError:
+    def load_history() -> list[dict[str, Any]]:
+        return []
+
+    def _save_search(**kw: Any) -> None:
+        return None
+
 st.set_page_config(
     page_title="Trova Prezzi",
     page_icon="🔍",
@@ -46,140 +55,135 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+_theme_mode = str(st.session_state.get("ui_theme", "light") or "light").strip().lower()
+if _theme_mode not in {"light", "dark"}:
+    _theme_mode = "light"
+
 st.markdown(
     """
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap');
 
         :root {
-            --bg: #0e0e12;
-            --panel: rgba(20, 20, 28, 0.96);
-            --panel-strong: rgba(22, 22, 30, 0.99);
-            --ink: #e8e8e8;
-            --muted: #a8a8b8;
-            --accent: #c45c2d;
-            --accent-dark: #e8825a;
-            --line: rgba(255, 255, 255, 0.10);
-            --shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
-            --radius: 22px;
-            --surface: #16161e;
-            --input-surface: #2a2a35;
+            --bg: #f7f9fb;
+            --surface: #ffffff;
+            --surface-low: #f2f4f6;
+            --ink: #191c1e;
+            --muted: #505f76;
+            --primary: #000000;
+            --price-color: #009668;
+            --line: rgba(0, 0, 0, 0.08);
+            --shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+            --radius: 16px;
+            --best-value-bg: rgba(111, 251, 190, 0.15);
+            --best-value-border: #009668;
+            --app-bg:
+                radial-gradient(circle at top right, rgba(183, 200, 225, 0.35), transparent 40%),
+                radial-gradient(circle at top left, rgba(211, 228, 254, 0.4), transparent 38%),
+                linear-gradient(180deg, #f7f9fb 0%, #eef2f6 100%);
+            --input-bg: #ffffff;
+            --button-bg: #000000;
+            --button-ink: #ffffff;
+            --chip-bg: #ffffff;
+            --chip-ink: #505f76;
+            --accent-soft: #e9eff8;
         }
 
         html, body, [class*="css"] {
-            font-family: 'Manrope', sans-serif;
+            font-family: 'Inter', sans-serif;
             color: var(--ink);
         }
 
+        h1, h2, h3, h4, .section-heading h3 {
+            font-family: 'Manrope', sans-serif;
+        }
+
         [data-testid="stAppViewContainer"] {
-            background:
-                radial-gradient(circle at top left, rgba(196, 92, 45, 0.09), transparent 28%),
-                radial-gradient(circle at bottom right, rgba(60, 60, 120, 0.06), transparent 24%),
-                linear-gradient(180deg, #111116 0%, #0e0e12 100%) !important;
+            background: var(--app-bg) !important;
         }
 
         [data-testid="stHeader"] {
-            background: transparent;
+            background: rgba(247, 249, 251, 0.8);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.06);
         }
 
         .block-container {
-            padding-top: 2.1rem;
-            padding-bottom: 2.5rem;
+            padding-top: 1.6rem;
+            padding-bottom: 2.4rem;
             max-width: 1280px;
+        }
+
+        .theme-chooser {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 0.6rem;
         }
 
         .hero-shell {
             position: relative;
-            overflow: hidden;
-            padding: 2rem 2.2rem;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 28px;
-            color: var(--ink);
-            background:
-                linear-gradient(135deg, rgba(30, 25, 20, 0.97), rgba(22, 20, 18, 0.93)),
-                repeating-linear-gradient(135deg, rgba(196, 92, 45, 0.045) 0 14px, transparent 14px 28px);
+            text-align: center;
+            padding: 2.4rem 1.6rem;
+            border: 1px solid var(--line);
+            border-radius: 20px;
+            background: var(--surface);
             box-shadow: var(--shadow);
-            margin-bottom: 1.2rem;
+            margin-bottom: 1rem;
+            animation: hero-enter 0.55s ease;
         }
 
         .hero-kicker {
             display: inline-block;
-            margin-bottom: 0.75rem;
-            padding: 0.32rem 0.72rem;
+            margin-bottom: 0.8rem;
+            padding: 0.34rem 0.72rem;
             border-radius: 999px;
-            background: rgba(196, 92, 45, 0.22);
-            color: #e8825a;
-            font-size: 0.78rem;
-            font-weight: 800;
-            letter-spacing: 0.08em;
+            border: 1px solid var(--line);
+            background: var(--surface-low);
+            color: var(--muted);
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
             text-transform: uppercase;
         }
 
         .hero-title {
             margin: 0;
-            font-family: 'Fraunces', serif;
-            font-size: clamp(2.4rem, 5vw, 4.2rem);
-            line-height: 0.96;
+            color: var(--primary);
+            font-size: clamp(2.2rem, 4.5vw, 3.6rem);
+            font-weight: 800;
+            line-height: 1.02;
             letter-spacing: -0.04em;
-            max-width: 10ch;
         }
 
         .hero-copy {
-            max-width: 52rem;
-            margin-top: 0.95rem;
+            max-width: 48rem;
+            margin: 0.9rem auto 0 auto;
             color: var(--muted);
-            font-size: 1rem;
-            line-height: 1.7;
-        }
-
-        .hero-grid {
-            display: grid;
-            grid-template-columns: 1.6fr 1fr;
-            gap: 1rem;
-            align-items: end;
-        }
-
-        .hero-note {
-            justify-self: end;
-            width: 100%;
-            max-width: 320px;
-            padding: 1rem 1.1rem;
-            border-radius: 20px;
-            background: rgba(28, 28, 38, 0.97);
-            color: var(--ink);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            box-shadow: 0 16px 30px rgba(0, 0, 0, 0.4);
-        }
-
-        .hero-note strong {
-            display: block;
-            margin-bottom: 0.35rem;
-            font-size: 0.92rem;
-            letter-spacing: 0.02em;
+            font-size: 1.02rem;
+            line-height: 1.65;
         }
 
         .section-card {
-            border: 1px solid rgba(255, 255, 255, 0.5);
+            border: 1px solid var(--line);
             border-radius: var(--radius);
-            background: var(--panel);
-            backdrop-filter: blur(8px);
+            background: var(--surface);
             box-shadow: var(--shadow);
-            padding: 0.35rem 0.4rem 0.7rem 0.4rem;
+            padding: 0.45rem 0.6rem 0.8rem 0.6rem;
         }
 
         .section-heading {
-            padding: 0.75rem 1rem 0.15rem 1rem;
+            padding: 0.7rem 1rem 0.2rem 1rem;
         }
 
         .section-heading h3 {
             margin: 0;
-            font-family: 'Fraunces', serif;
             font-size: 1.45rem;
             letter-spacing: -0.02em;
+            color: var(--ink);
         }
 
         .section-heading p {
-            margin: 0.3rem 0 0 0;
+            margin: 0.32rem 0 0 0;
             color: var(--muted);
             font-size: 0.95rem;
         }
@@ -187,420 +191,249 @@ st.markdown(
         .chip-row {
             display: flex;
             flex-wrap: wrap;
-            gap: 0.55rem;
-            margin-top: 0.8rem;
+            gap: 0.5rem;
+            justify-content: center;
+            margin: 0.55rem 0 1.1rem 0;
         }
 
-        .chip {
-            padding: 0.42rem 0.72rem;
+        .chip, .history-chip {
+            padding: 0.44rem 0.76rem;
             border-radius: 999px;
-            background: rgba(196, 92, 45, 0.1);
-            color: var(--ink);
-            font-size: 0.84rem;
+            background: var(--chip-bg);
+            border: 1px solid var(--line);
+            color: var(--chip-ink);
+            font-size: 0.83rem;
+            font-weight: 600;
+        }
+
+        .source-strip {
+            margin: 0.25rem auto 1rem auto;
+            max-width: 56rem;
+            padding: 0.9rem 1rem;
+            border-radius: 14px;
+            border: 1px dashed var(--line);
+            background: color-mix(in srgb, var(--surface) 88%, var(--accent-soft) 12%);
+            text-align: center;
+            color: var(--muted);
+        }
+
+        .source-strip-label {
+            display: block;
+            margin-bottom: 0.55rem;
+            font-size: 0.74rem;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
             font-weight: 700;
         }
 
-        .spec-card {
+        .source-strip span {
+            display: inline-block;
+            margin: 0.08rem 0.42rem;
+            font-size: 1.03rem;
+            font-weight: 700;
+            opacity: 0.55;
+            filter: grayscale(100%);
+        }
+
+        .offerta-card {
             height: 100%;
-            padding: 1rem 1rem 0.9rem 1rem;
+            position: relative;
             border: 1px solid var(--line);
-            border-radius: 20px;
-            background: var(--panel-strong);
+            border-radius: 16px;
+            background: var(--surface);
+            padding: 0.95rem 0.95rem 0.9rem 0.95rem;
+            box-shadow: var(--shadow);
         }
 
-        .spec-card h4 {
-            margin: 0 0 0.45rem 0;
-            font-size: 1rem;
+        .source-badge {
+            position: absolute;
+            right: 0.8rem;
+            top: 0.7rem;
+            padding: 0.22rem 0.52rem;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            background: var(--surface-low);
+            color: var(--muted);
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
         }
 
-        .spec-card p {
-            margin: 0.2rem 0;
+        .card-title {
+            margin: 0.35rem 0 0.55rem 0;
+            color: var(--ink);
+            font-weight: 700;
+            line-height: 1.35;
+            padding-right: 6.5rem;
+        }
+
+        .card-price {
+            margin: 0;
+            color: var(--price-color);
+            font-size: 1.5rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+        }
+
+        .card-meta {
+            margin: 0.2rem 0 0.75rem 0;
             color: var(--muted);
             font-size: 0.9rem;
-            line-height: 1.5;
         }
 
-        .spec-card strong {
-            color: var(--ink);
+        .card-cta {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            min-height: 42px;
+            border-radius: 10px;
+            text-decoration: none;
+            background: var(--button-bg);
+            color: var(--button-ink) !important;
+            font-size: 0.9rem;
+            font-weight: 700;
+            border: 1px solid transparent;
+        }
+
+        .best-value {
+            background: var(--best-value-bg);
+            border-left: 4px solid var(--best-value-border);
+            border-radius: 6px;
+            padding: 0.35rem 0.4rem;
         }
 
         [data-testid="stChatMessage"] {
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 20px;
-            background: rgba(22, 22, 32, 0.97);
-            padding: 0.55rem 0.7rem;
-            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.3);
-        }
-
-        [data-testid="stChatMessageContent"] p {
-            line-height: 1.65;
-        }
-
-        [data-testid="stChatMessage"] p,
-        [data-testid="stMarkdownContainer"] p,
-        [data-testid="stMetricValue"],
-        [data-testid="stMetricLabel"] {
-            color: var(--ink);
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            background: var(--surface);
+            box-shadow: 0 3px 12px rgba(0, 0, 0, 0.06);
         }
 
         [data-testid="stMetric"] {
             border: 1px solid var(--line);
-            border-radius: 18px;
-            background: rgba(28, 28, 38, 0.98);
-            padding: 0.2rem 0.35rem;
+            border-radius: 12px;
+            background: var(--surface);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
         }
 
         [data-testid="stMetricValue"] {
-            color: var(--accent-dark);
-            font-size: 1.58rem;
-        }
-
-        [data-testid="stMetricLabel"],
-        [data-testid="stCaptionContainer"],
-        label,
-        .stMarkdown p,
-        .stMarkdown span {
-            color: var(--ink);
+            color: var(--price-color);
+            font-size: 1.45rem;
         }
 
         [data-testid="stDataFrame"] {
-            border-radius: 18px;
+            border-radius: 14px;
             overflow: hidden;
             border: 1px solid var(--line);
+        }
+
+        .stButton button,
+        .stDownloadButton button {
+            border-radius: 12px;
+            border: 1px solid transparent;
+            background: var(--button-bg);
+            color: var(--button-ink);
+            font-weight: 700;
+            min-height: 42px;
+            transition: transform 0.12s ease, opacity 0.12s ease;
+        }
+
+        .stButton button:hover,
+        .stDownloadButton button:hover {
+            opacity: 0.92;
+            transform: translateY(-1px);
         }
 
         div[data-baseweb="select"] > div,
         div[data-baseweb="input"] > div,
         div[data-baseweb="base-input"] > div,
         .stNumberInput input,
-        .stTextInput input {
-            background: var(--input-surface);
-            color: var(--ink);
-        }
-
-        .stButton button,
-        .stDownloadButton button {
-            border-radius: 999px;
-            border: 1px solid rgba(196, 92, 45, 0.25);
-            background: linear-gradient(180deg, #d46c3c 0%, #be5327 100%);
-            color: white;
-            font-weight: 800;
-            letter-spacing: 0.01em;
-            box-shadow: 0 14px 24px rgba(196, 92, 45, 0.18);
-        }
-
-        .stButton button:hover,
-        .stDownloadButton button:hover {
-            border-color: rgba(139, 61, 24, 0.45);
-            color: white;
-        }
-
-        [data-theme="dark"] {
-            --bg: #1a1a1a;
-            --panel: rgba(28,28,28,0.96);
-            --panel-strong: rgba(30,30,30,0.99);
-            --ink: #e8e8e8;
-            --muted: #b0b0b0;
-            --line: rgba(255,255,255,0.12);
-            --surface: #252525;
-            --input-surface: #2d2d2d;
-            --accent-dark: #e8825a;
-        }
-
-        [data-theme="dark"] [data-testid="stAppViewContainer"] {
-            background: linear-gradient(180deg, #1a1a1a 0%, #1e1e1e 100%);
-        }
-
-        [data-theme="dark"] .hero-title,
-        [data-theme="dark"] .hero-kicker,
-        [data-theme="dark"] .hero-copy,
-        [data-theme="dark"] .hero-note,
-        [data-theme="dark"] .hero-note strong,
-        [data-theme="dark"] .section-heading h3,
-        [data-theme="dark"] .section-heading p,
-        [data-theme="dark"] .chip,
-        [data-theme="dark"] .spec-card h4,
-        [data-theme="dark"] .spec-card p,
-        [data-theme="dark"] .spec-card strong { color: var(--ink); }
-
-        [data-theme="dark"] .hero-shell {
-            background: linear-gradient(135deg, rgba(40,35,30,0.96), rgba(30,28,26,0.9));
-            border-color: rgba(255,255,255,0.08);
-        }
-
-        [data-theme="dark"] .hero-note {
-            background: rgba(35,35,35,0.97);
-            box-shadow: 0 16px 30px rgba(0,0,0,0.4);
-        }
-
-        [data-theme="dark"] .section-card {
-            background: rgba(28,28,28,0.96);
-            border-color: rgba(255,255,255,0.08);
-        }
-
-        [data-theme="dark"] .spec-card {
-            background: rgba(35,35,35,0.98);
-            border-color: rgba(255,255,255,0.1);
-        }
-
-        [data-theme="dark"] [data-testid="stChatMessage"] {
-            background: rgba(32,32,32,0.97);
-            border-color: rgba(255,255,255,0.08);
-        }
-
-        [data-theme="dark"] [data-testid="stChatMessage"] p,
-        [data-theme="dark"] [data-testid="stMarkdownContainer"] p,
-        [data-theme="dark"] [data-testid="stMetricValue"],
-        [data-theme="dark"] [data-testid="stMetricLabel"],
-        [data-theme="dark"] label,
-        [data-theme="dark"] .stMarkdown p,
-        [data-theme="dark"] .stMarkdown span { color: #e8e8e8 !important; }
-
-        [data-theme="dark"] [data-testid="stMetric"] { background: rgba(35,35,35,0.98); }
-
-        [data-theme="dark"] .stTextInput input,
-        [data-theme="dark"] .stNumberInput input { color: #e8e8e8 !important; background-color: #2d2d2d !important; }
-
-        [data-theme="dark"] .hero-kicker {
-            background: rgba(196, 92, 45, 0.22);
-            color: #e8825a;
-        }
-
-        [data-theme="dark"] .chip {
-            background: rgba(196, 92, 45, 0.2);
-            color: #e8e8e8;
-        }
-
-        [data-theme="dark"] [data-testid="stMetricValue"] {
-            color: #e8825a !important;
-        }
-
-        [data-theme="dark"] [data-testid="stMetric"] {
-            background: rgba(40, 35, 30, 0.98);
-            border-color: rgba(255,255,255,0.1);
-        }
-
-        [data-theme="dark"] [data-baseweb="tag"] {
-            background: rgba(196, 92, 45, 0.3) !important;
-            color: #e8e8e8 !important;
-        }
-
-        [data-theme="dark"] [data-testid="stExpander"] {
-            background: rgba(35,35,35,0.97);
-            border-color: rgba(255,255,255,0.08);
-        }
-
-        [data-theme="dark"] [data-testid="stCaptionContainer"] p,
-        [data-theme="dark"] footer {
-            color: #888888 !important;
-        }
-
-        [data-theme="dark"] [data-testid="stRadio"] label,
-        [data-theme="dark"] [data-testid="stCheckbox"] label {
-            color: #e8e8e8 !important;
-        }
-
-        [data-theme="dark"] [data-testid="stAlert"] {
-            background: rgba(40, 35, 30, 0.97) !important;
-            color: #e8e8e8 !important;
-            border-color: rgba(196, 92, 45, 0.4) !important;
-        }
-
-        [data-theme="dark"] [data-baseweb="select"] > div,
-        [data-theme="dark"] div[data-baseweb="input"] > div {
-            background: #2d2d2d !important;
-            color: #e8e8e8 !important;
-            border-color: rgba(255,255,255,0.15) !important;
-        }
-
-        /* ── Dark mode: multiselect tags e dropdown ── */
-        [data-theme="dark"] [data-baseweb="tag"] {
-            background: rgba(196, 92, 45, 0.35) !important;
-            color: #f0c8b0 !important;
-        }
-        [data-theme="dark"] [data-baseweb="menu"] {
-            background: #2a2a2a !important;
-        }
-        [data-theme="dark"] [data-baseweb="menu"] [role="option"] {
-            color: #e8e8e8 !important;
-        }
-        [data-theme="dark"] [data-baseweb="menu"] [aria-selected="true"] {
-            background: rgba(196, 92, 45, 0.25) !important;
-        }
-
-        /* ── Dark mode: slider ── */
-        [data-theme="dark"] [data-testid="stSlider"] [role="slider"] {
-            background: var(--accent) !important;
-        }
-        [data-theme="dark"] [data-testid="stSlider"] [data-baseweb="slider"] > div:last-child {
-            background: rgba(196, 92, 45, 0.3) !important;
-        }
-
-        /* ── Dark mode: tabella dataframe ── */
-        [data-theme="dark"] [data-testid="stDataFrame"] {
-            background: rgba(30, 30, 30, 0.98) !important;
-        }
-        [data-theme="dark"] [data-testid="stDataFrame"] .dvn-scroller,
-        [data-theme="dark"] [data-testid="stDataFrame"] canvas {
-            background: rgba(30, 30, 30, 0.98) !important;
-        }
-
-        /* ── Dark mode: expander ── */
-        [data-theme="dark"] details,
-        [data-theme="dark"] [data-testid="stExpander"] {
-            background: rgba(30, 30, 30, 0.97) !important;
-            border-color: rgba(255,255,255,0.08) !important;
-        }
-        [data-theme="dark"] details summary span,
-        [data-theme="dark"] [data-testid="stExpander"] summary p {
-            color: #e0e0e0 !important;
-        }
-
-        /* ── Dark mode: code block (log) ── */
-        [data-theme="dark"] [data-testid="stCode"],
-        [data-theme="dark"] [data-testid="stCode"] pre {
-            background: #1a1a1a !important;
-            color: #b8d4b0 !important;
-            border-color: rgba(255,255,255,0.1) !important;
-        }
-
-        /* ── Dark mode: spinner / progress ── */
-        [data-theme="dark"] [data-testid="stSpinner"] p {
-            color: #e8e8e8 !important;
-        }
-
-        /* ── Dark mode: download button ── */
-        [data-theme="dark"] .stDownloadButton button {
-            background: linear-gradient(180deg, #c45c2d 0%, #a04020 100%) !important;
-        }
-
-        /* ── Dark mode: warning/info/success boxes ── */
-        [data-theme="dark"] [data-testid="stWarningBox"],
-        [data-theme="dark"] [data-testid="stInfoBox"] {
-            background: rgba(40, 35, 30, 0.97) !important;
-            color: #e0d0c0 !important;
-        }
-        [data-theme="dark"] [data-testid="stSuccessMessage"],
-        [data-theme="dark"] [data-testid="stSuccess"] {
-            background: rgba(30, 45, 30, 0.97) !important;
-            color: #c8e0c8 !important;
-        }
-
-        /* ── Dark mode: hero shell ── */
-        [data-theme="dark"] [data-testid="stAppViewContainer"] {
-            background:
-                radial-gradient(circle at top left, rgba(196, 92, 45, 0.10), transparent 28%),
-                linear-gradient(180deg, #111116 0%, #0e0e12 100%) !important;
-        }
-
-        /* ── Dark mode: caption/footer ── */
-        [data-theme="dark"] [data-testid="stCaptionContainer"] p,
-        [data-theme="dark"] footer,
-        [data-theme="dark"] small {
-            color: #666 !important;
-        }
-
-        /* ── Chat input (dark di default) ── */
-        [data-testid="stChatInput"] textarea,
-        [data-testid="stChatInputContainer"] textarea {
-            background: var(--input-surface) !important;
-            color: var(--ink) !important;
-            border-color: var(--line) !important;
-        }
-
-        /* ── Chat input dimensione compatta per la chat AI finale ── */
-        [data-testid="stChatInputContainer"] {
-            max-height: 56px !important;
-        }
-        [data-testid="stChatInputContainer"] textarea {
-            min-height: 40px !important;
-            max-height: 40px !important;
-            resize: none !important;
-            overflow: hidden !important;
-            padding: 8px 12px !important;
-        }
-
-        /* ── Expander di default dark ── */
-        details,
-        [data-testid="stExpander"] {
-            background: rgba(22, 22, 30, 0.97) !important;
-            border-color: var(--line) !important;
-        }
-        details summary span,
-        [data-testid="stExpander"] summary p {
-            color: var(--ink) !important;
-        }
-
-        /* ── Inputs/select di default dark ── */
-        [data-baseweb="select"] > div,
-        div[data-baseweb="input"] > div,
-        div[data-baseweb="base-input"] > div {
-            background: var(--input-surface) !important;
-            color: var(--ink) !important;
-            border-color: var(--line) !important;
-        }
         .stTextInput input,
-        .stNumberInput input {
+        [data-testid="stChatInputContainer"] textarea,
+        [data-testid="stChatInput"] textarea {
+            background: var(--input-bg) !important;
             color: var(--ink) !important;
-            background-color: var(--input-surface) !important;
+            border-color: var(--line) !important;
         }
 
-        /* ── Alert/warning di default dark ── */
-        [data-testid="stAlert"],
-        [data-testid="stWarningBox"],
-        [data-testid="stInfoBox"] {
-            background: rgba(28, 28, 38, 0.97) !important;
-            color: var(--ink) !important;
+        [data-testid="stExpander"],
+        details {
+            border: 1px solid var(--line) !important;
+            border-radius: 12px !important;
+            background: var(--surface) !important;
         }
 
-        /* ── Dark mode: chat input (rinforzo) ── */
-        [data-theme="dark"] [data-testid="stChatInput"] textarea,
-        [data-theme="dark"] [data-testid="stChatInputContainer"] textarea {
-            background: #2d2d2d !important;
-            color: #e8e8e8 !important;
-            border-color: rgba(255,255,255,0.15) !important;
+        [data-baseweb="tag"] {
+            background: var(--surface-low) !important;
+            border: 1px solid var(--line) !important;
+            color: var(--muted) !important;
         }
 
-        /* ── Scrollbar (dark di default) ── */
-        ::-webkit-scrollbar {
-            width: 6px;
-            height: 6px;
-        }
-        ::-webkit-scrollbar-track {
-            background: #111116;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: rgba(196, 92, 45, 0.4);
-            border-radius: 3px;
-        }
-
-        /* ── Dark mode: scrollbar (ridondante ma esplicito) ── */
-        [data-theme="dark"] ::-webkit-scrollbar {
-            width: 6px;
-            height: 6px;
-        }
-        [data-theme="dark"] ::-webkit-scrollbar-track {
-            background: #1a1a1a;
-        }
-        [data-theme="dark"] ::-webkit-scrollbar-thumb {
-            background: rgba(196, 92, 45, 0.4);
-            border-radius: 3px;
+        @keyframes hero-enter {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         @media (max-width: 900px) {
-            .hero-grid {
-                grid-template-columns: 1fr;
+            .hero-shell {
+                padding: 2rem 1rem;
             }
 
-            .hero-note {
-                justify-self: stretch;
-                max-width: none;
+            .hero-title {
+                font-size: clamp(1.95rem, 8.2vw, 2.45rem);
+            }
+
+            .source-strip span {
+                font-size: 0.94rem;
+                margin: 0.08rem 0.3rem;
+            }
+
+            .card-title {
+                padding-right: 5.8rem;
             }
         }
     </style>
     """,
     unsafe_allow_html=True,
 )
+
+if _theme_mode == "dark":
+    st.markdown(
+        """
+        <style>
+            :root {
+                --bg: #0e0f14;
+                --surface: #161a22;
+                --surface-low: #1f2530;
+                --ink: #e6ebf5;
+                --muted: #a5afbf;
+                --primary: #f8fafc;
+                --price-color: #34d39a;
+                --line: rgba(255, 255, 255, 0.12);
+                --shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+                --best-value-bg: rgba(52, 211, 154, 0.15);
+                --best-value-border: #34d39a;
+                --app-bg:
+                    radial-gradient(circle at top right, rgba(25, 38, 70, 0.36), transparent 44%),
+                    radial-gradient(circle at top left, rgba(20, 72, 60, 0.22), transparent 35%),
+                    linear-gradient(180deg, #0b0d12 0%, #0e1118 100%);
+                --input-bg: #1b202a;
+                --button-bg: #f8fafc;
+                --button-ink: #111827;
+                --chip-bg: #1b202a;
+                --chip-ink: #c2cedf;
+                --accent-soft: #182135;
+            }
+
+            [data-testid="stHeader"] {
+                background: rgba(14, 17, 24, 0.78);
+                border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def _init_state() -> None:
@@ -651,6 +484,7 @@ def _init_state() -> None:
         "comparison_queries": [],
         "comparison_results": {},
         "_pending_price_sync": None,
+        "ui_theme": _theme_mode,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -1491,6 +1325,25 @@ def _offerte_to_records(offerte: list[Offerta]) -> list[dict[str, Any]]:
     ]
 
 
+def _render_offerta_card(offerta: Offerta, idx: int) -> str:
+    source_label = offerta.fonte.replace(".it", "").replace(".com", "").upper()
+    price_str = _format_price(offerta.prezzo)
+    spedizione = f" · {offerta.spedizione}" if offerta.spedizione else ""
+    title = offerta.nome[:90] + ("…" if len(offerta.nome) > 90 else "")
+    specs_line = _summarize_specs(offerta.specs, offerta.nome)
+    specs_html = f"<p class='card-meta'>{specs_line}</p>" if specs_line else ""
+    return (
+        f"<div class='offerta-card'>"
+        f"<span class='source-badge'>{source_label}</span>"
+        f"<p class='card-title'>{title}</p>"
+        f"<p class='card-price'>{price_str}</p>"
+        f"<p class='card-meta'>{offerta.negozio}{spedizione}</p>"
+        f"{specs_html}"
+        f"<a class='card-cta' href='{offerta.link}' target='_blank'>Vai all'offerta →</a>"
+        f"</div>"
+    )
+
+
 def _render_specs_grid(offerte: list[Offerta]) -> None:
     """Renders una griglia delle specifiche per le offerte con dati specs."""
     # Filtra solo le offerte che hanno specifiche valide
@@ -1508,23 +1361,7 @@ def _render_specs_grid(offerte: list[Offerta]) -> None:
     for start in range(0, len(preview), 2):
         cols = st.columns(2, gap="medium")
         for idx, offerta in enumerate(preview[start:start + 2]):
-            specs_rows = []
-            for key, value in offerta.specs.items():
-                if value in (None, "", [], {}):
-                    continue
-                label = str(key).replace("_", " ").title()
-                specs_rows.append(f"<p><strong>{label}</strong>: {value}</p>")
-            specs_html = "".join(specs_rows) or "<p>Specifiche non disponibili.</p>"
-            cols[idx].markdown(
-                (
-                    "<div class='spec-card'>"
-                    f"<h4>{offerta.nome}</h4>"
-                    f"<p><strong>{_format_price(offerta.prezzo)}</strong> · {offerta.negozio}</p>"
-                    f"{specs_html}"
-                    "</div>"
-                ),
-                unsafe_allow_html=True,
-            )
+            cols[idx].markdown(_render_offerta_card(offerta, start + idx), unsafe_allow_html=True)
 
 
 def _run_comparison_search(
@@ -1719,6 +1556,14 @@ def _run_search(
             "risultati": risultati,
             "log": log_buffer.getvalue(),
         }
+        _save_search(
+            query=query,
+            budget_min=prezzo_min,
+            budget_max=budget_max,
+            condizione=condizione,
+            fonti=fonti_backend,
+            results_count=len(risultati),
+        )
     except Exception as exc:
         st.session_state["log_ricerca"] = log_buffer.getvalue()
         st.error(
@@ -1730,39 +1575,37 @@ def _run_search(
 api_key = _get_cerebras_api_key()
 cerebras_client = _get_cerebras_client(api_key)
 
+_theme_row = st.columns([6, 1])
+with _theme_row[1]:
+    st.markdown("<div class='theme-chooser'>", unsafe_allow_html=True)
+    st.selectbox(
+        "Tema",
+        options=["light", "dark"],
+        key="ui_theme",
+        format_func=lambda v: "Light" if v == "light" else "Dark",
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
 st.markdown(
     """
     <div class='hero-shell'>
-        <div class='hero-grid'>
-            <div>
-                <span class='hero-kicker'>trova prezzi</span>
-                <h1 class='hero-title'>Trova Prezzi</h1>
-                <p class='hero-copy'>
-                    Cerca qualsiasi prodotto su più negozi italiani e online: confronta prezzi reali, ricevi una raccomandazione AI e scegli l'offerta migliore.
-                </p>
-            </div>
-            <div class='hero-note'>
-                <strong>Workflow consigliato</strong>
-                1. Racconta il prodotto nella chat iniziale<br/>
-                2. Controlla query e range sincronizzato<br/>
-                3. Avvia la ricerca e chiedi un consiglio finale
-            </div>
-        </div>
+        <span class='hero-kicker'>trova prezzi</span>
+        <h1 class='hero-title'>Trova i prezzi migliori</h1>
+        <p class='hero-copy'>
+            Cerca su Amazon, eBay, Vinted, Euronics e altri negozi italiani.<br>
+            Prezzi reali, raccomandazione AI, confronto immediato.
+        </p>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
 chips = [
-    "Tutti i prodotti",
-    "Amazon",
-    "eBay",
-    "Vinted",
-    "Euronics",
-    "Unieuro",
-    "MediaWorld",
-    "Prezzo min/max sincronizzati",
-    "Consiglio AI automatico top-3",
+    "notebook 14 pollici 16GB",
+    "iPhone 15 usato",
+    "cuffie wireless noise cancelling",
+    "smartwatch sotto 200€",
+    "tablet Android 10 pollici",
 ]
 st.markdown(
     "<div class='chip-row'>" + "".join(f"<span class='chip'>{chip}</span>" for chip in chips) + "</div>",
@@ -1787,6 +1630,40 @@ avvia_ricerca: bool = False
 
 # Applica eventuali aggiornamenti prezzo pendenti PRIMA della creazione widget.
 _flush_pending_price_sync()
+
+_history = load_history()
+if _history:
+    with st.expander("Ricerche recenti", expanded=False):
+        for entry in _history[:8]:
+            q = str(entry.get("query", "") or "")
+            if not q:
+                continue
+            bmax = entry.get("budget_max", "")
+            label = f"{q} · {bmax}€" if str(bmax).strip() else q
+            safe_q = re.sub(r"[^a-zA-Z0-9_-]", "_", q[:20])
+            if st.button(
+                label,
+                key=f"hist_{safe_q}_{entry.get('timestamp', '')}",
+                help=(
+                    f"Ricerca del {entry.get('timestamp', '')} — "
+                    f"{entry.get('results_count', 0)} risultati"
+                ),
+            ):
+                st.session_state["query_input"] = q
+                st.session_state["budget_max_input"] = int(bmax or 800)
+                st.session_state["presearch_ready"] = True
+                st.session_state["query_ottimizzata"] = q
+                _queue_price_sync(int(entry.get("budget_min", 0)), int(bmax or 800))
+                st.rerun()
+
+if not _presearch_done:
+    sources = ["Amazon", "eBay", "Vinted", "Euronics", "Unieuro", "MediaWorld", "Trovaprezzi"]
+    st.markdown(
+        "<div class='source-strip'><span class='source-strip-label'>Monitoraggio in tempo reale su</span>"
+        + "".join(f"<span>{s}</span>" for s in sources)
+        + "</div>",
+        unsafe_allow_html=True,
+    )
 
 st.markdown("<div class='section-card'>", unsafe_allow_html=True)
 
@@ -2124,7 +2001,11 @@ if st.session_state.get("ricerca_effettuata", False):
             if len(_offerte_confronto) >= 2:
                 st.markdown("**Confronto fianco a fianco**")
                 _ccols = st.columns(len(_offerte_confronto))
+                _best_price = min(o.prezzo for o in _offerte_confronto)
                 for _ccol, _co in zip(_ccols, _offerte_confronto):
+                    _is_best = _co.prezzo == _best_price
+                    if _is_best:
+                        _ccol.markdown("<div class='best-value'>", unsafe_allow_html=True)
                     _ccol.markdown(f"**{_co.nome[:80]}**")
                     _ccol.metric("Prezzo", _format_price(_co.prezzo))
                     _ccol.markdown(f"🏪 {_co.negozio} · {_co.fonte}")
@@ -2135,6 +2016,8 @@ if st.session_state.get("ricerca_effettuata", False):
                         for _sk, _sv in _co.specs.items():
                             if _sv not in (None, "", [], {}):
                                 _ccol.markdown(f"**{str(_sk).replace('_', ' ').capitalize()}**: {_sv}")
+                    if _is_best:
+                        _ccol.markdown("</div>", unsafe_allow_html=True)
 
             # ── Storico prezzi Amazon (CamelCamelCamel) ────────────────────
             import re as _re
