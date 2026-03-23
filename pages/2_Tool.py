@@ -48,7 +48,7 @@ st.set_page_config(
     page_title="Trova Prezzi",
     page_icon="🔍",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
 _theme_mode = str(st.session_state.get("ui_theme", "light") or "light").strip().lower()

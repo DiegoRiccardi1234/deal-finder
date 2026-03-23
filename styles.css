@@ -849,3 +849,28 @@
 [data-theme="dark"] .feature-card:hover {
     box-shadow: 0 28px 56px rgba(204, 255, 0, 0.08);
 }
+
+/* Hide header completely now that we use sidebar */
+[data-testid="stHeader"] {
+    display: none !important;
+}
+
+/* Make block container go higher up */
+.block-container {
+    padding-top: 1.5rem !important;
+}
+
+/* Tweak sidebar */
+[data-testid="stSidebar"] {
+    background: var(--surface) !important;
+    border-right: 1px solid var(--line) !important;
+}
+
+/* Make the sidebar links nicer */
+[data-testid="stSidebarNav"] {
+    display: none; /* Hide default streamlit nav if any */
+}
+
+a[data-testid="stPageLink"] {
+    margin-bottom: 0.5rem;
+}

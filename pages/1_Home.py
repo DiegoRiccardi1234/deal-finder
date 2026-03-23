@@ -3,7 +3,7 @@ import os
 
 from _shared import load_css, render_nav, get_theme_mode
 
-st.set_page_config(page_title="Trova Prezzi Mio", page_icon="🔍", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Trova Prezzi Mio", page_icon="🔍", layout="wide", initial_sidebar_state="expanded")
 load_css(theme_mode=get_theme_mode())
 render_nav(active_page="home")
 
