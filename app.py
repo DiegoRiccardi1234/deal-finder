@@ -1802,7 +1802,7 @@ st.markdown(
     “<h4>Scrivi cosa cerchi in italiano</h4>”
     “<p>La nostra AI comprende il linguaggio naturale: non servono codici prodotto o query complesse. Riconosciamo brand, specifiche tecniche e budget in pochi secondi.</p>”
     “</div>”
-    “<div class='how-card'>AI INSIGHTS<br/>\”Cerco uno smartphone Samsung con ottima fotocamera sotto i 500€\”</div>”
+    “<div class='how-card'>AI INSIGHTS<br/>&ldquo;Cerco uno smartphone Samsung con ottima fotocamera sotto i 500&euro;&rdquo;</div>”
     “</div>”
     “<div class='how-step'>”
     “<div class='how-step-copy'>”
