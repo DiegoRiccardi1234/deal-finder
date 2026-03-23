@@ -281,40 +281,6 @@
             font-size: 0.97rem;
         }
 
-        /* ── Feature cards (Home page) ── */
-        .feature-cards-row {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 1.2rem;
-            margin: 1.8rem 0 2rem 0;
-        }
-
-        .feature-card {
-            background: var(--surface-low);
-            border-radius: var(--radius);
-            box-shadow: var(--shadow);
-            padding: 1.4rem 1.2rem;
-            border-top: 3px solid var(--price-color);
-        }
-
-        .feature-card h3 {
-            margin: 0 0 0.5rem 0;
-            font-size: 1.1rem;
-            font-family: 'Manrope', sans-serif;
-            color: var(--ink);
-        }
-
-        .feature-card p {
-            margin: 0;
-            color: var(--muted);
-            font-size: 0.92rem;
-            line-height: 1.55;
-        }
-
-        @media (max-width: 700px) {
-            .feature-cards-row { grid-template-columns: 1fr; }
-        }
-
         /* ── Product cards ── */
         .offerta-card {
             height: 100%;
@@ -731,11 +697,6 @@
 [data-theme="dark"] .how-kicker {
     background: var(--hero-kicker-bg);
     color: var(--primary);
-}
-
-[data-theme="dark"] .feature-card {
-    background: var(--surface);
-    border-top-color: var(--primary);
 }
 
 [data-theme="dark"] .how-cta {
