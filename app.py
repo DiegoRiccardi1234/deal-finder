@@ -66,27 +66,30 @@ st.markdown(
 
         :root {
             --bg: #f7f9fb;
-            --surface: #ffffff;
-            --surface-low: #f2f4f6;
+            --surface: #f2f4f6;
+            --surface-low: #ffffff;
             --ink: #191c1e;
-            --muted: #505f76;
+            --muted: #3f4652;
             --primary: #000000;
             --price-color: #009668;
-            --line: rgba(0, 0, 0, 0.08);
-            --shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
-            --radius: 16px;
-            --best-value-bg: rgba(111, 251, 190, 0.15);
+            --line: rgba(198, 198, 205, 0.15);
+            --shadow: 0 20px 40px rgba(25, 28, 30, 0.06);
+            --radius: 12px;
+            --best-value-bg: rgba(111, 251, 190, 0.19);
             --best-value-border: #009668;
             --app-bg:
-                radial-gradient(circle at top right, rgba(183, 200, 225, 0.35), transparent 40%),
-                radial-gradient(circle at top left, rgba(211, 228, 254, 0.4), transparent 38%),
-                linear-gradient(180deg, #f7f9fb 0%, #eef2f6 100%);
+                radial-gradient(circle at top right, rgba(167, 183, 209, 0.24), transparent 42%),
+                radial-gradient(circle at top left, rgba(181, 204, 233, 0.26), transparent 35%),
+                linear-gradient(180deg, #f7f9fb 0%, #eef1f5 100%);
             --input-bg: #ffffff;
             --button-bg: #000000;
             --button-ink: #ffffff;
-            --chip-bg: #ffffff;
-            --chip-ink: #505f76;
-            --accent-soft: #e9eff8;
+            --chip-bg: #edf0f4;
+            --chip-ink: #4b5567;
+            --accent-soft: #d0e1fb;
+            --glass-bg: rgba(233, 237, 242, 0.82);
+            --ai-glow: rgba(111, 251, 190, 0.2);
+            --ai-badge-bg: #002113;
         }
 
         html, body, [class*="css"] {
@@ -105,13 +108,54 @@ st.markdown(
         [data-testid="stHeader"] {
             background: rgba(247, 249, 251, 0.8);
             backdrop-filter: blur(20px);
-            border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+            border-bottom: 1px solid var(--line);
         }
 
         .block-container {
-            padding-top: 1.6rem;
-            padding-bottom: 2.4rem;
-            max-width: 1280px;
+            padding-top: 1.25rem;
+            padding-bottom: 2.8rem;
+            max-width: 1320px;
+        }
+
+        .top-nav {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.35rem 0 1.4rem 0;
+            border-bottom: 1px solid var(--line);
+            margin-bottom: 1.4rem;
+        }
+
+        .top-nav-brand {
+            font-family: 'Manrope', sans-serif;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            color: var(--ink);
+            font-size: 1.15rem;
+        }
+
+        .top-nav-links {
+            display: flex;
+            gap: 1.2rem;
+        }
+
+        .top-nav-link {
+            color: var(--muted);
+            font-weight: 600;
+            font-size: 0.9rem;
+            text-decoration: none;
+            padding-bottom: 0.18rem;
+            border-bottom: 2px solid transparent;
+        }
+
+        .top-nav-link.is-active {
+            color: var(--ink);
+            border-bottom-color: var(--ink);
+        }
+
+        .top-nav-icon {
+            font-size: 1rem;
+            opacity: 0.84;
         }
 
         .theme-chooser {
@@ -123,23 +167,22 @@ st.markdown(
         .hero-shell {
             position: relative;
             text-align: center;
-            padding: 2.4rem 1.6rem;
-            border: 1px solid var(--line);
-            border-radius: 20px;
+            padding: 2.3rem 1.45rem 2.1rem 1.45rem;
+            border-radius: var(--radius);
             background: var(--surface);
-            box-shadow: var(--shadow);
-            margin-bottom: 1rem;
+            box-shadow: none;
+            margin-bottom: 1.2rem;
             animation: hero-enter 0.55s ease;
         }
 
         .hero-kicker {
             display: inline-block;
-            margin-bottom: 0.8rem;
+            margin-bottom: 0.72rem;
             padding: 0.34rem 0.72rem;
             border-radius: 999px;
-            border: 1px solid var(--line);
-            background: var(--surface-low);
-            color: var(--muted);
+            border: none;
+            background: rgba(111, 251, 190, 0.2);
+            color: #0f5132;
             font-size: 0.75rem;
             font-weight: 700;
             letter-spacing: 0.1em;
@@ -149,26 +192,70 @@ st.markdown(
         .hero-title {
             margin: 0;
             color: var(--primary);
-            font-size: clamp(2.2rem, 4.5vw, 3.6rem);
+            font-size: clamp(2.35rem, 5vw, 4.05rem);
             font-weight: 800;
             line-height: 1.02;
             letter-spacing: -0.04em;
         }
 
+        .hero-accent {
+            color: #5f6e88;
+        }
+
         .hero-copy {
-            max-width: 48rem;
+            max-width: 44rem;
             margin: 0.9rem auto 0 auto;
             color: var(--muted);
-            font-size: 1.02rem;
+            font-size: 1.06rem;
             line-height: 1.65;
         }
 
-        .section-card {
-            border: 1px solid var(--line);
-            border-radius: var(--radius);
-            background: var(--surface);
+        .advisor-note {
+            margin: 0.9rem auto 0 auto;
+            max-width: 44rem;
+            color: #2f3a4b;
+            font-weight: 600;
+            font-size: 0.93rem;
+        }
+
+        .hero-search-shell {
+            margin: 1.6rem auto 0.7rem auto;
+            max-width: 52rem;
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 0.4rem;
+            padding: 0.36rem;
+            border-radius: 0.72rem;
+            background: rgba(255, 255, 255, 0.94);
             box-shadow: var(--shadow);
-            padding: 0.45rem 0.6rem 0.8rem 0.6rem;
+            border: 1px solid rgba(111, 251, 190, 0.18);
+        }
+
+        .hero-search-input {
+            padding: 0.88rem 0.95rem;
+            text-align: left;
+            color: #9aa2af;
+            font-size: 0.98rem;
+        }
+
+        .hero-search-cta {
+            background: linear-gradient(180deg, #000000 0%, #111c2d 100%);
+            color: #ffffff;
+            font-weight: 700;
+            border-radius: 0.5rem;
+            padding: 0.88rem 1.2rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 8.2rem;
+        }
+
+        .section-card {
+            border: none;
+            border-radius: var(--radius);
+            background: var(--surface-low);
+            box-shadow: var(--shadow);
+            padding: 0.45rem 0.7rem 0.9rem 0.7rem;
         }
 
         .section-heading {
@@ -185,7 +272,7 @@ st.markdown(
         .section-heading p {
             margin: 0.32rem 0 0 0;
             color: var(--muted);
-            font-size: 0.95rem;
+            font-size: 0.97rem;
         }
 
         .chip-row {
@@ -200,7 +287,7 @@ st.markdown(
             padding: 0.44rem 0.76rem;
             border-radius: 999px;
             background: var(--chip-bg);
-            border: 1px solid var(--line);
+            border: none;
             color: var(--chip-ink);
             font-size: 0.83rem;
             font-weight: 600;
@@ -211,10 +298,10 @@ st.markdown(
             max-width: 56rem;
             padding: 0.9rem 1rem;
             border-radius: 14px;
-            border: 1px dashed var(--line);
+            border: none;
             background: color-mix(in srgb, var(--surface) 88%, var(--accent-soft) 12%);
             text-align: center;
-            color: var(--muted);
+            color: #424a57;
         }
 
         .source-strip-label {
@@ -231,16 +318,16 @@ st.markdown(
             margin: 0.08rem 0.42rem;
             font-size: 1.03rem;
             font-weight: 700;
-            opacity: 0.55;
+            opacity: 0.78;
             filter: grayscale(100%);
         }
 
         .offerta-card {
             height: 100%;
             position: relative;
-            border: 1px solid var(--line);
-            border-radius: 16px;
-            background: var(--surface);
+            border: none;
+            border-radius: 12px;
+            background: #ffffff;
             padding: 0.95rem 0.95rem 0.9rem 0.95rem;
             box-shadow: var(--shadow);
         }
@@ -251,8 +338,8 @@ st.markdown(
             top: 0.7rem;
             padding: 0.22rem 0.52rem;
             border-radius: 999px;
-            border: 1px solid var(--line);
-            background: var(--surface-low);
+            border: none;
+            background: #eef2f8;
             color: var(--muted);
             font-size: 0.7rem;
             font-weight: 700;
@@ -277,7 +364,7 @@ st.markdown(
 
         .card-meta {
             margin: 0.2rem 0 0.75rem 0;
-            color: var(--muted);
+            color: #425066;
             font-size: 0.9rem;
         }
 
@@ -304,14 +391,21 @@ st.markdown(
         }
 
         [data-testid="stChatMessage"] {
-            border: 1px solid var(--line);
+            border: none;
             border-radius: 14px;
-            background: var(--surface);
-            box-shadow: 0 3px 12px rgba(0, 0, 0, 0.06);
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            box-shadow: 0 8px 24px rgba(25, 28, 30, 0.06);
+        }
+
+        [data-testid="stChatMessage"] p,
+        [data-testid="stChatMessage"] li,
+        [data-testid="stChatMessage"] span {
+            color: #1f2733;
         }
 
         [data-testid="stMetric"] {
-            border: 1px solid var(--line);
+            border: none;
             border-radius: 12px;
             background: var(--surface);
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
@@ -325,14 +419,15 @@ st.markdown(
         [data-testid="stDataFrame"] {
             border-radius: 14px;
             overflow: hidden;
-            border: 1px solid var(--line);
+            border: none;
+            box-shadow: var(--shadow);
         }
 
         .stButton button,
         .stDownloadButton button {
             border-radius: 12px;
-            border: 1px solid transparent;
-            background: var(--button-bg);
+            border: none;
+            background: linear-gradient(180deg, #000000 0%, #111c2d 100%);
             color: var(--button-ink);
             font-weight: 700;
             min-height: 42px;
@@ -343,6 +438,17 @@ st.markdown(
         .stDownloadButton button:hover {
             opacity: 0.92;
             transform: translateY(-1px);
+        }
+
+        [data-testid="stChatInputContainer"] textarea,
+        [data-testid="stChatInput"] textarea {
+            border-radius: 0.72rem !important;
+        }
+
+        [data-testid="stChatInputContainer"] textarea:focus,
+        [data-testid="stChatInput"] textarea:focus {
+            box-shadow: 0 0 0 3px var(--ai-glow) !important;
+            border-color: rgba(111, 251, 190, 0.35) !important;
         }
 
         div[data-baseweb="select"] > div,
@@ -359,15 +465,157 @@ st.markdown(
 
         [data-testid="stExpander"],
         details {
-            border: 1px solid var(--line) !important;
+            border: none !important;
             border-radius: 12px !important;
             background: var(--surface) !important;
         }
 
         [data-baseweb="tag"] {
             background: var(--surface-low) !important;
-            border: 1px solid var(--line) !important;
+            border: none !important;
             color: var(--muted) !important;
+        }
+
+        .how-shell {
+            margin-top: 2.4rem;
+            border-radius: 12px;
+            background: var(--surface);
+            overflow: hidden;
+            box-shadow: var(--shadow);
+        }
+
+        .how-hero {
+            padding: 3rem 1.2rem;
+            background: #eef1f4;
+        }
+
+        .how-hero-inner {
+            max-width: 52rem;
+            margin: 0 auto;
+        }
+
+        .how-kicker {
+            display: inline-block;
+            margin-bottom: 0.78rem;
+            background: #dce8fb;
+            color: #5e6c84;
+            border-radius: 999px;
+            padding: 0.32rem 0.62rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-size: 0.72rem;
+            font-weight: 700;
+        }
+
+        .how-hero h2 {
+            margin: 0;
+            font-size: clamp(2rem, 4.5vw, 3.3rem);
+            letter-spacing: -0.035em;
+            line-height: 1.02;
+        }
+
+        .how-hero p {
+            max-width: 38rem;
+            margin: 0.8rem 0 0 0;
+            color: var(--muted);
+            font-size: 1.05rem;
+            line-height: 1.6;
+        }
+
+        .how-step {
+            display: grid;
+            grid-template-columns: 1.2fr 1fr;
+            gap: 1.3rem;
+            padding: 2.4rem 1.2rem;
+            background: #f3f5f7;
+            border-top: 1px solid rgba(0,0,0,0.03);
+        }
+
+        .how-step:nth-child(even) {
+            background: #eff2f6;
+        }
+
+        .how-step-copy h4 {
+            margin: 0.2rem 0 0.48rem 0;
+            font-size: clamp(1.45rem, 2.5vw, 2rem);
+            letter-spacing: -0.02em;
+        }
+
+        .how-step-copy p {
+            margin: 0;
+            color: var(--muted);
+            line-height: 1.55;
+        }
+
+        .how-step-num {
+            color: #c5cad3;
+            font-weight: 800;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.38rem;
+            font-size: 1.65rem;
+            font-family: 'Manrope', sans-serif;
+        }
+
+        .how-card {
+            background: #ffffff;
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            min-height: 160px;
+            padding: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #667085;
+            text-align: center;
+            font-weight: 600;
+        }
+
+        .how-cta {
+            margin: 1.7rem 1.2rem 2.2rem 1.2rem;
+            border-radius: 12px;
+            background: linear-gradient(125deg, #020202 0%, #0f1c2f 100%);
+            color: #e8f0fb;
+            text-align: center;
+            padding: 2rem 1.1rem;
+        }
+
+        .how-cta h3 {
+            margin: 0;
+            font-size: clamp(1.95rem, 4vw, 2.9rem);
+            letter-spacing: -0.03em;
+            color: #ffffff;
+        }
+
+        .how-cta p {
+            margin: 0.72rem auto 1rem auto;
+            max-width: 38rem;
+            color: #b8c5d8;
+        }
+
+        .app-footer {
+            margin-top: 2.2rem;
+            border-top: 1px solid var(--line);
+            padding-top: 1.4rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            flex-wrap: wrap;
+            color: #616d80;
+            font-size: 0.84rem;
+        }
+
+        .app-footer-links {
+            display: inline-flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .app-footer-links span {
+            text-decoration: underline;
+            text-underline-offset: 0.16rem;
+            color: #4f5d72;
+            font-weight: 600;
         }
 
         @keyframes hero-enter {
@@ -376,12 +624,33 @@ st.markdown(
         }
 
         @media (max-width: 900px) {
+            .top-nav {
+                padding-bottom: 0.95rem;
+                margin-bottom: 1rem;
+            }
+
+            .top-nav-links {
+                gap: 0.8rem;
+            }
+
+            .top-nav-link {
+                font-size: 0.84rem;
+            }
+
             .hero-shell {
-                padding: 2rem 1rem;
+                padding: 1.8rem 1rem;
             }
 
             .hero-title {
                 font-size: clamp(1.95rem, 8.2vw, 2.45rem);
+            }
+
+            .hero-copy {
+                font-size: 0.99rem;
+            }
+
+            .hero-search-shell {
+                grid-template-columns: 1fr;
             }
 
             .source-strip span {
@@ -391,6 +660,24 @@ st.markdown(
 
             .card-title {
                 padding-right: 5.8rem;
+            }
+
+            .how-step {
+                grid-template-columns: 1fr;
+                gap: 0.9rem;
+                padding: 1.5rem 1rem;
+            }
+
+            .how-hero {
+                padding: 2rem 1rem;
+            }
+
+            .app-footer {
+                display: block;
+            }
+
+            .app-footer-links {
+                margin-top: 0.5rem;
             }
         }
     </style>
@@ -404,10 +691,10 @@ if _theme_mode == "dark":
         <style>
             :root {
                 --bg: #0e0f14;
-                --surface: #161a22;
-                --surface-low: #1f2530;
+                --surface: #171c24;
+                --surface-low: #111722;
                 --ink: #e6ebf5;
-                --muted: #a5afbf;
+                --muted: #bcc6d8;
                 --primary: #f8fafc;
                 --price-color: #34d39a;
                 --line: rgba(255, 255, 255, 0.12);
@@ -422,13 +709,75 @@ if _theme_mode == "dark":
                 --button-bg: #f8fafc;
                 --button-ink: #111827;
                 --chip-bg: #1b202a;
-                --chip-ink: #c2cedf;
+                --chip-ink: #d4def0;
                 --accent-soft: #182135;
+                --glass-bg: rgba(28, 35, 48, 0.72);
+                --ai-glow: rgba(111, 251, 190, 0.25);
             }
 
             [data-testid="stHeader"] {
                 background: rgba(14, 17, 24, 0.78);
                 border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            }
+
+            .offerta-card,
+            .how-card,
+            .hero-search-shell {
+                background: #1c2431;
+            }
+
+            .source-badge {
+                background: #1f2a3a;
+            }
+
+            .hero-kicker {
+                background: rgba(111, 251, 190, 0.25);
+                color: #94f5ca;
+            }
+
+            .how-hero,
+            .how-step,
+            .how-step:nth-child(even) {
+                background: #151b25;
+            }
+
+            .advisor-note {
+                color: #c6d2e5;
+            }
+
+            .hero-accent {
+                color: #9eb1cf;
+            }
+
+            .source-strip {
+                color: #d2dcf0;
+            }
+
+            .source-strip span {
+                opacity: 0.88;
+            }
+
+            [data-testid="stChatMessage"] p,
+            [data-testid="stChatMessage"] li,
+            [data-testid="stChatMessage"] span,
+            .how-step-copy p,
+            .card-meta,
+            .app-footer,
+            .app-footer-links span {
+                color: #d2dcf0;
+            }
+
+            .how-kicker {
+                background: rgba(111, 251, 190, 0.24);
+                color: #a8f7d4;
+            }
+
+            .source-badge {
+                color: #d0dcf0;
+            }
+
+            .how-cta {
+                background: linear-gradient(125deg, #04070d 0%, #10243f 100%);
             }
         </style>
         """,
@@ -455,9 +804,9 @@ def _init_state() -> None:
         "presearch_messages": [
             {
                 "role": "assistant",
-                "content": "Raccontami cosa cerchi su Trova Prezzi — qualsiasi tipo di prodotto "
+                "content": "Raccontami la richiesta del tuo amico su Trova Prezzi — qualsiasi tipo di prodotto "
                 "(tech, abbigliamento, elettrodomestici, sport, libri...). "
-                "Ti faccio al massimo 2 domande e poi avvio la ricerca.",
+                "Ti faccio al massimo 2 domande e poi avvio lo scraping.",
             }
         ],
         "presearch_question_count": 0,
@@ -1588,24 +1937,38 @@ with _theme_row[1]:
 
 st.markdown(
     """
+    <div class='top-nav'>
+        <div class='top-nav-brand'>Trova Prezzi Mio</div>
+        <div class='top-nav-links'>
+            <a class='top-nav-link is-active' href='#sezione-confronta'>Confronta</a>
+            <a class='top-nav-link' href='#sezione-come-funziona'>Come Funziona</a>
+            <a class='top-nav-link' href='#sezione-offerte'>Offerte</a>
+        </div>
+        <div class='top-nav-icon'>◉</div>
+    </div>
     <div class='hero-shell'>
-        <span class='hero-kicker'>trova prezzi</span>
-        <h1 class='hero-title'>Trova i prezzi migliori</h1>
+        <span class='hero-kicker'>✨ AI Concierge</span>
+        <h1 class='hero-title'>Trova il prezzo migliore.<br><span class='hero-accent'>Digita cosa cerchi.</span></h1>
         <p class='hero-copy'>
-            Cerca su Amazon, eBay, Vinted, Euronics e altri negozi italiani.<br>
-            Prezzi reali, raccomandazione AI, confronto immediato.
+            L'AI cerca per te su Amazon, eBay, Vinted, Euronics e altri.<br>
+            In italiano, con filtri smart e confronto immediato.
         </p>
+        <p class='advisor-note'>Uso consulente: incolla la richiesta di un amico, avvia scraping multi-sito, poi usa il consiglio AI finale per raccomandare il prodotto migliore.</p>
+        <div class='hero-search-shell'>
+            <div class='hero-search-input'>🔎&nbsp;&nbsp;es. iPhone 15 128GB usato sotto 600€</div>
+            <div class='hero-search-cta'>Cerca offerte →</div>
+        </div>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
 chips = [
-    "notebook 14 pollici 16GB",
-    "iPhone 15 usato",
-    "cuffie wireless noise cancelling",
-    "smartwatch sotto 200€",
-    "tablet Android 10 pollici",
+    "amico: notebook 14'' 16GB sotto 800€",
+    "amico: iPhone usato affidabile",
+    "amico: cuffie ANC qualità/prezzo",
+    "amico: smartwatch entro 200€",
+    "amico: tablet Android nuovo",
 ]
 st.markdown(
     "<div class='chip-row'>" + "".join(f"<span class='chip'>{chip}</span>" for chip in chips) + "</div>",
@@ -1665,14 +2028,15 @@ if not _presearch_done:
         unsafe_allow_html=True,
     )
 
+st.markdown("<span id='sezione-offerte'></span>", unsafe_allow_html=True)
 st.markdown("<div class='section-card'>", unsafe_allow_html=True)
 
 if not _presearch_done:
     # ══════════════════════════════ STATO 1: Chat attiva ═════════════════
     st.markdown(
         "<div class='section-heading'><h3>🔍 Trova le migliori offerte</h3>"
-        "<p>Racconta liberamente cosa stai cercando — la AI genera la query ottimizzata, il budget e i filtri tecnici. "
-        "Se il primo messaggio contiene già abbastanza informazioni, andiamo direttamente alla ricerca.</p></div>",
+        "<p>Descrivi la richiesta che ti ha fatto un amico: la AI genera query ottimizzata, budget e filtri tecnici. "
+        "Se dai dettagli completi al primo messaggio, avviamo subito lo scraping multi-sito.</p></div>",
         unsafe_allow_html=True,
     )
     _chat_hdr = st.columns([6, 1])
@@ -1850,6 +2214,7 @@ if search_triggered:
 
 if st.session_state.get("ricerca_effettuata", False):
     st.write("")
+    st.markdown("<span id='sezione-confronta'></span>", unsafe_allow_html=True)
     st.markdown("<div class='section-card'>", unsafe_allow_html=True)
 
     # ── Modalità confronto: risultati side-by-side (sopra la tabella normale) ──
@@ -2126,7 +2491,79 @@ if st.session_state.get("ricerca_effettuata", False):
 
     st.markdown("</div>", unsafe_allow_html=True)
 
+st.markdown(
+    """
+    <span id='sezione-come-funziona'></span>
+    <div class='how-shell'>
+        <section class='how-hero'>
+            <div class='how-hero-inner'>
+                <span class='how-kicker'>Il tuo concierge digitale</span>
+                <h2>Come funziona la ricerca intelligente.</h2>
+                <p>Dimentica decine di schede aperte e confusione. Usiamo l'intelligenza artificiale per trovare il prezzo migliore nei negozi più sicuri d'Italia.</p>
+            </div>
+        </section>
+
+        <section class='how-step'>
+            <div class='how-step-copy'>
+                <div class='how-step-num'>01</div>
+                <h4>Scrivi cosa cerchi in italiano</h4>
+                <p>La nostra AI comprende il linguaggio naturale: non servono codici prodotto o query complesse. Riconosciamo brand, specifiche tecniche e budget in pochi secondi.</p>
+            </div>
+            <div class='how-card'>AI INSIGHTS<br/>“Cerco uno smartphone Samsung con ottima fotocamera sotto i 500€”</div>
+        </section>
+
+        <section class='how-step'>
+            <div class='how-step-copy'>
+                <div class='how-step-num'>02</div>
+                <h4>Cerchiamo su 7 fonti contemporaneamente</h4>
+                <p>Interroghiamo Amazon, eBay, Vinted, Euronics, Unieuro, MediaWorld e Trovaprezzi in parallelo, così ottieni un panorama reale del mercato.</p>
+            </div>
+            <div class='how-card'>Amazon · eBay · Vinted<br/>+ 4 fonti</div>
+        </section>
+
+        <section class='how-step'>
+            <div class='how-step-copy'>
+                <div class='how-step-num'>03</div>
+                <h4>Filtriamo i risultati irrilevanti</h4>
+                <p>Eliminiamo ciò che non rispetta il tuo obiettivo, mostrando solo prodotti coerenti con prezzo, condizione e specifiche richieste.</p>
+            </div>
+            <div class='how-card'>✕ Accessori rimossi<br/>✓ Solo prodotti pertinenti</div>
+        </section>
+
+        <section class='how-step'>
+            <div class='how-step-copy'>
+                <div class='how-step-num'>04</div>
+                <h4>Confronta e scegli</h4>
+                <p>Metti i prodotti fianco a fianco, leggi il verdetto del concierge e vai al negozio più conveniente con un clic.</p>
+            </div>
+            <div class='how-card'>Amazon.it €449,00<br/>eBay.it €472,50</div>
+        </section>
+
+        <section class='how-cta'>
+            <h3>Pronto a risparmiare tempo e soldi?</h3>
+            <p>Unisciti a migliaia di utenti che usano il nostro concierge per i loro acquisti tech quotidiani.</p>
+        </section>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
 st.write("")
 st.caption(
     "Trova Prezzi · Scraper con delay tra richieste · I prezzi sono indicativi e vanno sempre verificati sul sito del venditore."
+)
+
+st.markdown(
+    """
+    <div class='app-footer'>
+        <div>
+            <strong>Trova Prezzi Mio</strong><br>
+            © 2024 Trova Prezzi Mio. Il tuo concierge digitale per lo shopping tech.
+        </div>
+        <div class='app-footer-links'>
+            <span>Amazon</span><span>eBay</span><span>MediaWorld</span><span>Unieuro</span><span>Privacy</span><span>Termini</span>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
 )

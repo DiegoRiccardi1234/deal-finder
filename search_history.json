@@ -1,0 +1,62 @@
+[
+  {
+    "query": "notebook windows",
+    "budget_min": 250,
+    "budget_max": 700,
+    "condizione": "nuovo",
+    "fonti": [
+      "amazon",
+      "ebay",
+      "vinted",
+      "euronics",
+      "mediaworld"
+    ],
+    "results_count": 11,
+    "timestamp": "2026-03-23T17:29:45"
+  },
+  {
+    "query": "lavatrice 8kg",
+    "budget_min": 300,
+    "budget_max": 500,
+    "condizione": "nuovo",
+    "fonti": [
+      "amazon",
+      "ebay",
+      "vinted",
+      "euronics",
+      "mediaworld"
+    ],
+    "results_count": 20,
+    "timestamp": "2026-03-23T17:29:13"
+  },
+  {
+    "query": "felpa nike donna",
+    "budget_min": 20,
+    "budget_max": 60,
+    "condizione": "usato",
+    "fonti": [
+      "amazon",
+      "ebay",
+      "vinted",
+      "euronics",
+      "mediaworld"
+    ],
+    "results_count": 2,
+    "timestamp": "2026-03-23T17:28:48"
+  },
+  {
+    "query": "occhiali da sole",
+    "budget_min": 0,
+    "budget_max": 800,
+    "condizione": "tutti",
+    "fonti": [
+      "amazon",
+      "ebay",
+      "vinted",
+      "euronics",
+      "mediaworld"
+    ],
+    "results_count": 20,
+    "timestamp": "2026-03-23T17:25:53"
+  }
+]
