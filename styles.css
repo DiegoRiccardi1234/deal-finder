@@ -652,34 +652,34 @@
             .offerta-card,
             .how-card,
             .hero-search-shell {
-                background: #1c2431;
+                background: var(--surface);
             }
 
             .source-badge {
-                background: #1f2a3a;
+                background: var(--chip-bg);
             }
 
             .hero-kicker {
-                background: rgba(111, 251, 190, 0.25);
-                color: #94f5ca;
+                background: var(--best-value-bg);
+                color: var(--primary);
             }
 
             .how-hero,
             .how-step,
             .how-step:nth-child(even) {
-                background: #151b25;
+                background: var(--bg);
             }
 
             .advisor-note {
-                color: #c6d2e5;
+                color: var(--muted);
             }
 
             .hero-accent {
-                color: #9eb1cf;
+                color: var(--muted);
             }
 
             .source-strip {
-                color: #d2dcf0;
+                color: var(--ink);
             }
 
             .source-strip span {
@@ -693,20 +693,20 @@
             .card-meta,
             .app-footer,
             .app-footer-links span {
-                color: #d2dcf0;
+                color: var(--ink);
             }
 
             .how-kicker {
-                background: rgba(111, 251, 190, 0.24);
-                color: #a8f7d4;
+                background: var(--best-value-bg);
+                color: var(--primary);
             }
 
             .source-badge {
-                color: #d0dcf0;
+                color: var(--chip-ink);
             }
 
             .how-cta {
-                background: linear-gradient(125deg, #04070d 0%, #10243f 100%);
+                background: var(--surface); border: 1px solid var(--primary);
             }
         
 /* === P4: Focus-visible states (accessibilità) === */
