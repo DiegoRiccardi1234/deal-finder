@@ -73,6 +73,10 @@ else:
 if _theme_mode == "dark":
     # Promuove le variabili dark a root sovrascrivendo quelle di default
     css = css.replace("[data-theme=\"dark\"]", ":root")
+else:
+    # Neutralizza il selettore dark: Streamlit può impostare data-theme="dark"
+    # autonomamente (OS dark mode), sovrascrivendo le nostre variabili light.
+    css = css.replace("[data-theme=\"dark\"]", ".__dark_disabled__")
 
 st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
 
@@ -1229,40 +1233,30 @@ with _theme_row[1]:
     st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown(
-    """
-<div class='top-nav sticky-mobile' id='sezione-confronta'>
-    <div class='nav-left'>
-        <label for='mobile-menu-toggle' class='hamburger-btn'>☰</label>
-        <div class='top-nav-brand'>Trova Prezzi Mio</div>
-    </div>
-
-    <input type='checkbox' id='mobile-menu-toggle' class='hidden-toggle'>
-
-    <div class='top-nav-links'>
-        <a class='top-nav-link is-active' href='#sezione-confronta'>Confronta</a>
-        <a class='top-nav-link' href='#sezione-come-funziona'>Come Funziona</a>
-        <a class='top-nav-link' href='#sezione-offerte'>Offerte</a>
-    </div>
-
-    <div class='nav-right'>
-       <a class='cta-search-mobile' href='#sezione-confronta'>🔍 Cerca</a>
-       <div class='top-nav-icon'>◉</div>
-    </div>
-</div>
-<div class='hero-shell'>
-    <span class='hero-kicker'>✨ AI Concierge</span>
-    <h1 class='hero-title'>Trova il prezzo migliore.<br><span class='hero-accent'>Digita cosa cerchi.</span></h1>
-    <p class='hero-copy'>
-        L'AI cerca per te su Amazon, eBay, Vinted, Euronics e altri.<br>
-        In italiano, con filtri smart e confronto immediato.
-    </p>
-    <p class='advisor-note'>Uso consulente: incolla la richiesta di un amico, avvia scraping multi-sito, poi usa il consiglio AI finale per raccomandare il prodotto migliore.</p>
-    <div class='hero-search-shell'>
-        <div class='hero-search-input'>🔎&nbsp;&nbsp;es. iPhone 15 128GB usato sotto 600€</div>
-        <div class='hero-search-cta'>Cerca offerte →</div>
-    </div>
-</div>
-""",
+    "<div class='top-nav sticky-mobile' id='sezione-confronta'>"
+    "<div class='nav-left'>"
+    "<div class='top-nav-brand'>Trova Prezzi Mio</div>"
+    "</div>"
+    "<div class='top-nav-links'>"
+    "<a class='top-nav-link is-active' href='#sezione-confronta'>Confronta</a>"
+    "<a class='top-nav-link' href='#sezione-come-funziona'>Come Funziona</a>"
+    "<a class='top-nav-link' href='#sezione-offerte'>Offerte</a>"
+    "</div>"
+    "<div class='nav-right'>"
+    "<a class='cta-search-mobile' href='#sezione-confronta'>🔍 Cerca</a>"
+    "<div class='top-nav-icon'>◉</div>"
+    "</div>"
+    "</div>"
+    "<div class='hero-shell'>"
+    "<span class='hero-kicker'>✨ AI Concierge</span>"
+    "<h1 class='hero-title'>Trova il prezzo migliore.<br><span class='hero-accent'>Digita cosa cerchi.</span></h1>"
+    "<p class='hero-copy'>L'AI cerca per te su Amazon, eBay, Vinted, Euronics e altri. In italiano, con filtri smart e confronto immediato.</p>"
+    "<p class='advisor-note'>Uso consulente: incolla la richiesta di un amico, avvia scraping multi-sito, poi usa il consiglio AI finale per raccomandare il prodotto migliore.</p>"
+    "<div class='hero-search-shell'>"
+    "<div class='hero-search-input'>🔎&nbsp;&nbsp;es. iPhone 15 128GB usato sotto 600€</div>"
+    "<div class='hero-search-cta'>Cerca offerte →</div>"
+    "</div>"
+    "</div>",
     unsafe_allow_html=True,
 )
 
@@ -1795,59 +1789,50 @@ if st.session_state.get("ricerca_effettuata", False):
     st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown(
-    """
-<span id='sezione-come-funziona'></span>
-<div class='how-shell'>
-    <section class='how-hero'>
-        <div class='how-hero-inner'>
-            <span class='how-kicker'>Il tuo concierge digitale</span>
-            <h2>Come funziona la ricerca intelligente.</h2>
-            <p>Dimentica decine di schede aperte e confusione. Usiamo l'intelligenza artificiale per trovare il prezzo migliore nei negozi più sicuri d'Italia.</p>
-        </div>
-    </section>
-
-    <section class='how-step'>
-        <div class='how-step-copy'>
-            <div class='how-step-num'>01</div>
-            <h4>Scrivi cosa cerchi in italiano</h4>
-            <p>La nostra AI comprende il linguaggio naturale: non servono codici prodotto o query complesse. Riconosciamo brand, specifiche tecniche e budget in pochi secondi.</p>
-        </div>
-        <div class='how-card'>AI INSIGHTS<br/>“Cerco uno smartphone Samsung con ottima fotocamera sotto i 500€”</div>
-    </section>
-
-    <section class='how-step'>
-        <div class='how-step-copy'>
-            <div class='how-step-num'>02</div>
-            <h4>Cerchiamo su 7 fonti contemporaneamente</h4>
-            <p>Interroghiamo Amazon, eBay, Vinted, Euronics, Unieuro, MediaWorld e Trovaprezzi in parallelo, così ottieni un panorama reale del mercato.</p>
-        </div>
-        <div class='how-card'>Amazon · eBay · Vinted<br/>+ 4 fonti</div>
-    </section>
-
-    <section class='how-step'>
-        <div class='how-step-copy'>
-            <div class='how-step-num'>03</div>
-            <h4>Filtriamo i risultati irrilevanti</h4>
-            <p>Eliminiamo ciò che non rispetta il tuo obiettivo, mostrando solo prodotti coerenti con prezzo, condizione e specifiche richieste.</p>
-        </div>
-        <div class='how-card'>✕ Accessori rimossi<br/>✓ Solo prodotti pertinenti</div>
-    </section>
-
-    <section class='how-step'>
-        <div class='how-step-copy'>
-            <div class='how-step-num'>04</div>
-            <h4>Confronta e scegli</h4>
-            <p>Metti i prodotti fianco a fianco, leggi il verdetto del concierge e vai al negozio più conveniente con un clic.</p>
-        </div>
-        <div class='how-card'>Amazon.it €449,00<br/>eBay.it €472,50</div>
-    </section>
-
-    <section class='how-cta'>
-        <h3>Pronto a risparmiare tempo e soldi?</h3>
-        <p>Unisciti a migliaia di utenti che usano il nostro concierge per i loro acquisti tech quotidiani.</p>
-    </section>
-</div>
-""",
+    “<span id='sezione-come-funziona'></span>”
+    “<div class='how-shell'>”
+    “<div class='how-hero'><div class='how-hero-inner'>”
+    “<span class='how-kicker'>Il tuo concierge digitale</span>”
+    “<h2>Come funziona la ricerca intelligente.</h2>”
+    “<p>Dimentica decine di schede aperte e confusione. Usiamo l'intelligenza artificiale per trovare il prezzo migliore nei negozi più sicuri d'Italia.</p>”
+    “</div></div>”
+    “<div class='how-step'>”
+    “<div class='how-step-copy'>”
+    “<div class='how-step-num'>01</div>”
+    “<h4>Scrivi cosa cerchi in italiano</h4>”
+    “<p>La nostra AI comprende il linguaggio naturale: non servono codici prodotto o query complesse. Riconosciamo brand, specifiche tecniche e budget in pochi secondi.</p>”
+    “</div>”
+    “<div class='how-card'>AI INSIGHTS<br/>\”Cerco uno smartphone Samsung con ottima fotocamera sotto i 500€\”</div>”
+    “</div>”
+    “<div class='how-step'>”
+    “<div class='how-step-copy'>”
+    “<div class='how-step-num'>02</div>”
+    “<h4>Cerchiamo su 7 fonti contemporaneamente</h4>”
+    “<p>Interroghiamo Amazon, eBay, Vinted, Euronics, Unieuro, MediaWorld e Trovaprezzi in parallelo, così ottieni un panorama reale del mercato.</p>”
+    “</div>”
+    “<div class='how-card'>Amazon · eBay · Vinted<br/>+ 4 fonti</div>”
+    “</div>”
+    “<div class='how-step'>”
+    “<div class='how-step-copy'>”
+    “<div class='how-step-num'>03</div>”
+    “<h4>Filtriamo i risultati irrilevanti</h4>”
+    “<p>Eliminiamo ciò che non rispetta il tuo obiettivo, mostrando solo prodotti coerenti con prezzo, condizione e specifiche richieste.</p>”
+    “</div>”
+    “<div class='how-card'>✕ Accessori rimossi<br/>✓ Solo prodotti pertinenti</div>”
+    “</div>”
+    “<div class='how-step'>”
+    “<div class='how-step-copy'>”
+    “<div class='how-step-num'>04</div>”
+    “<h4>Confronta e scegli</h4>”
+    “<p>Metti i prodotti fianco a fianco, leggi il verdetto del concierge e vai al negozio più conveniente con un clic.</p>”
+    “</div>”
+    “<div class='how-card'>Amazon.it €449,00<br/>eBay.it €472,50</div>”
+    “</div>”
+    “<div class='how-cta'>”
+    “<h3>Pronto a risparmiare tempo e soldi?</h3>”
+    “<p>Unisciti a migliaia di utenti che usano il nostro concierge per i loro acquisti tech quotidiani.</p>”
+    “</div>”
+    “</div>”,
     unsafe_allow_html=True,
 )
 
