@@ -33,7 +33,7 @@ def render_nav(active_page: str = "home") -> None:
     """Renderizza la top-nav HTML con link corretti alle pagine Streamlit."""
     # URL delle pagine (Streamlit multipage usa il nome file senza .py)
     home_url = "/"
-    tool_url = "/2_Tool"
+    tool_url = "/Tool"
 
     def _cls(page: str) -> str:
         return "top-nav-link is-active" if active_page == page else "top-nav-link"
