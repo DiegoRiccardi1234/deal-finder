@@ -1198,17 +1198,6 @@ def _run_search(
 api_key = _get_cerebras_api_key()
 cerebras_client = _get_cerebras_client(api_key)
 
-_theme_row = st.columns([6, 1])
-with _theme_row[1]:
-    st.markdown("<div class='theme-chooser'>", unsafe_allow_html=True)
-    st.selectbox(
-        "Tema",
-        options=["light", "dark"],
-        key="ui_theme",
-        format_func=lambda v: "Light" if v == "light" else "Dark",
-    )
-    st.markdown("</div>", unsafe_allow_html=True)
-
 st.write("")
 
 # ── Valori default (sovrascriuti dai widget nel ramo attivo) ──────────────
