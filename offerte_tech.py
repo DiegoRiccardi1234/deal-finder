@@ -2631,14 +2631,24 @@ def filtra_risultati_con_ai(risultati: list[Offerta], filtri: dict[str, str]) ->
         return risultati
 
     # Filtro hard su vincoli tecnici (ram/storage/display) con log motivazionale.
+    # MENO AGGRESSIVO: skip hard filter se filtri_ai è vuoto o contiene solo query generiche
+    has_hard_specs = any(
+        k in str(filtri).lower() for k in ["ram", "storage", "display", "size", "gb", "ssd"]
+    )
+
     hard_filtered: list[Offerta] = []
     hard_dropped: list[tuple[Offerta, list[str]]] = []
-    for offerta in risultati:
-        reasons = _hard_spec_mismatch_reasons(offerta, filtri)
-        if reasons:
-            hard_dropped.append((offerta, reasons))
-        else:
-            hard_filtered.append(offerta)
+
+    if has_hard_specs:  # Applica hard filter SOLO se ci sono specs tecniche
+        for offerta in risultati:
+            reasons = _hard_spec_mismatch_reasons(offerta, filtri)
+            if reasons:
+                hard_dropped.append((offerta, reasons))
+            else:
+                hard_filtered.append(offerta)
+    else:
+        # Se no hard specs, accetta tutti i risultati
+        hard_filtered = risultati
 
     if hard_dropped:
         print(f"  🧾 Log filtro AI: scartate {len(hard_dropped)} offerte per hard constraints")
@@ -2836,16 +2846,18 @@ def export_to_csv(offerte: list[Offerta], filename: str = "offerte.csv") -> None
     """
     Esporta i risultati in un file CSV.
     Usa pandas se disponibile, altrimenti usa il modulo csv stdlib.
+    Encoding: UTF-8-SIG per compatibilità Excel italiano.
     """
-    fieldnames = ["posizione", "nome", "prezzo_eur", "spedizione", "negozio", "fonte", "link"]
+    fieldnames = ["posizione", "nome", "prezzo_eur", "spedizione", "negozio", "fonte", "specs", "link"]
     rows = [
         {
             "posizione":  i,
             "nome":       o.nome,
-            "prezzo_eur": f"{o.prezzo:.2f}",
+            "prezzo_eur": o.prezzo,
             "spedizione": o.spedizione,
             "negozio":    o.negozio,
             "fonte":      o.fonte,
+            "specs":      ", ".join(f"{k}={v}" for k, v in (o.specs or {}).items()),
             "link":       o.link,
         }
         for i, o in enumerate(offerte, start=1)
@@ -2857,7 +2869,7 @@ def export_to_csv(offerte: list[Offerta], filename: str = "offerte.csv") -> None
         df.to_csv(filename, index=False, encoding="utf-8-sig")  # utf-8-sig per Excel italiano
     except ImportError:
         with open(filename, "w", newline="", encoding="utf-8-sig") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer = csv.DictWriter(f, fieldnames=fieldnames, quoting=csv.QUOTE_NONNUMERIC)
             writer.writeheader()
             writer.writerows(rows)
 
@@ -2961,8 +2973,9 @@ def cerca_offerte(
         if "mediaworld" in fonti_norm:
             future_to_label[executor.submit(_timed_call, scrape_mediaworld, "MediaWorld.it", query, prezzo_min, budget_max, query_tokens, condizione)] = "MediaWorld.it"
 
-        # Cap per-source: evita che una singola fonte (es. eBay con 50 risultati) soffochi le altre
-        _per_source_cap = max(top_n, 20)
+        # Cap per-source: evita che una singola fonte (es. eBay con 50 risultati) soffochi le altre.
+        # Distribuiamo top_n diviso per numer fonti per non avere un dominio assoluto, + extra safety margin
+        _per_source_cap = max((top_n // max(1, len(fonti_norm))) + 5, 10)
         for future in as_completed(future_to_label):
             label = future_to_label[future]
             try:

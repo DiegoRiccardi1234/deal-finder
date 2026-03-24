@@ -874,3 +874,6 @@
 a[data-testid="stPageLink"] {
     margin-bottom: 0.5rem;
 }
+
+/* Fix widget text contrast */
+[data-testid='stWidgetLabel'] p, [data-testid='stWidgetLabel'] label, .stTextInput label, .stSelectbox label, .stSlider label { color: var(--text-color) !important; }

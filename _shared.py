@@ -30,29 +30,13 @@ def load_css(theme_mode: str = "light") -> None:
 
 
 def render_nav(active_page: str = "home") -> None:
-    """Renderizza la top-nav HTML con link corretti alle pagine Streamlit."""
-    # URL delle pagine (Streamlit multipage usa il nome file senza .py)
-    home_url = "/"
-    tool_url = "/Tool"
-
-    def _cls(page: str) -> str:
-        return "top-nav-link is-active" if active_page == page else "top-nav-link"
-
-    nav_html = (
-        "<div class='top-nav sticky-mobile'>"
-        "<div class='nav-left'>"
-        "<div class='top-nav-brand'>Trova Prezzi Mio</div>"
-        "</div>"
-        "<div class='top-nav-links'>"
-        f"<a class='{_cls('home')}' href='{home_url}'>Home</a>"
-        f"<a class='{_cls('tool')}' href='{tool_url}'>Cerca Prezzi</a>"
-        "</div>"
-        "<div class='nav-right'>"
-        "<div class='top-nav-icon'>◉</div>"
-        "</div>"
-        "</div>"
-    )
-    st.markdown(nav_html, unsafe_allow_html=True)
+    """Renderizza la navigazione laterale usando st.sidebar e st.page_link."""
+    with st.sidebar:
+        st.markdown("## Trova Prezzi Mio")
+        st.page_link("pages/1_Home.py", label="Home", icon="🏠")
+        st.page_link("pages/2_Tool.py", label="Cerca Prezzi", icon="🔍")
+        st.markdown("---")
+        render_theme_toggle()
 
 
 def get_theme_mode() -> str:

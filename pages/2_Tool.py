@@ -1209,32 +1209,6 @@ with _theme_row[1]:
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
-st.markdown(
-    "<div class='hero-shell'>"
-    "<span class='hero-kicker'>✨ AI Concierge</span>"
-    "<h1 class='hero-title'>Trova il prezzo migliore.<br><span class='hero-accent'>Digita cosa cerchi.</span></h1>"
-    "<p class='hero-copy'>L'AI cerca per te su Amazon, eBay, Vinted, Euronics e altri. In italiano, con filtri smart e confronto immediato.</p>"
-    "<p class='advisor-note'>Uso consulente: incolla la richiesta di un amico, avvia scraping multi-sito, poi usa il consiglio AI finale per raccomandare il prodotto migliore.</p>"
-    "<div class='hero-search-shell'>"
-    "<div class='hero-search-input'>🔎&nbsp;&nbsp;es. iPhone 15 128GB usato sotto 600€</div>"
-    "<div class='hero-search-cta'>Cerca offerte →</div>"
-    "</div>"
-    "</div>",
-    unsafe_allow_html=True,
-)
-
-chips = [
-    "amico: notebook 14'' 16GB sotto 800€",
-    "amico: iPhone usato affidabile",
-    "amico: cuffie ANC qualità/prezzo",
-    "amico: smartwatch entro 200€",
-    "amico: tablet Android nuovo",
-]
-st.markdown(
-    "<div class='chip-row'>" + "".join(f"<span class='chip'>{chip}</span>" for chip in chips) + "</div>",
-    unsafe_allow_html=True,
-)
-
 st.write("")
 
 # ── Valori default (sovrascriuti dai widget nel ramo attivo) ──────────────
