@@ -29,11 +29,10 @@ def load_css(theme_mode: str = "light") -> None:
     st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
 
 
-def render_nav(active_page: str = "home") -> None:
+def render_nav(active_page: str = "tool") -> None:
     """Renderizza la navigazione laterale usando st.sidebar e st.page_link."""
     with st.sidebar:
         st.markdown("## Trova Prezzi Mio")
-        st.page_link("pages/1_Home.py", label="Home", icon="🏠")
         st.page_link("pages/2_Tool.py", label="Cerca Prezzi", icon="🔍")
         st.markdown("---")
         render_theme_toggle()

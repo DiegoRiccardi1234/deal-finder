@@ -237,7 +237,7 @@
             border-radius: 14px;
             background: color-mix(in srgb, var(--surface) 88%, var(--accent-soft) 12%);
             text-align: center;
-            color: #424a57;
+            color: var(--ink);
         }
 
         .source-strip-label {
@@ -247,14 +247,17 @@
             letter-spacing: 0.18em;
             text-transform: uppercase;
             font-weight: 700;
+            color: var(--ink) !important;
+            opacity: 1;
         }
 
-        .source-strip span {
+        .source-strip span:not(.source-strip-label) {
             display: inline-block;
             margin: 0.08rem 0.46rem;
             font-size: 1.03rem;
             font-weight: 700;
-            opacity: 0.72;
+            opacity: 0.88;
+            color: var(--ink) !important;
         }
 
         /* ── Section card ── */
@@ -907,13 +910,15 @@
 }
 
 [data-testid="stSidebar"] [data-testid="stPageLink"] span {
-    color: var(--muted) !important;
+    color: var(--ink) !important;
     font-weight: 600;
+    opacity: 0.75;
 }
 
 [data-testid="stSidebar"] [data-testid="stPageLink"]:hover span,
 [data-testid="stSidebar"] [data-testid="stPageLink"][aria-current] span {
     color: var(--ink) !important;
+    opacity: 1;
 }
 
 [data-testid="stSidebar"] [data-testid="stSelectbox"] select,

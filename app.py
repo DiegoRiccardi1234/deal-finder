@@ -17,7 +17,5 @@ if _theme_mode not in {"light", "dark"}:
 
 load_css(theme_mode=_theme_mode)
 
-import os
-home_page = next((f for f in os.listdir("pages") if f.lower() == "1_home.py"), "1_Home.py")
-st.switch_page(f"pages/{home_page}")
+st.switch_page("pages/2_Tool.py")
 
