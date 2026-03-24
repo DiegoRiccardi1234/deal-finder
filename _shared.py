@@ -30,10 +30,9 @@ def load_css(theme_mode: str = "light") -> None:
 
 
 def render_nav(active_page: str = "tool") -> None:
-    """Renderizza la navigazione laterale usando st.sidebar e st.page_link."""
+    """Renderizza la navigazione laterale."""
     with st.sidebar:
         st.markdown("## Trova Prezzi Mio")
-        st.page_link("pages/2_Tool.py", label="Cerca Prezzi", icon="🔍")
         st.markdown("---")
         render_theme_toggle()
 
@@ -46,12 +45,9 @@ def get_theme_mode() -> str:
 
 def render_theme_toggle() -> None:
     """Renderizza il selettore tema e aggiorna la session_state."""
-    col = st.columns([6, 1])[1]
-    with col:
-        st.selectbox(
-            "Tema",
-            ["light", "dark"],
-            key="ui_theme",
-            format_func=lambda v: "Light" if v == "light" else "Dark",
-            label_visibility="collapsed",
-        )
+    st.selectbox(
+        "Tema",
+        ["light", "dark"],
+        key="ui_theme",
+        format_func=lambda v: "\u2600\ufe0f Light" if v == "light" else "\U0001f319 Dark",
+    )
