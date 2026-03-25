@@ -948,23 +948,56 @@ def _offerte_to_records(offerte: list[Offerta]) -> list[dict[str, Any]]:
     ]
 
 
-def _render_offerta_card(offerta: Offerta, idx: int) -> str:
+def _render_offerta_card(offerta: Offerta, idx: int, best_price: float = 0) -> str:
+    import html as _html
     source_label = offerta.fonte.replace(".it", "").replace(".com", "").upper()
     price_str = _format_price(offerta.prezzo)
-    spedizione = f" · {offerta.spedizione}" if offerta.spedizione else ""
-    title = offerta.nome[:90] + ("…" if len(offerta.nome) > 90 else "")
+    spedizione_raw = offerta.spedizione if offerta.spedizione and offerta.spedizione != "n.d." else ""
+    spedizione_html = f"<span class='card-shipping'>{_html.escape(spedizione_raw)}</span>" if spedizione_raw else ""
+    title = _html.escape(offerta.nome[:90] + ("\u2026" if len(offerta.nome) > 90 else ""))
     specs_line = _summarize_specs(offerta.specs, offerta.nome)
-    specs_html = f"<p class='card-meta'>{specs_line}</p>" if specs_line else ""
+    specs_html = f"<p class='card-specs'>{_html.escape(specs_line)}</p>" if specs_line else ""
+    is_best = best_price > 0 and offerta.prezzo == best_price
+    best_badge = "<span class='best-badge'>Miglior Prezzo</span>" if is_best else ""
+    img_html = ""
+    if getattr(offerta, "immagine", ""):
+        img_src = _html.escape(offerta.immagine, quote=True)
+        img_html = (
+            f"<div class='card-img-wrap'>"
+            f"<img src='{img_src}' alt='' loading='lazy' "
+            f"onerror=\"this.parentElement.style.display='none'\">"
+            f"</div>"
+        )
+    else:
+        img_html = f"<div class='card-img-wrap card-img-placeholder'><span>{source_label[0]}</span></div>"
+    negozio_escaped = _html.escape(offerta.negozio)
+    link_escaped = _html.escape(offerta.link, quote=True)
     return (
-        f"<div class='offerta-card'>"
+        f"<div class='offerta-card{' offerta-best' if is_best else ''}'>"
+        f"{best_badge}"
         f"<span class='source-badge'>{source_label}</span>"
+        f"{img_html}"
+        f"<div class='card-body'>"
         f"<p class='card-title'>{title}</p>"
         f"<p class='card-price'>{price_str}</p>"
-        f"<p class='card-meta'>{offerta.negozio}{spedizione}</p>"
+        f"<p class='card-meta'>{negozio_escaped}{spedizione_html}</p>"
         f"{specs_html}"
-        f"<a class='card-cta' href='{offerta.link}' target='_blank'>Vai all'offerta →</a>"
+        f"</div>"
+        f"<a class='card-cta' href='{link_escaped}' target='_blank'>Vai all\u2019offerta \u2192</a>"
         f"</div>"
     )
+
+
+def _render_results_grid(offerte: list[Offerta]) -> None:
+    """Renders tutti i risultati come card grid con immagini."""
+    if not offerte:
+        return
+    best_price = min(o.prezzo for o in offerte) if offerte else 0
+    cards_html = "".join(
+        _render_offerta_card(o, i, best_price=best_price)
+        for i, o in enumerate(offerte)
+    )
+    st.markdown(f"<div class='results-grid'>{cards_html}</div>", unsafe_allow_html=True)
 
 
 def _render_specs_grid(offerte: list[Offerta]) -> None:
@@ -972,7 +1005,7 @@ def _render_specs_grid(offerte: list[Offerta]) -> None:
     # Filtra solo le offerte che hanno specifiche valide
     offerte_con_specs = [o for o in offerte if o.specs and isinstance(o.specs, dict) and any(v not in (None, "", [], {}) for v in o.specs.values())]
     if not offerte_con_specs:
-        st.info("📋 Nessun dato di specifiche rilevato per i prodotti.")
+        st.info("\U0001f4cb Nessun dato di specifiche rilevato per i prodotti.")
         return
 
     st.markdown(
@@ -1257,9 +1290,9 @@ st.markdown("<div class='section-card'>", unsafe_allow_html=True)
 if not _presearch_done:
     # ══════════════════════════════ STATO 1: Chat attiva ═════════════════
     st.markdown(
-        "<div class='section-heading'><h3>🔍 Trova le migliori offerte</h3>"
-        "<p>Descrivi la richiesta che ti ha fatto un amico: la AI genera query ottimizzata, budget e filtri tecnici. "
-        "Se dai dettagli completi al primo messaggio, avviamo subito lo scraping multi-sito.</p></div>",
+        "<div class='section-heading'><h3>Trova le migliori offerte</h3>"
+        "<p>Descrivi cosa cerchi: la AI genera query ottimizzata, budget e filtri tecnici. "
+        "Dettagli completi al primo messaggio? Avviamo subito lo scraping su 7 siti.</p></div>",
         unsafe_allow_html=True,
     )
     _chat_hdr = st.columns([6, 1])
@@ -1335,7 +1368,7 @@ else:
     _hcol1, _hcol2 = st.columns([5, 1])
     with _hcol1:
         st.markdown(
-            "<div class='section-heading'><h3>🔍 Trova le migliori offerte</h3>"
+            "<div class='section-heading'><h3>Trova le migliori offerte</h3>"
             f"<p>Ricerca pronta: {' · '.join(_parts)}</p></div>",
             unsafe_allow_html=True,
         )
@@ -1554,23 +1587,7 @@ if st.session_state.get("ricerca_effettuata", False):
         if not offerte_vis:
             st.info("ℹ️ Nessun risultato con i filtri correnti. Modifica o rimuovi i filtri.")
         else:
-            records = _offerte_to_records(offerte_vis)
-            st.dataframe(
-                records,
-                width="stretch",
-                hide_index=True,
-                height=min(120 + len(records) * 38, 750),
-                column_config={
-                    "#": st.column_config.NumberColumn("#", width="small", format="%d"),
-                    "Prodotto": st.column_config.TextColumn("Prodotto", width="large"),
-                    "Prezzo €": st.column_config.NumberColumn("Prezzo", width="small", format="€ %.2f"),
-                    "Spedizione": st.column_config.TextColumn("Spedizione", width="medium"),
-                    "Negozio": st.column_config.TextColumn("Negozio", width="medium"),
-                    "Fonte": st.column_config.TextColumn("Fonte", width="small"),
-                    "Specs": st.column_config.TextColumn("Specs", width="large"),
-                    "Link": st.column_config.LinkColumn("Link", display_text="Apri →", width="small"),
-                },
-            )
+            _render_results_grid(offerte_vis)
 
             # ── Comparatore fianco a fianco ─────────────────────────────────
             _link_labels = {

@@ -539,7 +539,7 @@ def test_avvia_ricerca(page: Page, base_url: str, streamlit_server: str) -> None
     expect(page.get_by_role("button", name="Cerca offerte")).to_be_enabled(timeout=8000)
     page.get_by_role("button", name="Cerca offerte").click()
     expect(page.get_by_text("offerte trovate per")).to_be_visible(timeout=60000)
-    expect(page.locator("[data-testid='stDataFrame']")).to_be_visible(timeout=60000)
+    expect(page.locator(".results-grid")).to_be_visible(timeout=60000)
 
 
 def test_chat_finale_risponde(page: Page, base_url: str, streamlit_server: str) -> None:
@@ -547,7 +547,7 @@ def test_chat_finale_risponde(page: Page, base_url: str, streamlit_server: str) 
     _complete_presearch(page)
     page.get_by_role("button", name="Cerca offerte").click()
     expect(page.get_by_text("offerte trovate per")).to_be_visible(timeout=60000)
-    expect(page.locator("[data-testid='stDataFrame']")).to_be_visible(timeout=60000)
+    expect(page.locator(".results-grid")).to_be_visible(timeout=60000)
     _send_chat(page, "Esempio: quale mi consigli per uso quotidiano?", "quale mi consigli?")
     last_message = page.locator("[data-testid='stChatMessage']").last
     expect(last_message).to_contain_text("Ti consiglio", timeout=30000)

@@ -178,6 +178,7 @@ class Offerta:
     spedizione: str = field(default="n.d.")
     alternativa: str = field(default="")
     specs: dict[str, object] = field(default_factory=dict)
+    immagine: str = field(default="")
 
     def __str__(self) -> str:
         nome_corto = self.nome[:62] + "…" if len(self.nome) > 63 else self.nome
@@ -939,7 +940,13 @@ def scrape_trovaprezzi(
                                 continue
                             if not _within_price_range(_prezzo, prezzo_min, budget_max):
                                 continue
-                            risultati.append(Offerta(nome=_nome, prezzo=_prezzo, negozio="Trovaprezzi", link=_url, fonte="trovaprezzi.it", spedizione="n.d."))
+                            try:
+                                _img_url = str(_ld_item.get("image", "") or "")
+                                if isinstance(_ld_item.get("image"), list):
+                                    _img_url = str(_ld_item["image"][0]) if _ld_item["image"] else ""
+                            except Exception:
+                                _img_url = ""
+                            risultati.append(Offerta(nome=_nome, prezzo=_prezzo, negozio="Trovaprezzi", link=_url, fonte="trovaprezzi.it", spedizione="n.d.", immagine=_img_url))
                             added += 1
                     except Exception:
                         continue
@@ -969,9 +976,14 @@ def scrape_trovaprezzi(
                         continue
                     if not _within_price_range(prezzo, prezzo_min, budget_max):
                         continue
+                    try:
+                        _img_tag = card.select_one("img")
+                        _img_url = str(_img_tag.get("src", "") or _img_tag.get("data-src", "") or "") if _img_tag else ""
+                    except Exception:
+                        _img_url = ""
                     risultati.append(Offerta(
                         nome=nome, prezzo=prezzo, negozio="Trovaprezzi",
-                        link=link, fonte="trovaprezzi.it", spedizione="n.d.",
+                        link=link, fonte="trovaprezzi.it", spedizione="n.d.", immagine=_img_url,
                     ))
                     added += 1
                 except (AttributeError, TypeError):
@@ -1228,8 +1240,14 @@ def scrape_amazon(
                 if not _within_price_range(prezzo, prezzo_min, budget_max):
                     continue
 
+                try:
+                    _img_tag = card.select_one("img.s-image") or card.select_one("img")
+                    _img_url = str(_img_tag.get("src", "") or "") if _img_tag else ""
+                except Exception:
+                    _img_url = ""
+
                 risultati.append(Offerta(nome=nome, prezzo=prezzo, negozio=negozio,
-                                         link=link, fonte="amazon.it", spedizione=spedizione))
+                                         link=link, fonte="amazon.it", spedizione=spedizione, immagine=_img_url))
 
             except (AttributeError, TypeError):
                 continue
@@ -1336,6 +1354,16 @@ def scrape_ebay(
                     if not link:
                         continue
 
+                    try:
+                        _img_obj = item.get("image") or {}
+                        _img_url = str(_img_obj.get("imageUrl", "") or "") if isinstance(_img_obj, dict) else ""
+                        if not _img_url:
+                            _thumbs = item.get("thumbnailImages") or []
+                            if _thumbs and isinstance(_thumbs, list) and isinstance(_thumbs[0], dict):
+                                _img_url = str(_thumbs[0].get("imageUrl", "") or "")
+                    except Exception:
+                        _img_url = ""
+
                     risultati.append(
                         Offerta(
                             nome=nome,
@@ -1344,6 +1372,7 @@ def scrape_ebay(
                             link=link,
                             fonte="ebay.it",
                             spedizione="n.d.",
+                            immagine=_img_url,
                         )
                     )
                 except (TypeError, ValueError):
@@ -1445,8 +1474,14 @@ def scrape_vinted(
 
                 spedizione = _extract_shipping_from_text(item.get_text(" ", strip=True))
 
+                try:
+                    _img_tag = item.select_one("img")
+                    _img_url = str(_img_tag.get("src", "") or "") if _img_tag else ""
+                except Exception:
+                    _img_url = ""
+
                 risultati.append(
-                    Offerta(nome=nome, prezzo=prezzo, negozio="Vinted", link=link, fonte="vinted.it", spedizione=spedizione)
+                    Offerta(nome=nome, prezzo=prezzo, negozio="Vinted", link=link, fonte="vinted.it", spedizione=spedizione, immagine=_img_url)
                 )
             except (AttributeError, TypeError):
                 continue
@@ -1487,8 +1522,14 @@ def scrape_vinted(
 
                     spedizione = _extract_shipping_from_text(title_attr)
 
+                    try:
+                        _img_tag = a_tag.select_one("img")
+                        _img_url = str(_img_tag.get("src", "") or "") if _img_tag else ""
+                    except Exception:
+                        _img_url = ""
+
                     risultati.append(
-                        Offerta(nome=nome, prezzo=prezzo, negozio="Vinted", link=link, fonte="vinted.it", spedizione=spedizione)
+                        Offerta(nome=nome, prezzo=prezzo, negozio="Vinted", link=link, fonte="vinted.it", spedizione=spedizione, immagine=_img_url)
                     )
                 except (AttributeError, TypeError):
                     continue
@@ -1615,9 +1656,15 @@ def scrape_euronics(
                     if not _within_price_range(prezzo, prezzo_min, budget_max):
                         continue
 
+                    try:
+                        _img_tag = card.select_one("img")
+                        _img_url = str(_img_tag.get("src", "") or _img_tag.get("data-src", "") or "") if _img_tag else ""
+                    except Exception:
+                        _img_url = ""
+
                     risultati.append(Offerta(
                         nome=nome, prezzo=prezzo, negozio="Euronics",
-                        link=link, fonte="euronics.it", spedizione="n.d.",
+                        link=link, fonte="euronics.it", spedizione="n.d.", immagine=_img_url,
                     ))
                 except (AttributeError, TypeError):
                     continue
@@ -1655,9 +1702,14 @@ def scrape_euronics(
                             continue
                         if not _within_price_range(prezzo, prezzo_min, budget_max):
                             continue
+                        try:
+                            _img_raw = item_data.get("image", "")
+                            _img_url = str(_img_raw[0] if isinstance(_img_raw, list) and _img_raw else _img_raw or "")
+                        except Exception:
+                            _img_url = ""
                         risultati.append(Offerta(
                             nome=nome, prezzo=prezzo, negozio="Euronics",
-                            link=link, fonte="euronics.it", spedizione="n.d.",
+                            link=link, fonte="euronics.it", spedizione="n.d.", immagine=_img_url,
                         ))
                 except Exception:
                     continue
@@ -1768,9 +1820,15 @@ def scrape_unieuro(
                     if not _within_price_range(prezzo, prezzo_min, budget_max):
                         continue
 
+                    try:
+                        _img_tag = card.select_one("img")
+                        _img_url = str(_img_tag.get("src", "") or _img_tag.get("data-src", "") or "") if _img_tag else ""
+                    except Exception:
+                        _img_url = ""
+
                     out.append(Offerta(
                         nome=nome, prezzo=prezzo, negozio="Unieuro",
-                        link=link, fonte="unieuro.it", spedizione="n.d.",
+                        link=link, fonte="unieuro.it", spedizione="n.d.", immagine=_img_url,
                     ))
                 except (AttributeError, TypeError):
                     continue
@@ -1807,7 +1865,11 @@ def scrape_unieuro(
                         continue
                     if not _within_price_range(prezzo, prezzo_min, budget_max):
                         continue
-                    risultati.append(Offerta(nome=nome, prezzo=prezzo, negozio="Unieuro", link=link, fonte="unieuro.it", spedizione="n.d."))
+                    try:
+                        _img_url = str(_item.get("imageUrl") or _item.get("image") or _item.get("thumbnailUrl") or "")
+                    except Exception:
+                        _img_url = ""
+                    risultati.append(Offerta(nome=nome, prezzo=prezzo, negozio="Unieuro", link=link, fonte="unieuro.it", spedizione="n.d.", immagine=_img_url))
                 if risultati:
                     print(f"    ✅ Unieuro.it (API REST): {len(risultati)} risultati validi")
                     _random_delay()
@@ -1900,9 +1962,15 @@ def scrape_unieuro(
                     if not _within_price_range(prezzo, prezzo_min, budget_max):
                         continue
 
+                    try:
+                        _img_tag = card.select_one("img")
+                        _img_url = str(_img_tag.get("src", "") or _img_tag.get("data-src", "") or "") if _img_tag else ""
+                    except Exception:
+                        _img_url = ""
+
                     risultati.append(Offerta(
                         nome=nome, prezzo=prezzo, negozio="Unieuro",
-                        link=link, fonte="unieuro.it", spedizione="n.d.",
+                        link=link, fonte="unieuro.it", spedizione="n.d.", immagine=_img_url,
                     ))
                 except (AttributeError, TypeError):
                     continue
@@ -1932,9 +2000,14 @@ def scrape_unieuro(
                             continue
                         if not _within_price_range(prezzo, prezzo_min, budget_max):
                             continue
+                        try:
+                            _img_raw = item_data.get("image", "")
+                            _img_url = str(_img_raw[0] if isinstance(_img_raw, list) and _img_raw else _img_raw or "")
+                        except Exception:
+                            _img_url = ""
                         risultati.append(Offerta(
                             nome=nome, prezzo=prezzo, negozio="Unieuro",
-                            link=link, fonte="unieuro.it", spedizione="n.d.",
+                            link=link, fonte="unieuro.it", spedizione="n.d.", immagine=_img_url,
                         ))
                 except Exception:
                     continue
@@ -2080,9 +2153,15 @@ def scrape_mediaworld(
                     if not _within_price_range(prezzo, prezzo_min, budget_max):
                         continue
 
+                    try:
+                        _img_tag = art.select_one("img")
+                        _img_url = str(_img_tag.get("src", "") or _img_tag.get("data-src", "") or "") if _img_tag else ""
+                    except Exception:
+                        _img_url = ""
+
                     risultati.append(Offerta(
                         nome=nome, prezzo=prezzo, negozio="MediaWorld",
-                        link=link, fonte="mediaworld.it", spedizione="n.d.",
+                        link=link, fonte="mediaworld.it", spedizione="n.d.", immagine=_img_url,
                     ))
                 except (AttributeError, TypeError):
                     continue
@@ -2130,9 +2209,14 @@ def scrape_mediaworld(
                             continue
                         if not _within_price_range(prezzo, prezzo_min, budget_max):
                             continue
+                        try:
+                            _img_raw = product.get("image", "")
+                            _img_url = str(_img_raw[0] if isinstance(_img_raw, list) and _img_raw else _img_raw or "")
+                        except Exception:
+                            _img_url = ""
                         risultati.append(Offerta(
                             nome=nome, prezzo=prezzo, negozio="MediaWorld",
-                            link=link, fonte="mediaworld.it", spedizione="n.d.",
+                            link=link, fonte="mediaworld.it", spedizione="n.d.", immagine=_img_url,
                         ))
                     except (TypeError, ValueError, KeyError):
                         continue
@@ -2198,9 +2282,15 @@ def scrape_mediaworld(
                     if not _within_price_range(prezzo, prezzo_min, budget_max):
                         continue
 
+                    try:
+                        _img_tag = card.select_one("img")
+                        _img_url = str(_img_tag.get("src", "") or _img_tag.get("data-src", "") or "") if _img_tag else ""
+                    except Exception:
+                        _img_url = ""
+
                     risultati.append(Offerta(
                         nome=nome, prezzo=prezzo, negozio="MediaWorld",
-                        link=link, fonte="mediaworld.it", spedizione="n.d.",
+                        link=link, fonte="mediaworld.it", spedizione="n.d.", immagine=_img_url,
                     ))
                 except (AttributeError, TypeError):
                     continue
@@ -2232,9 +2322,14 @@ def scrape_mediaworld(
                             continue
                         if not _within_price_range(prezzo, prezzo_min, budget_max):
                             continue
+                        try:
+                            _img_raw = item_data.get("image", "")
+                            _img_url = str(_img_raw[0] if isinstance(_img_raw, list) and _img_raw else _img_raw or "")
+                        except Exception:
+                            _img_url = ""
                         risultati.append(Offerta(
                             nome=nome, prezzo=prezzo, negozio="MediaWorld",
-                            link=link, fonte="mediaworld.it", spedizione="n.d.",
+                            link=link, fonte="mediaworld.it", spedizione="n.d.", immagine=_img_url,
                         ))
                 except Exception:
                     continue
