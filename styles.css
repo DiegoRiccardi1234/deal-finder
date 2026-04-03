@@ -1032,10 +1032,25 @@ footer,
 [data-testid="stToolbar"],
 [data-testid="stDecoration"],
 [data-testid="stStatusWidget"],
-.viewerBadge_container__r5tak,
+[data-testid="stAppDeployButton"],
+[data-testid="manage-app-button"],
+div[class*="viewerBadge"],
+div[class*="ViewerBadge"],
+a[href*="streamlit.io/cloud"],
+a[href*="share.streamlit"],
 .styles_viewerBadge__CvC9N,
-[data-testid="manage-app-button"] {
+.viewerBadge_container__r5tak {
     display: none !important;
+}
+
+/* ── Bottone "Accedi" primario ── */
+[data-testid="stBaseButton-primary"] {
+    background: #191c1e !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 10px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.01em;
 }
 
 /* ── Chat message bubble migliorata ── */

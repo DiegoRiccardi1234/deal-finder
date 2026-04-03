@@ -49,5 +49,5 @@ def render_theme_toggle() -> None:
         "Tema",
         ["light", "dark"],
         key="ui_theme",
-        format_func=lambda v: "\u2600\ufe0f Light" if v == "light" else "\U0001f319 Dark",
+        format_func=lambda v: "Light" if v == "light" else "Dark",
     )

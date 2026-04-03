@@ -52,22 +52,37 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Protezione password (solo uso personale) ──────────────────────────────
+# ── Protezione password con sessione 1 ora ─────────────────────────────────
 _APP_PASSWORD = st.secrets.get("APP_PASSWORD", "") if hasattr(st, "secrets") else ""
 if _APP_PASSWORD:
-    if not st.session_state.get("_authenticated"):
+    _now = time.time()
+    _auth_time = st.session_state.get("_auth_time", 0)
+    _is_valid = st.session_state.get("_authenticated") and (_now - _auth_time) < 3600
+    if not _is_valid:
+        st.session_state["_authenticated"] = False
         st.markdown(
-            "<style>#MainMenu,footer,[data-testid='stToolbar']{display:none!important}</style>",
+            "<style>#MainMenu,footer,[data-testid='stToolbar'],[data-testid='stSidebar'],"
+            "[data-testid='stDecoration']{display:none!important}</style>",
             unsafe_allow_html=True,
         )
-        st.markdown("## Trova Prezzi Mio")
-        _pwd = st.text_input("Password", type="password", placeholder="Inserisci la password...")
-        if st.button("Accedi"):
-            if _pwd == _APP_PASSWORD:
-                st.session_state["_authenticated"] = True
-                st.rerun()
-            else:
-                st.error("Password errata.")
+        st.markdown("<br>" * 4, unsafe_allow_html=True)
+        _lcol, _mcol, _rcol = st.columns([1, 1.2, 1])
+        with _mcol:
+            st.markdown(
+                "<h2 style='text-align:center;font-family:Manrope,sans-serif;font-weight:800;"
+                "letter-spacing:-0.03em;margin-bottom:0.2rem'>Trova Prezzi Mio</h2>"
+                "<p style='text-align:center;color:#666;font-size:0.9rem;margin-bottom:1.5rem'>"
+                "Accesso riservato</p>",
+                unsafe_allow_html=True,
+            )
+            _pwd = st.text_input("Password", type="password", placeholder="Password...", label_visibility="collapsed")
+            if st.button("Accedi", use_container_width=True, type="primary"):
+                if _pwd == _APP_PASSWORD:
+                    st.session_state["_authenticated"] = True
+                    st.session_state["_auth_time"] = time.time()
+                    st.rerun()
+                else:
+                    st.error("Password errata.")
         st.stop()
 
 _theme_mode = str(st.session_state.get("ui_theme", "light") or "light").strip().lower()

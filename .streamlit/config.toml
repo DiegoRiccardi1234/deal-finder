@@ -4,3 +4,7 @@ font = "sans serif"
 
 [browser]
 gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
+showSidebarNavigation = false
