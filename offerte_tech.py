@@ -1753,8 +1753,16 @@ def scrape_euronics(
 
 
 # ===========================================================================
-# SCRAPER — unieuro.it
+# SCRAPER — unieuro.it  (Algolia API)
 # ===========================================================================
+# Unieuro usa Algolia come motore di ricerca prodotti (chiave pubblica esposta
+# nel bundle JS del sito). Non serve Playwright né OAuth token.
+_UNIEURO_ALGOLIA_URL = (
+    "https://mnbcenyfii-dsn.algolia.net/1/indexes/*/queries"
+    "?x-algolia-api-key=977ed8d06b718d4929ca789c78c4107a"
+    "&x-algolia-application-id=MNBCENYFII"
+)
+
 
 def scrape_unieuro(
     query: str,
@@ -1762,293 +1770,70 @@ def scrape_unieuro(
     budget_max: Optional[float],
     query_tokens: list[str],
 ) -> list[Offerta]:
-    """
-    Scraper per unieuro.it.
-
-    NOTA: il sito usa Ionic Framework (Angular SPA) che richiede JavaScript
-    per il rendering. Le richieste HTTP statiche ricevono solo il wrapper HTML
-    senza prodotti. La fonte viene saltata con messaggio informativo.
-    """
-    url = f"https://www.unieuro.it/online/search?q={quote_plus(query)}&sortBy=relevance"
+    """Scraper per Unieuro.it tramite Algolia (API pubblica embedded nel frontend)."""
     print(f"\n🔍 Cerco su Unieuro.it: \"{query}\"")
     risultati: list[Offerta] = []
-
-    def _scrape_unieuro_with_playwright() -> list[Offerta]:
-        """Fallback browser-rendered per pagine Ionic/Angular di Unieuro."""
-        out: list[Offerta] = []
-        try:
-            from playwright.sync_api import sync_playwright  # type: ignore
-        except Exception:
-            return out
-
-        try:
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
-                page = browser.new_page(viewport={"width": 1366, "height": 1900})
-                page.goto(url, wait_until="domcontentloaded", timeout=15000)
-                page.wait_for_timeout(1500)
-                html = page.content()
-                browser.close()
-
-            soup_pw = BeautifulSoup(html, "html.parser")
-            cards_pw = (
-                soup_pw.select(".h-product") or
-                soup_pw.select("[data-productid]") or
-                soup_pw.select(".product-tile") or
-                soup_pw.select("article[class*='product']") or
-                soup_pw.select("[class*='ProductCard']")
-            )
-            seen_links: set[str] = set()
-            for card in cards_pw:
-                try:
-                    nome_tag = (
-                        card.select_one("[class*='product-name']") or
-                        card.select_one("[class*='ProductName']") or
-                        card.select_one("h2") or
-                        card.select_one("h3") or
-                        card.select_one("a[title]")
-                    )
-                    if not nome_tag:
-                        continue
-                    nome = nome_tag.get_text(strip=True) or str(nome_tag.get("title", "") or "")
-                    if not nome:
-                        continue
-
-                    prezzo_tag = (
-                        card.select_one("[class*='price-value']") or
-                        card.select_one("[class*='Price']") or
-                        card.select_one("[class*='price']") or
-                        card.select_one(".price")
-                    )
-                    if not prezzo_tag:
-                        continue
-                    prezzo = parse_price(prezzo_tag.get_text(" ", strip=True))
-                    if not math.isfinite(prezzo):
-                        continue
-
-                    link_tag = card.select_one("a[href]")
-                    if not link_tag:
-                        continue
-                    href = str(link_tag.get("href", "") or "")
-                    if not href:
-                        continue
-                    link = href if href.startswith("http") else f"https://www.unieuro.it{href}"
-                    if link in seen_links:
-                        continue
-                    seen_links.add(link)
-
-                    if not is_relevant(nome, query_tokens, strict_specs=False):
-                        continue
-                    if not _within_price_range(prezzo, prezzo_min, budget_max):
-                        continue
-
-                    try:
-                        _img_tag = card.select_one("img")
-                        _img_url = str(_img_tag.get("src", "") or _img_tag.get("data-src", "") or "") if _img_tag else ""
-                    except Exception:
-                        _img_url = ""
-
-                    out.append(Offerta(
-                        nome=nome, prezzo=prezzo, negozio="Unieuro",
-                        link=link, fonte="unieuro.it", spedizione="n.d.", immagine=_img_url,
-                    ))
-                except (AttributeError, TypeError):
-                    continue
-        except Exception:
-            return []
-        return out
-
     try:
-        headers = get_headers()
-        headers["Referer"] = "https://www.unieuro.it/"
-
-        # Tenta l'API REST interna prima del parsing HTML
-        _api_url = f"https://www.unieuro.it/umbraco/api/search/GetSearchResult?q={quote_plus(query)}&start=0&count=24&sortBy=relevance"
-        try:
-            _api_resp = fetch_with_retry(_api_url, {**headers, "Accept": "application/json"})
-            _ct = _api_resp.headers.get("content-type", "")
-            if _api_resp.status_code == 200 and "json" in _ct:
-                _api_data = _api_resp.json()
-                _items = _api_data.get("products", _api_data.get("items", _api_data.get("results", [])))
-                for _item in _items:
-                    if not isinstance(_item, dict):
-                        continue
-                    nome = str(_item.get("productName") or _item.get("name") or "").strip()
-                    if not nome:
-                        continue
-                    prezzo = parse_price(str(_item.get("salePrice") or _item.get("price") or ""))
-                    if not math.isfinite(prezzo):
-                        continue
-                    link_path = str(_item.get("url") or _item.get("productUrl") or "").strip()
-                    if not link_path:
-                        continue
-                    link = link_path if link_path.startswith("http") else f"https://www.unieuro.it{link_path}"
-                    if not is_relevant(nome, query_tokens, strict_specs=False):
-                        continue
-                    if not _within_price_range(prezzo, prezzo_min, budget_max):
-                        continue
-                    try:
-                        _img_url = str(_item.get("imageUrl") or _item.get("image") or _item.get("thumbnailUrl") or "")
-                    except Exception:
-                        _img_url = ""
-                    risultati.append(Offerta(nome=nome, prezzo=prezzo, negozio="Unieuro", link=link, fonte="unieuro.it", spedizione="n.d.", immagine=_img_url))
-                if risultati:
-                    print(f"    ✅ Unieuro.it (API REST): {len(risultati)} risultati validi")
-                    _random_delay()
-                    return risultati
-        except Exception:
-            pass
-
-        resp = fetch_with_retry(url, headers)
-        if resp.status_code in (401, 403, 429, 503):
-            print(f"    ⚠️  Unieuro.it: accesso bloccato (HTTP {resp.status_code}), salto la fonte.")
-            return risultati
+        payload = json.dumps({
+            "requests": [{
+                "indexName": "sgmproducts_prod",
+                "query": query,
+                "hitsPerPage": 48,
+                "page": 0,
+                "facetFilters": [],
+                "numericFilters": [],
+            }]
+        })
+        headers = {
+            "Content-Type": "text/plain",
+            "Origin": "https://www.unieuro.it",
+            "Referer": "https://www.unieuro.it/",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+        }
+        resp = requests.post(_UNIEURO_ALGOLIA_URL, data=payload, headers=headers, timeout=TIMEOUT)
         resp.raise_for_status()
-
-        # Rileva Ionic SPA: la pagina restituisce sempre lo stesso wrapper JS
-        html_snip = resp.text[:3000]
-        is_ionic_spa = (
-            "ion-ce" in html_snip or
-            "Please enable JavaScript" in html_snip or
-            "ionic" in html_snip.lower() or
-            ("unieuro" in html_snip.lower() and "<ion-" in html_snip)
-        )
-        if is_ionic_spa:
-            pw_results = _scrape_unieuro_with_playwright()
-            if pw_results:
-                print(f"    ✅ Unieuro.it (Playwright): {len(pw_results)} risultati validi")
-                _random_delay()
-                return pw_results
-            print("    ℹ️  Unieuro.it: webapp JS rilevata. Nessun risultato estratto via fallback browser.")
+        data = resp.json()
+        hits = data.get("results", [{}])[0].get("hits", [])
+        if not hits:
+            print("    ⚠️  Unieuro.it: nessun prodotto trovato via Algolia.")
             return risultati
-
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        page_title = str((soup.title.string or "") if soup.title else "")
-        if any(kw in page_title.lower() for kw in ("captcha", "robot", "sorry", "access denied")):
-            print("    ⚠️  Unieuro.it: blocco anti-bot, salto la fonte.")
-            return risultati
-
-        # CSS selettori (fallback nel caso il sito torni SSR)
-        cards = (
-            soup.select(".h-product") or
-            soup.select("[data-productid]") or
-            soup.select(".product-tile") or
-            soup.select("article[class*='product']") or
-            soup.select("[class*='ProductCard']")
-        )
-
-        if cards:
-            print(f"    ✅ Trovate {len(cards)} card su Unieuro.it")
-            seen_links: set[str] = set()
-            for card in cards:
-                try:
-                    nome_tag = (
-                        card.select_one("[class*='product-name']") or
-                        card.select_one("[class*='ProductName']") or
-                        card.select_one("h2") or
-                        card.select_one("h3") or
-                        card.select_one("a[title]")
-                    )
-                    if not nome_tag:
-                        continue
-                    nome = nome_tag.get_text(strip=True) or str(nome_tag.get("title", "") or "")
-                    if not nome:
-                        continue
-
-                    prezzo_tag = (
-                        card.select_one("[class*='price-value']") or
-                        card.select_one("[class*='Price']") or
-                        card.select_one("[class*='price']") or
-                        card.select_one(".price")
-                    )
-                    if not prezzo_tag:
-                        continue
-                    prezzo = parse_price(prezzo_tag.get_text(" ", strip=True))
-                    if not math.isfinite(prezzo):
-                        continue
-
-                    link_tag = card.select_one("a[href]")
-                    if not link_tag:
-                        continue
-                    href = str(link_tag.get("href", "") or "")
-                    if not href:
-                        continue
-                    link = href if href.startswith("http") else f"https://www.unieuro.it{href}"
-                    if link in seen_links:
-                        continue
-                    seen_links.add(link)
-
-                    if not is_relevant(nome, query_tokens, strict_specs=False):
-                        continue
-                    if not _within_price_range(prezzo, prezzo_min, budget_max):
-                        continue
-
-                    try:
-                        _img_tag = card.select_one("img")
-                        _img_url = str(_img_tag.get("src", "") or _img_tag.get("data-src", "") or "") if _img_tag else ""
-                    except Exception:
-                        _img_url = ""
-
-                    risultati.append(Offerta(
-                        nome=nome, prezzo=prezzo, negozio="Unieuro",
-                        link=link, fonte="unieuro.it", spedizione="n.d.", immagine=_img_url,
-                    ))
-                except (AttributeError, TypeError):
+        print(f"    ✅ Unieuro.it (Algolia): {len(hits)} risultati")
+        for hit in hits:
+            try:
+                nome = str(hit.get("title_it") or hit.get("name") or "").strip()
+                if not nome:
                     continue
-
-        # JSON-LD fallback
-        if not risultati:
-            for script in soup.find_all("script", {"type": "application/ld+json"}):
-                try:
-                    data = json.loads(str(script.string or ""))
-                    items = data if isinstance(data, list) else [data]
-                    for item_data in items:
-                        if item_data.get("@type") != "Product":
-                            continue
-                        nome = str(item_data.get("name", "") or "").strip()
-                        if not nome:
-                            continue
-                        offers = item_data.get("offers", {}) or {}
-                        if isinstance(offers, list):
-                            offers = offers[0] if offers else {}
-                        prezzo = parse_price(str(offers.get("price", "") or ""))
-                        if not math.isfinite(prezzo):
-                            continue
-                        link = str(item_data.get("url", "") or offers.get("url", "") or "").strip()
-                        if not link:
-                            continue
-                        if not is_relevant(nome, query_tokens, strict_specs=False):
-                            continue
-                        if not _within_price_range(prezzo, prezzo_min, budget_max):
-                            continue
-                        try:
-                            _img_raw = item_data.get("image", "")
-                            _img_url = str(_img_raw[0] if isinstance(_img_raw, list) and _img_raw else _img_raw or "")
-                        except Exception:
-                            _img_url = ""
-                        risultati.append(Offerta(
-                            nome=nome, prezzo=prezzo, negozio="Unieuro",
-                            link=link, fonte="unieuro.it", spedizione="n.d.", immagine=_img_url,
-                        ))
-                except Exception:
+                prezzo_raw = hit.get("discountedPrice") or hit.get("facetPrice") or hit.get("originalPrice")
+                if prezzo_raw is None:
                     continue
-
-        if not risultati:
-            print("    ⚠️  Unieuro.it: nessun risultato parsabile.")
-
-    except requests.Timeout:
-        print("    ❌ Unieuro.it: timeout raggiunto anche dopo i retry.")
-    except requests.ConnectionError:
-        print("    ❌ Unieuro.it: impossibile connettersi al sito.")
+                prezzo = parse_price(str(prezzo_raw))
+                if not math.isfinite(prezzo):
+                    continue
+                url_path = str(hit.get("productUrl_it") or hit.get("url") or "").strip()
+                if not url_path:
+                    continue
+                link = url_path if url_path.startswith("http") else f"https://www.unieuro.it{url_path}"
+                if not is_relevant(nome, query_tokens, strict_specs=False):
+                    continue
+                if not _within_price_range(prezzo, prezzo_min, budget_max):
+                    continue
+                spedizione = "Spedizione gratuita" if hit.get("hasFreeDelivery") else "n.d."
+                img_path = str(hit.get("imageUrl") or "")
+                img_url = f"https://www.unieuro.it{img_path}" if img_path and not img_path.startswith("http") else img_path
+                risultati.append(Offerta(
+                    nome=nome, prezzo=prezzo, negozio="Unieuro",
+                    link=link, fonte="unieuro.it", spedizione=spedizione, immagine=img_url,
+                ))
+            except (AttributeError, TypeError, KeyError):
+                continue
     except requests.HTTPError as exc:
-        print(f"    ❌ Unieuro.it: errore HTTP {exc.response.status_code}.")
+        status = exc.response.status_code if exc.response is not None else "?"
+        print(f"    ⚠️  Unieuro.it: errore HTTP {status}.")
     except Exception as exc:
         print(f"    ❌ Unieuro.it: errore inatteso → {exc}")
 
     _random_delay()
     return risultati
-
 
 # ===========================================================================
 # SCRAPER — mediaworld.it
@@ -3005,10 +2790,14 @@ def scrape_subito(
     query_tokens: list[str],
     condizione: str = "tutti",
 ) -> list[Offerta]:
-    """Scraper per Subito.it (annunci usati italiani)."""
+    """Scraper per Subito.it — bloccato da Akamai CDN (HTTP 403 con qualsiasi UA)."""
     if condizione == "nuovo":
-        print("\nℹ️ Subito.it mostra solo articoli usati/privati")
+        print("\nℹ️ Subito.it: skip (solo usato/privati)")
         return []
+    print(f"\n🔍 Cerco su Subito.it: \"{query}\"")
+    print("    ⚠️  Subito.it: protetto da Akamai CDN (HTTP 403). Fonte non disponibile senza browser headless.")
+    return []
+    # Implementazione HTML conservata per riferimento futuro:
 
     url = f"https://www.subito.it/annunci-italia/vendita/usato/?q={quote_plus(query)}&sort=price_asc"
     print(f"\n🔍 Cerco su Subito.it: \"{query}\"")
@@ -3110,9 +2899,12 @@ def scrape_aliexpress(
     budget_max: Optional[float],
     query_tokens: list[str],
 ) -> list[Offerta]:
-    """Scraper per AliExpress (versione italiana)."""
-    url = f"https://it.aliexpress.com/wholesale?SearchText={quote_plus(query)}&SortType=price_asc"
+    """Scraper per AliExpress — pagina anti-bot cifrata (1.8KB, nessun dato)."""
     print(f"\n🔍 Cerco su AliExpress.com: \"{query}\"")
+    print("    ⚠️  AliExpress.com: risposta anti-bot cifrata (challenge page). Fonte non disponibile senza browser headless.")
+    return []
+    # Implementazione HTML/JSON conservata per riferimento futuro:
+    url = f"https://it.aliexpress.com/wholesale?SearchText={quote_plus(query)}&SortType=price_asc"
 
     risultati: list[Offerta] = []
     try:
@@ -3229,9 +3021,12 @@ def scrape_temu(
     budget_max: Optional[float],
     query_tokens: list[str],
 ) -> list[Offerta]:
-    """Scraper per Temu (versione italiana)."""
-    url = f"https://www.temu.com/it/search_result.html?search_key={quote_plus(query)}&sort_type=6"
+    """Scraper per Temu — SPA vuota (2.9KB, nessun dato nel DOM)."""
     print(f"\n🔍 Cerco su Temu.com: \"{query}\"")
+    print("    ⚠️  Temu.com: SPA completamente client-side (pagina HTML vuota 2.9KB). Fonte non disponibile senza browser headless.")
+    return []
+    # Implementazione JSON conservata per riferimento futuro:
+    url = f"https://www.temu.com/it/search_result.html?search_key={quote_plus(query)}&sort_type=6"
 
     risultati: list[Offerta] = []
     try:
@@ -3314,9 +3109,12 @@ def scrape_alibaba(
     budget_max: Optional[float],
     query_tokens: list[str],
 ) -> list[Offerta]:
-    """Scraper per Alibaba.com (mercato B2B internazionale)."""
-    url = f"https://www.alibaba.com/trade/search?SearchText={quote_plus(query)}&SortType=price_asc"
+    """Scraper per Alibaba.com — DOM vuoto (89KB ma nessun testo estraibile, JS-rendered)."""
     print(f"\n🔍 Cerco su Alibaba.com: \"{query}\"")
+    print("    ⚠️  Alibaba.com: pagina JS-rendered (89KB senza testo/prezzi estraibili). Fonte non disponibile senza browser headless.")
+    return []
+    # Implementazione HTML conservata per riferimento futuro:
+    url = f"https://www.alibaba.com/trade/search?SearchText={quote_plus(query)}&SortType=price_asc"
 
     risultati: list[Offerta] = []
     try:
@@ -3455,7 +3253,8 @@ def cerca_offerte(
 
     fonti_norm = {f.strip().lower() for f in (fonti or []) if str(f).strip()}
     if not fonti_norm:
-        fonti_norm = {"amazon", "ebay", "vinted", "euronics", "unieuro", "mediaworld", "subito", "aliexpress", "temu", "alibaba"}
+        # subito/aliexpress/temu/alibaba sono bloccati da bot-protection — esclusi dal default
+        fonti_norm = {"amazon", "ebay", "vinted", "euronics", "unieuro", "mediaworld"}
     print(f"  🌐 Fonti attive: {', '.join(sorted(fonti_norm))}")
 
     # Lancio scraper in parallelo sulle fonti selezionate
