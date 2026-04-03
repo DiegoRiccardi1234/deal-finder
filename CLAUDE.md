@@ -2,6 +2,22 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Inizio sessione obbligatorio
+Usa il tool ctx_index sulla directory del progetto come prima operazione di ogni sessione.
+
+## Context Management — OBBLIGATORIO
+- MAI usare Read su file > 30 righe — usa ctx_search con keyword specifiche
+- Usa ctx_search per trovare la sezione esatta prima di leggere qualsiasi file
+- Read è permesso SOLO per file < 30 righe
+
+## Regole per subagent (Agent())
+- NON scrivere "leggi prima il file" nei prompt dei subagent
+- NON istruire i subagent su come leggere i file — ci pensa context-mode
+- Nei prompt Agent(), descrivi SOLO cosa fare, non come farlo
+- Il subagent ha accesso a ctx_search e ctx_batch_execute automaticamente
+- MAI lanciare più di 2 Agent() in parallelo. Cerca di usarli il meno possibile o in occasioni necessarie
+- Implementa le fasi del piano in sequenza, non tutte insieme
+
 ## Project Overview
 
 **Trova Prezzi Mio** (aka "Offerte Tech Italia") is a Python price-comparison tool that scrapes tech product deals from multiple Italian e-commerce sites (trovaprezzi.it, amazon.it, ebay.it, vinted.it, euronics.it, unieuro.it, mediaworld.it) and surfaces results via a Streamlit web UI with AI-powered chat recommendations.

@@ -1186,8 +1186,10 @@ def scrape_amazon(
                 if not nome:
                     continue
 
-                card_text_lower = card.get_text(" ", strip=True).lower()
-                has_used_keyword = any(k in card_text_lower for k in _KW_RICONDIZIONATO)
+                # Controlla condizione solo nel titolo, NON nel testo completo della card.
+                # Amazon mostra cross-sell "Disponibile usato da €X" anche sulle card di prodotti nuovi,
+                # il che causerebbe uno scarto errato di tutti i risultati.
+                has_used_keyword = any(k in nome.lower() for k in _KW_RICONDIZIONATO)
                 if condizione == "nuovo" and has_used_keyword:
                     continue
                 if condizione == "usato" and not has_used_keyword:
@@ -2993,6 +2995,405 @@ def export_to_csv(offerte: list[Offerta], filename: str = "offerte.csv") -> None
 
 
 # ===========================================================================
+# SCRAPER — subito.it
+# ===========================================================================
+
+def scrape_subito(
+    query: str,
+    prezzo_min: float,
+    budget_max: Optional[float],
+    query_tokens: list[str],
+    condizione: str = "tutti",
+) -> list[Offerta]:
+    """Scraper per Subito.it (annunci usati italiani)."""
+    if condizione == "nuovo":
+        print("\nℹ️ Subito.it mostra solo articoli usati/privati")
+        return []
+
+    url = f"https://www.subito.it/annunci-italia/vendita/usato/?q={quote_plus(query)}&sort=price_asc"
+    print(f"\n🔍 Cerco su Subito.it: \"{query}\"")
+
+    risultati: list[Offerta] = []
+    try:
+        headers = get_headers()
+        headers["Referer"] = "https://www.subito.it/"
+        headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+
+        resp = fetch_with_retry(url, headers)
+        resp.raise_for_status()
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        # Subito usa data-testid o classi CSS per le card annunci
+        cards = soup.select('div[class*="item-card"]') or soup.select('article[class*="item"]')
+        if not cards:
+            # Fallback: cerca tutti i link con /annunci/ nel path
+            cards = soup.select('div.items__item')
+        if not cards:
+            print("    ⚠️  Nessun prodotto trovato su Subito.it — possibile blocco o layout cambiato.")
+            return risultati
+
+        print(f"    ✅ Trovate {len(cards)} card grezze su Subito.it")
+
+        for card in cards:
+            try:
+                nome_tag = (
+                    card.select_one('h2[class*="item-title"]')
+                    or card.select_one('[class*="item-title"]')
+                    or card.select_one('h2')
+                    or card.select_one('[data-testid="item-title"]')
+                )
+                if not nome_tag:
+                    continue
+                nome = nome_tag.get_text(strip=True)
+                if not nome:
+                    continue
+
+                prezzo_tag = (
+                    card.select_one('[class*="price"]')
+                    or card.select_one('[data-testid*="price"]')
+                )
+                if not prezzo_tag:
+                    continue
+                prezzo_raw = prezzo_tag.get_text(" ", strip=True)
+                prezzo = parse_price(prezzo_raw)
+                if not math.isfinite(prezzo):
+                    continue
+
+                link_tag = card.select_one("a[href]")
+                if not link_tag:
+                    continue
+                href = str(link_tag.get("href", "") or "")
+                if not href:
+                    continue
+                link = href if href.startswith("http") else urljoin("https://www.subito.it", href)
+
+                if not is_relevant(nome, query_tokens, strict_specs=False):
+                    continue
+                if not _within_price_range(prezzo, prezzo_min, budget_max):
+                    continue
+
+                try:
+                    img_tag = card.select_one("img")
+                    img_url = str(img_tag.get("src", "") or "") if img_tag else ""
+                except Exception:
+                    img_url = ""
+
+                risultati.append(
+                    Offerta(nome=nome, prezzo=prezzo, negozio="Subito.it", link=link,
+                            fonte="subito.it", spedizione="n.d.", immagine=img_url)
+                )
+            except (AttributeError, TypeError):
+                continue
+
+    except requests.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else "?"
+        print(f"    ⚠️  Subito.it: accesso bloccato (HTTP {status}), salto la fonte.")
+    except requests.Timeout:
+        print("    ❌ Subito.it: timeout raggiunto anche dopo i retry.")
+    except requests.ConnectionError:
+        print("    ❌ Subito.it: impossibile connettersi al sito.")
+    except Exception as exc:
+        print(f"    ❌ Subito.it: errore inatteso → {exc}")
+
+    _random_delay()
+    return risultati
+
+
+# ===========================================================================
+# SCRAPER — aliexpress.com
+# ===========================================================================
+
+def scrape_aliexpress(
+    query: str,
+    prezzo_min: float,
+    budget_max: Optional[float],
+    query_tokens: list[str],
+) -> list[Offerta]:
+    """Scraper per AliExpress (versione italiana)."""
+    url = f"https://it.aliexpress.com/wholesale?SearchText={quote_plus(query)}&SortType=price_asc"
+    print(f"\n🔍 Cerco su AliExpress.com: \"{query}\"")
+
+    risultati: list[Offerta] = []
+    try:
+        headers = get_headers()
+        headers["Referer"] = "https://it.aliexpress.com/"
+        headers["Accept-Language"] = "it-IT,it;q=0.9,en;q=0.5"
+
+        resp = fetch_with_retry(url, headers)
+        resp.raise_for_status()
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        # AliExpress usa componenti React; su alcune pagine inietta JSON nel DOM
+        # Prova prima il parsing JSON embedded, poi fallback HTML
+        json_data = None
+        for script in soup.find_all("script"):
+            script_text = script.string or ""
+            if "window._dida_config_" in script_text or '"items"' in script_text:
+                m = re.search(r'"items"\s*:\s*(\[.*?\])\s*[,}]', script_text, re.DOTALL)
+                if m:
+                    try:
+                        json_data = json.loads(m.group(1))
+                        break
+                    except Exception:
+                        pass
+
+        if json_data:
+            for item in json_data[:40]:
+                try:
+                    nome = str(item.get("title", "") or item.get("subject", "") or "")
+                    if not nome:
+                        continue
+                    prezzo_raw = str(item.get("price", {}).get("minPrice", {}).get("value", "") or
+                                     item.get("salePrice", {}).get("minPrice", {}).get("value", "") or "")
+                    if not prezzo_raw:
+                        continue
+                    prezzo = parse_price(prezzo_raw)
+                    if not math.isfinite(prezzo):
+                        continue
+                    item_id = str(item.get("itemId", "") or item.get("productId", "") or "")
+                    link = f"https://it.aliexpress.com/item/{item_id}.html" if item_id else ""
+                    if not link:
+                        continue
+                    if not is_relevant(nome, query_tokens, strict_specs=False):
+                        continue
+                    if not _within_price_range(prezzo, prezzo_min, budget_max):
+                        continue
+                    img_url = str(item.get("imageUrl", "") or "")
+                    risultati.append(
+                        Offerta(nome=nome, prezzo=prezzo, negozio="AliExpress", link=link,
+                                fonte="aliexpress.com", spedizione="n.d.", immagine=img_url)
+                    )
+                except Exception:
+                    continue
+        else:
+            # Fallback HTML: cerca card prodotto nel DOM renderizzato
+            cards = soup.select('[class*="product-snippet"]') or soup.select('[class*="manhattan--"]')
+            if not cards:
+                print("    ⚠️  AliExpress.it: pagina JS-rendered, nessun risultato via HTML statico.")
+                return risultati
+
+            print(f"    ✅ Trovate {len(cards)} card grezze su AliExpress.com")
+            for card in cards:
+                try:
+                    nome_tag = card.select_one('[class*="title"]') or card.select_one('a')
+                    if not nome_tag:
+                        continue
+                    nome = nome_tag.get_text(strip=True)
+                    if not nome:
+                        continue
+                    prezzo_tag = card.select_one('[class*="price"]')
+                    if not prezzo_tag:
+                        continue
+                    prezzo = parse_price(prezzo_tag.get_text(strip=True))
+                    if not math.isfinite(prezzo):
+                        continue
+                    link_tag = card.select_one("a[href]")
+                    if not link_tag:
+                        continue
+                    href = str(link_tag.get("href", "") or "")
+                    link = href if href.startswith("http") else "https://it.aliexpress.com" + href
+                    if not is_relevant(nome, query_tokens, strict_specs=False):
+                        continue
+                    if not _within_price_range(prezzo, prezzo_min, budget_max):
+                        continue
+                    risultati.append(
+                        Offerta(nome=nome, prezzo=prezzo, negozio="AliExpress", link=link,
+                                fonte="aliexpress.com", spedizione="n.d.")
+                    )
+                except (AttributeError, TypeError):
+                    continue
+
+    except requests.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else "?"
+        print(f"    ⚠️  AliExpress.com: accesso bloccato (HTTP {status}), salto la fonte.")
+    except requests.Timeout:
+        print("    ❌ AliExpress.com: timeout.")
+    except requests.ConnectionError:
+        print("    ❌ AliExpress.com: impossibile connettersi.")
+    except Exception as exc:
+        print(f"    ❌ AliExpress.com: errore inatteso → {exc}")
+
+    _random_delay()
+    return risultati
+
+
+# ===========================================================================
+# SCRAPER — temu.com
+# ===========================================================================
+
+def scrape_temu(
+    query: str,
+    prezzo_min: float,
+    budget_max: Optional[float],
+    query_tokens: list[str],
+) -> list[Offerta]:
+    """Scraper per Temu (versione italiana)."""
+    url = f"https://www.temu.com/it/search_result.html?search_key={quote_plus(query)}&sort_type=6"
+    print(f"\n🔍 Cerco su Temu.com: \"{query}\"")
+
+    risultati: list[Offerta] = []
+    try:
+        headers = get_headers()
+        headers["Referer"] = "https://www.temu.com/it/"
+        headers["Accept-Language"] = "it-IT,it;q=0.9,en;q=0.5"
+
+        resp = fetch_with_retry(url, headers)
+        resp.raise_for_status()
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        # Temu inietta dati prodotto in tag <script> come JSON
+        for script in soup.find_all("script"):
+            script_text = script.string or ""
+            if '"goods_list"' in script_text or '"goodsList"' in script_text:
+                # Cerca array di prodotti nel JSON
+                for pattern in (r'"goods_list"\s*:\s*(\[.*?\])\s*[,}]',
+                                 r'"goodsList"\s*:\s*(\[.*?\])\s*[,}]'):
+                    m = re.search(pattern, script_text, re.DOTALL)
+                    if m:
+                        try:
+                            items = json.loads(m.group(1))
+                            for item in items[:40]:
+                                nome = str(item.get("goods_name", "") or item.get("title", "") or "")
+                                if not nome:
+                                    continue
+                                price_val = item.get("price_info", {})
+                                prezzo_raw = str(price_val.get("price", "") or
+                                                 price_val.get("min_price", "") or
+                                                 item.get("price", "") or "")
+                                if not prezzo_raw:
+                                    continue
+                                prezzo = parse_price(prezzo_raw)
+                                if not math.isfinite(prezzo):
+                                    continue
+                                goods_id = str(item.get("goods_id", "") or "")
+                                link = f"https://www.temu.com/it/g-{goods_id}.html" if goods_id else ""
+                                if not link:
+                                    continue
+                                if not is_relevant(nome, query_tokens, strict_specs=False):
+                                    continue
+                                if not _within_price_range(prezzo, prezzo_min, budget_max):
+                                    continue
+                                img_url = str(item.get("goods_thumbnail_url", "") or "")
+                                risultati.append(
+                                    Offerta(nome=nome, prezzo=prezzo, negozio="Temu", link=link,
+                                            fonte="temu.com", spedizione="n.d.", immagine=img_url)
+                                )
+                        except Exception:
+                            pass
+                        break
+                if risultati:
+                    break
+
+        if not risultati:
+            print("    ⚠️  Temu.com: pagina JS-rendered o bot-protetta, nessun risultato via HTML statico.")
+
+    except requests.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else "?"
+        print(f"    ⚠️  Temu.com: accesso bloccato (HTTP {status}), salto la fonte.")
+    except requests.Timeout:
+        print("    ❌ Temu.com: timeout.")
+    except requests.ConnectionError:
+        print("    ❌ Temu.com: impossibile connettersi.")
+    except Exception as exc:
+        print(f"    ❌ Temu.com: errore inatteso → {exc}")
+
+    _random_delay()
+    return risultati
+
+
+# ===========================================================================
+# SCRAPER — alibaba.com
+# ===========================================================================
+
+def scrape_alibaba(
+    query: str,
+    prezzo_min: float,
+    budget_max: Optional[float],
+    query_tokens: list[str],
+) -> list[Offerta]:
+    """Scraper per Alibaba.com (mercato B2B internazionale)."""
+    url = f"https://www.alibaba.com/trade/search?SearchText={quote_plus(query)}&SortType=price_asc"
+    print(f"\n🔍 Cerco su Alibaba.com: \"{query}\"")
+
+    risultati: list[Offerta] = []
+    try:
+        headers = get_headers()
+        headers["Referer"] = "https://www.alibaba.com/"
+        headers["Accept-Language"] = "it-IT,it;q=0.9,en;q=0.5"
+
+        resp = fetch_with_retry(url, headers)
+        resp.raise_for_status()
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        cards = (
+            soup.select('div[class*="organic-list-offer"]')
+            or soup.select('div[class*="offer-list-row"]')
+            or soup.select('.J-offer-wrapper')
+        )
+
+        if not cards:
+            print("    ⚠️  Alibaba.com: nessun risultato trovato (possibile blocco o layout JS).")
+            return risultati
+
+        print(f"    ✅ Trovate {len(cards)} card grezze su Alibaba.com")
+
+        for card in cards:
+            try:
+                nome_tag = (
+                    card.select_one('[class*="subject"]')
+                    or card.select_one('[class*="title"]')
+                    or card.select_one('h2')
+                )
+                if not nome_tag:
+                    continue
+                nome = nome_tag.get_text(strip=True)
+                if not nome:
+                    continue
+
+                prezzo_tag = card.select_one('[class*="price"]')
+                if not prezzo_tag:
+                    continue
+                prezzo = parse_price(prezzo_tag.get_text(strip=True))
+                if not math.isfinite(prezzo):
+                    continue
+
+                link_tag = card.select_one("a[href]")
+                if not link_tag:
+                    continue
+                href = str(link_tag.get("href", "") or "")
+                link = href if href.startswith("http") else "https:" + href if href.startswith("//") else "https://www.alibaba.com" + href
+
+                if not is_relevant(nome, query_tokens, strict_specs=False):
+                    continue
+                if not _within_price_range(prezzo, prezzo_min, budget_max):
+                    continue
+
+                risultati.append(
+                    Offerta(nome=nome, prezzo=prezzo, negozio="Alibaba", link=link,
+                            fonte="alibaba.com", spedizione="n.d.")
+                )
+            except (AttributeError, TypeError):
+                continue
+
+    except requests.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else "?"
+        print(f"    ⚠️  Alibaba.com: accesso bloccato (HTTP {status}), salto la fonte.")
+    except requests.Timeout:
+        print("    ❌ Alibaba.com: timeout.")
+    except requests.ConnectionError:
+        print("    ❌ Alibaba.com: impossibile connettersi.")
+    except Exception as exc:
+        print(f"    ❌ Alibaba.com: errore inatteso → {exc}")
+
+    _random_delay()
+    return risultati
+
+
+# ===========================================================================
 # FUNZIONE PRINCIPALE
 # ===========================================================================
 
@@ -3054,7 +3455,7 @@ def cerca_offerte(
 
     fonti_norm = {f.strip().lower() for f in (fonti or []) if str(f).strip()}
     if not fonti_norm:
-        fonti_norm = {"amazon", "ebay", "vinted", "euronics", "unieuro", "mediaworld"}
+        fonti_norm = {"amazon", "ebay", "vinted", "euronics", "unieuro", "mediaworld", "subito", "aliexpress", "temu", "alibaba"}
     print(f"  🌐 Fonti attive: {', '.join(sorted(fonti_norm))}")
 
     # Lancio scraper in parallelo sulle fonti selezionate
@@ -3069,7 +3470,7 @@ def cerca_offerte(
             # Solo print: il thread non può accedere a st.session_state (ScriptRunContext warning)
             print(f"[scrape] {label}: {elapsed:.2f}s")
         return res
-    with ThreadPoolExecutor(max_workers=6) as executor:
+    with ThreadPoolExecutor(max_workers=10) as executor:
         if "amazon" in fonti_norm:
             future_to_label[executor.submit(_timed_call, scrape_amazon, "Amazon.it", query, prezzo_min, budget_max, query_tokens, condizione)] = "Amazon.it"
         if "ebay" in fonti_norm:
@@ -3087,6 +3488,14 @@ def cerca_offerte(
             future_to_label[executor.submit(_timed_call, scrape_unieuro, "Unieuro.it", query, prezzo_min, budget_max, query_tokens)] = "Unieuro.it"
         if "mediaworld" in fonti_norm:
             future_to_label[executor.submit(_timed_call, scrape_mediaworld, "MediaWorld.it", query, prezzo_min, budget_max, query_tokens, condizione)] = "MediaWorld.it"
+        if "subito" in fonti_norm:
+            future_to_label[executor.submit(_timed_call, scrape_subito, "Subito.it", query, prezzo_min, budget_max, query_tokens, condizione)] = "Subito.it"
+        if "aliexpress" in fonti_norm:
+            future_to_label[executor.submit(_timed_call, scrape_aliexpress, "AliExpress.com", query, prezzo_min, budget_max, query_tokens)] = "AliExpress.com"
+        if "temu" in fonti_norm:
+            future_to_label[executor.submit(_timed_call, scrape_temu, "Temu.com", query, prezzo_min, budget_max, query_tokens)] = "Temu.com"
+        if "alibaba" in fonti_norm:
+            future_to_label[executor.submit(_timed_call, scrape_alibaba, "Alibaba.com", query, prezzo_min, budget_max, query_tokens)] = "Alibaba.com"
 
         # Cap per-source: evita che una singola fonte (es. eBay con 50 risultati) soffochi le altre.
         # Distribuiamo top_n diviso per numer fonti per non avere un dominio assoluto, + extra safety margin
