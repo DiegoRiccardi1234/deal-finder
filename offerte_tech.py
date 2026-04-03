@@ -40,9 +40,10 @@ except Exception:
     Cerebras = None
 
 try:
-    from cerebras_model import get_best_model as _get_best_model
+    from cerebras_model import get_best_model as _get_best_model, cerebras_chat_with_retry as _cerebras_chat_lib
 except Exception:
     _get_best_model = None  # type: ignore[assignment]
+    _cerebras_chat_lib = None  # type: ignore[assignment]
 
 _CEREBRAS_MODEL_FALLBACK = "llama-3.3-70b"
 
@@ -55,6 +56,25 @@ def _cerebras_model(client=None) -> str:
         except Exception:
             pass
     return _CEREBRAS_MODEL_FALLBACK
+
+
+def _cerebras_chat(client, messages: list, temperature: float = 0.1, max_retries: int = 4) -> object:
+    """Wrapper con retry automatico (404 modello + 429 rate limit)."""
+    if _cerebras_chat_lib is not None:
+        return _cerebras_chat_lib(
+            client=client,
+            messages=messages,
+            model=None,
+            max_retries=max_retries,
+            base_delay=2.0,
+            temperature=temperature,
+        )
+    # Fallback diretto senza retry
+    return client.chat.completions.create(
+        model=_cerebras_model(client),
+        messages=messages,
+        temperature=temperature,
+    )
 
 
 try:
@@ -544,8 +564,8 @@ def fetch_specs_ai(
         f"Elenco prodotti:\n{elenco}"
     )
     try:
-        completion = cerebras_client.chat.completions.create(
-            model=_cerebras_model(cerebras_client),
+        completion = _cerebras_chat(
+            cerebras_client,
             messages=[{"role": "user", "content": batch_prompt}],
             temperature=0,
         )
@@ -2553,8 +2573,8 @@ def detect_category_and_questions(testo_utente: str) -> dict[str, object]:
             "elettrodomestico, abbigliamento, scarpe, sport, libri, beauty, casa, altro), "
             "domande (array di max 2 stringhe), preferenze_chiare (bool)."
         )
-        completion = client.chat.completions.create(
-            model=_cerebras_model(client),
+        completion = _cerebras_chat(
+            client,
             messages=[
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": testo},
@@ -2695,8 +2715,8 @@ def parse_search_intent(risposta_utente: str) -> dict[str, object]:
             "query (string), prezzo_min (int), prezzo_max (int), condizione (tutti|nuovo|usato), "
             "filtri (object con attributi non cercabili direttamente, es colore/storage/taglia)."
         )
-        completion = client.chat.completions.create(
-            model=_cerebras_model(client),
+        completion = _cerebras_chat(
+            client,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": testo},
@@ -2768,8 +2788,8 @@ def filtra_risultati_con_ai(risultati: list[Offerta], filtri: dict[str, str]) ->
                 "Considera sinonimi e varianti (es rosa ~ pink ~ lavanda quando plausibile). "
                 "Rispondi SOLO JSON: {\"scores\": [{\"idx\":1,\"score\":7}, ...]}"
             )
-            completion = client.chat.completions.create(
-                model=_cerebras_model(client),
+            completion = _cerebras_chat(
+                client,
                 messages=[
                     {"role": "system", "content": prompt},
                     {

@@ -19,9 +19,10 @@ except Exception:
     Cerebras = None
 
 try:
-    from cerebras_model import get_best_model as _get_best_model
+    from cerebras_model import get_best_model as _get_best_model, cerebras_chat_with_retry as _cerebras_chat_lib
 except Exception:
     _get_best_model = None  # type: ignore[assignment]
+    _cerebras_chat_lib = None  # type: ignore[assignment]
 
 CEREBRAS_MODEL = "llama-3.3-70b"  # fallback statico
 
@@ -50,6 +51,24 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+# ── Protezione password (solo uso personale) ──────────────────────────────
+_APP_PASSWORD = st.secrets.get("APP_PASSWORD", "") if hasattr(st, "secrets") else ""
+if _APP_PASSWORD:
+    if not st.session_state.get("_authenticated"):
+        st.markdown(
+            "<style>#MainMenu,footer,[data-testid='stToolbar']{display:none!important}</style>",
+            unsafe_allow_html=True,
+        )
+        st.markdown("## Trova Prezzi Mio")
+        _pwd = st.text_input("Password", type="password", placeholder="Inserisci la password...")
+        if st.button("Accedi"):
+            if _pwd == _APP_PASSWORD:
+                st.session_state["_authenticated"] = True
+                st.rerun()
+            else:
+                st.error("Password errata.")
+        st.stop()
 
 _theme_mode = str(st.session_state.get("ui_theme", "light") or "light").strip().lower()
 if _theme_mode not in {"light", "dark"}:
@@ -257,9 +276,25 @@ def _cerebras_chat_with_retry(
     client: object,
     messages: list[dict[str, str]],
     temperature: float = 0.1,
-    max_retries: int = 2,
+    max_retries: int = 4,
 ) -> str:
-    """Chiama Cerebras con retry silenzioso su errori 429/too_many_requests (2-3 s di attesa)."""
+    """Chiama Cerebras con retry automatico.
+    - 404 (modello non trovato): invalida cache, sceglie nuovo modello, riprova.
+    - 429 (rate limit): backoff esponenziale fino a max_retries volte.
+    """
+    if _cerebras_chat_lib is not None:
+        completion = _cerebras_chat_lib(
+            client=client,
+            messages=messages,
+            model=None,  # auto-select dal modulo
+            max_retries=max_retries,
+            base_delay=2.0,
+            temperature=temperature,
+        )
+        content = completion.choices[0].message.content if completion and completion.choices else ""
+        return str(content or "").strip()
+
+    # Fallback se il modulo non è disponibile
     last_exc: Optional[BaseException] = None
     for attempt in range(1 + max_retries):
         try:
@@ -1289,15 +1324,18 @@ st.markdown("<div class='section-card'>", unsafe_allow_html=True)
 
 if not _presearch_done:
     # ══════════════════════════════ STATO 1: Chat attiva ═════════════════
-    st.markdown(
-        "<div class='section-heading'><h3>Trova le migliori offerte</h3>"
-        "<p>Descrivi cosa cerchi: la AI genera query ottimizzata, budget e filtri tecnici. "
-        "Dettagli completi al primo messaggio? Avviamo subito lo scraping su 7 siti.</p></div>",
-        unsafe_allow_html=True,
-    )
     _chat_hdr = st.columns([6, 1])
+    with _chat_hdr[0]:
+        st.markdown(
+            "<div class='section-heading'><h3>Trova le migliori offerte</h3>"
+            "<p>Descrivi cosa cerchi: la AI genera query ottimizzata, budget e filtri tecnici. "
+            "Dettagli completi al primo messaggio? Avviamo subito lo scraping su 7 siti.</p></div>",
+            unsafe_allow_html=True,
+        )
     with _chat_hdr[1]:
-        st.button("Reset", on_click=_reset_presearch_chat, help="Ricomincia la chat")
+        st.markdown("<div style='padding-top:0.6rem'>", unsafe_allow_html=True)
+        st.button("Ricomincia", on_click=_reset_presearch_chat, help="Ricomincia la chat")
+        st.markdown("</div>", unsafe_allow_html=True)
 
     if cerebras_client is None:
         st.info("💡 Per la chat assistita imposta CEREBRAS_API_KEY in secrets o variabile ambiente.")

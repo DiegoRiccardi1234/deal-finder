@@ -1026,6 +1026,90 @@
     border-color: rgba(204, 255, 0, 0.2);
 }
 
+/* ── Nascondi Streamlit chrome ── */
+#MainMenu,
+footer,
+[data-testid="stToolbar"],
+[data-testid="stDecoration"],
+[data-testid="stStatusWidget"],
+.viewerBadge_container__r5tak,
+.styles_viewerBadge__CvC9N,
+[data-testid="manage-app-button"] {
+    display: none !important;
+}
+
+/* ── Chat message bubble migliorata ── */
+[data-testid="stChatMessage"] {
+    border-radius: 14px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.5rem;
+    background: var(--surface-low);
+    border: 1px solid var(--line);
+}
+
+[data-testid="stChatMessage"][data-testid*="user"] {
+    background: var(--accent-soft);
+}
+
+/* ── Sidebar brand più pulita ── */
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h1,
+[data-testid="stSidebar"] .sidebar-brand {
+    font-family: 'Manrope', sans-serif;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    font-size: 1.2rem;
+    color: var(--ink);
+}
+
+/* ── Bottone Ricomincia ── */
+[data-testid="stSidebar"] .stButton button,
+.chat-reset-btn button {
+    font-size: 0.82rem;
+    padding: 0.3rem 0.75rem;
+    border-radius: 8px;
+}
+
+/* ── Source chip hover più smooth ── */
+.source-strip span {
+    transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.source-strip span:hover {
+    background: var(--primary);
+    color: var(--surface-low);
+    transform: scale(1.06);
+}
+
+/* ── Card price più prominente ── */
+.card-price {
+    font-size: 1.35rem !important;
+    font-weight: 800 !important;
+    letter-spacing: -0.02em;
+}
+
+/* ── Input chat più pulito ── */
+[data-testid="stChatInput"] textarea {
+    border-radius: 12px !important;
+    border-color: var(--line) !important;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.95rem;
+}
+
+[data-testid="stChatInput"] textarea:focus {
+    border-color: var(--primary) !important;
+    box-shadow: 0 0 0 3px rgba(0,0,0,0.06) !important;
+}
+
+/* ── Section card padding ottimizzato ── */
+.section-card {
+    padding: 1.2rem 1.4rem 1.6rem 1.4rem !important;
+}
+
+/* ── Migliore spaziatura risultati ── */
+.results-grid {
+    gap: 1.6rem !important;
+}
+
 [data-theme="dark"] .offerta-card {
     border-color: rgba(255, 255, 255, 0.06);
 }
