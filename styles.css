@@ -1,5 +1,5 @@
 
-        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&family=Space+Grotesk:wght@300..700&display=swap');
 
         /* ── Light mode (Elettra Precision / Tech Minimalist) ── */
         :root {
@@ -1195,6 +1195,743 @@ a[href*="share.streamlit"],
     background: var(--input-bg) !important;
     color: var(--ink) !important;
     border-color: var(--line) !important;
+}
+
+
+/* ══════════════════════════════════════════════════════
+   Stitch-inspired UI refresh (v2)
+   ══════════════════════════════════════════════════════ */
+:root {
+    --bg: #faf9f6 !important;
+    --surface: #f4f3f1 !important;
+    --surface-low: #efeeeb !important;
+    --ink: #1a1c1a !important;
+    --muted: #5f5e5e !important;
+    --primary: #a03f28 !important;
+    --price-color: #a03f28 !important;
+    --line: #ddc0ba !important;
+    --app-bg: #faf9f6 !important;
+    --input-bg: #ffffff !important;
+    --button-bg: #a03f28 !important;
+    --button-ink: #ffffff !important;
+    --chip-bg: #f4f3f1 !important;
+    --chip-ink: #56423d !important;
+    --best-value-bg: rgba(160, 63, 40, 0.08) !important;
+    --best-value-border: #a03f28 !important;
+    --radius: 6px !important;
+}
+
+body, html, [class*="css"], .stApp {
+    font-family: 'Manrope', sans-serif !important;
+    color: var(--ink) !important;
+}
+
+h1, h2, h3, h4, h5, .section-heading h3 {
+    font-family: 'Newsreader', serif !important;
+    font-weight: 500 !important;
+    letter-spacing: -0.01em !important;
+}
+
+[data-testid="stAppViewContainer"] {
+    background: var(--bg) !important;
+}
+
+[data-testid="stHeader"] {
+    display: none !important;
+}
+
+.block-container {
+    max-width: 1380px !important;
+    padding-top: 1.2rem !important;
+}
+
+[data-testid="stSidebar"] {
+    background: var(--surface) !important;
+    border-right: 1px solid rgba(138, 114, 108, 0.2) !important;
+}
+
+.sidebar-brand {
+    font-family: 'Newsreader', serif;
+    font-size: 1.45rem;
+    color: #1a1c1a;
+    margin-bottom: 0.35rem;
+}
+
+.sidebar-health {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.28rem 0.45rem;
+    border-radius: 999px;
+    border: 1px solid rgba(138, 114, 108, 0.2);
+    background: rgba(250, 249, 246, 0.8);
+    font-family: 'Space Grotesk', monospace;
+    font-size: 0.58rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #8a726c;
+    margin-bottom: 0.85rem;
+}
+
+.sidebar-health .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: #1f9d55;
+}
+
+.sidebar-health strong {
+    color: #a03f28;
+    font-weight: 700;
+}
+
+.source-strip {
+    border-radius: 8px !important;
+    border: none !important;
+    background: var(--surface) !important;
+    box-shadow: none !important;
+    margin-top: 0.1rem !important;
+}
+
+.source-strip-label {
+    font-family: 'Space Grotesk', monospace !important;
+    font-size: 0.63rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.22em !important;
+    color: #8a726c !important;
+}
+
+.source-strip span:not(.source-strip-label) {
+    border: 1px solid rgba(138, 114, 108, 0.15) !important;
+    border-radius: 999px !important;
+    background: #ffffff !important;
+    color: var(--ink) !important;
+    font-family: 'Space Grotesk', monospace !important;
+    font-size: 0.7rem !important;
+}
+
+.source-strip span:not(.source-strip-label):hover {
+    background: #ffffff !important;
+    color: var(--primary) !important;
+    transform: translateY(-1px) !important;
+}
+
+.section-card {
+    border-radius: 8px !important;
+    border: none !important;
+    background: var(--surface) !important;
+    box-shadow: none !important;
+    padding: 0.85rem 1rem 1.25rem 1rem !important;
+}
+
+.cockpit-top-strip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.9rem;
+    padding: 0.22rem 0.1rem 0.35rem 0.1rem;
+    margin-left: 0.1rem;
+}
+
+.cockpit-top-strip .label,
+.cockpit-top-strip .uptime {
+    font-family: 'Space Grotesk', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-size: 0.62rem;
+}
+
+.cockpit-top-strip .label {
+    color: #8a726c;
+}
+
+.cockpit-top-strip .uptime {
+    color: #a03f28;
+    border-bottom: 1px solid rgba(160, 63, 40, 0.32);
+}
+
+.section-heading h3 {
+    font-size: clamp(2rem, 3.8vw, 3rem) !important;
+    line-height: 1.06 !important;
+    color: var(--ink) !important;
+}
+
+.section-heading p {
+    font-family: 'Manrope', sans-serif !important;
+    color: var(--muted) !important;
+}
+
+[data-testid="stChatMessage"] {
+    background: #ffffff !important;
+    border: none !important;
+    border-radius: 8px !important;
+    box-shadow: none !important;
+}
+
+[data-testid="stChatInput"] textarea,
+[data-testid="stChatInputContainer"] textarea {
+    border-radius: 6px !important;
+    border: 1px solid rgba(138, 114, 108, 0.24) !important;
+    background: #ffffff !important;
+}
+
+[data-testid="stChatInput"] textarea:focus,
+[data-testid="stChatInputContainer"] textarea:focus {
+    border-color: rgba(160, 63, 40, 0.42) !important;
+    box-shadow: 0 0 0 2px rgba(160, 63, 40, 0.1) !important;
+}
+
+[data-testid="stMetric"] {
+    background: #efeeeb !important;
+    border: none !important;
+    border-radius: 6px !important;
+    box-shadow: none !important;
+}
+
+[data-testid="stMetricLabel"] {
+    font-family: 'Space Grotesk', monospace !important;
+    font-size: 0.62rem !important;
+    letter-spacing: 0.15em !important;
+    text-transform: uppercase !important;
+    color: #8a726c !important;
+}
+
+[data-testid="stMetricValue"] {
+    color: var(--ink) !important;
+    font-size: 1.6rem !important;
+    font-family: 'Manrope', sans-serif !important;
+    font-weight: 800 !important;
+}
+
+.results-grid {
+    gap: 1rem !important;
+}
+
+.offerta-card {
+    border: none !important;
+    border-radius: 6px !important;
+    background: #efeeeb !important;
+    box-shadow: none !important;
+}
+
+.offerta-card:hover {
+    transform: translateY(-2px) !important;
+    border: none !important;
+    box-shadow: 0 10px 24px rgba(45, 45, 45, 0.06) !important;
+}
+
+.offerta-best {
+    border: 1px solid rgba(160, 63, 40, 0.35) !important;
+}
+
+.best-badge {
+    background: #c0573e !important;
+    color: #ffffff !important;
+    border-radius: 4px !important;
+    font-family: 'Space Grotesk', monospace !important;
+}
+
+.source-badge {
+    border-radius: 999px !important;
+    border: 1px solid rgba(138, 114, 108, 0.2) !important;
+    box-shadow: none !important;
+    background: rgba(250, 249, 246, 0.85) !important;
+}
+
+.card-img-wrap {
+    background: #ffffff !important;
+    border-bottom: none !important;
+}
+
+.card-title {
+    font-family: 'Newsreader', serif !important;
+    font-size: 1.2rem !important;
+    font-weight: 500 !important;
+    line-height: 1.2 !important;
+}
+
+.card-price {
+    color: var(--primary) !important;
+    font-size: 2rem !important;
+    font-weight: 800 !important;
+}
+
+.card-meta {
+    font-family: 'Manrope', sans-serif !important;
+    color: var(--muted) !important;
+}
+
+.card-specs {
+    background: rgba(118, 116, 112, 0.08) !important;
+    border-radius: 4px !important;
+}
+
+.card-cta,
+.stButton button,
+.stDownloadButton button,
+[data-testid="stBaseButton-primary"] {
+    border-radius: 4px !important;
+    border: none !important;
+    background: linear-gradient(135deg, #a03f28 0%, #c0573e 100%) !important;
+    color: #ffffff !important;
+    font-family: 'Space Grotesk', monospace !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.08em !important;
+    font-size: 0.72rem !important;
+    font-weight: 600 !important;
+}
+
+.stButton button:hover,
+.stDownloadButton button:hover,
+.card-cta:hover {
+    transform: translateY(-1px) !important;
+    opacity: 0.95 !important;
+}
+
+.market-snapshot-card {
+    background: #efeeeb;
+    border-left: 3px solid #a03f28;
+    border-radius: 6px;
+    padding: 0.9rem 1rem;
+    margin: 0.9rem 0 1rem 0;
+}
+
+.market-snapshot-card .market-kicker {
+    margin: 0 0 0.35rem 0;
+    font-family: 'Space Grotesk', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    font-size: 0.62rem;
+    color: #8a726c;
+}
+
+.market-snapshot-card h4 {
+    margin: 0;
+    font-size: 2rem;
+    font-family: 'Manrope', sans-serif;
+    font-weight: 800;
+    color: #1a1c1a;
+}
+
+.market-snapshot-card p,
+.market-snapshot-card small {
+    color: #5f5e5e;
+}
+
+.status-monitor-card {
+    background: #efeeeb;
+    border-radius: 6px;
+    padding: 0.9rem 0.9rem 0.6rem 0.9rem;
+}
+
+.status-monitor-card h4 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.35rem;
+    font-family: 'Newsreader', serif;
+}
+
+.status-row {
+    display: grid;
+    grid-template-columns: 10px 1fr auto;
+    grid-template-areas:
+        "dot label pill"
+        "dot detail detail";
+    align-items: center;
+    gap: 0.2rem 0.45rem;
+    padding: 0.42rem 0.15rem;
+    border-top: 1px solid rgba(138, 114, 108, 0.14);
+}
+
+.status-row:first-of-type {
+    border-top: none;
+}
+
+.status-dot {
+    grid-area: dot;
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: #999;
+}
+
+.status-dot.is-ok { background: #1f9d55; }
+.status-dot.is-warn { background: #d79b23; }
+.status-dot.is-error { background: #ba1a1a; }
+
+.status-label {
+    grid-area: label;
+    font-size: 0.82rem;
+    color: #1a1c1a;
+    font-weight: 600;
+}
+
+.status-pill {
+    grid-area: pill;
+    font-family: 'Space Grotesk', monospace;
+    font-size: 0.58rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #8a726c;
+}
+
+.status-detail {
+    grid-area: detail;
+    font-size: 0.74rem;
+    color: #5f5e5e;
+}
+
+.comparison-board {
+    background: #efeeeb;
+    border-radius: 6px;
+    padding: 0.95rem;
+    margin: 0.65rem 0 1rem 0;
+}
+
+.comparison-board-head {
+    margin-bottom: 0.45rem;
+}
+
+.comparison-board-head h4 {
+    margin: 0;
+    font-size: 1.6rem;
+    font-family: 'Newsreader', serif;
+}
+
+.comparison-board-head p {
+    margin: 0.25rem 0 0 0;
+    color: #5f5e5e;
+    font-size: 0.82rem;
+}
+
+.comparison-kicker {
+    margin: 0 0 0.2rem 0;
+    font-family: 'Space Grotesk', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    font-size: 0.58rem;
+    color: #8a726c;
+}
+
+.comparison-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+}
+
+.comparison-scroll-hint {
+    margin: 0 0 0.45rem 0;
+    font-family: 'Space Grotesk', monospace;
+    font-size: 0.58rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #8a726c;
+}
+
+.comparison-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 640px;
+}
+
+.comparison-table th,
+.comparison-table td {
+    border-top: 1px solid rgba(138, 114, 108, 0.18);
+    padding: 0.52rem 0.45rem;
+    text-align: left;
+    vertical-align: top;
+    font-size: 0.8rem;
+    color: #2b2d2b;
+}
+
+.comparison-table thead th {
+    border-top: none;
+    font-family: 'Space Grotesk', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.6rem;
+    color: #8a726c;
+}
+
+.comparison-table thead th span {
+    display: block;
+    text-transform: none;
+    letter-spacing: 0;
+    font-family: 'Manrope', sans-serif;
+    font-size: 0.72rem;
+    color: #5f5e5e;
+    margin-top: 0.12rem;
+}
+
+.comparison-table tbody td:first-child {
+    font-family: 'Space Grotesk', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #8a726c;
+    font-size: 0.58rem;
+    white-space: nowrap;
+}
+
+.comparison-table tbody tr.row-priority td {
+    background: rgba(255, 255, 255, 0.55);
+}
+
+.comparison-table .value {
+    display: block;
+    font-weight: 700;
+    color: #1a1c1a;
+}
+
+.comparison-table .meta {
+    display: block;
+    color: #5f5e5e;
+    font-size: 0.72rem;
+    margin-top: 0.12rem;
+}
+
+.comp-link {
+    color: #a03f28;
+    text-decoration: none;
+    font-weight: 700;
+}
+
+.comp-link:hover {
+    text-decoration: underline;
+}
+
+.comparison-stack {
+    background: #efeeeb;
+    border-radius: 6px;
+    padding: 0.68rem;
+    height: 100%;
+}
+
+.comparison-stack-title {
+    margin: 0 0 0.45rem 0;
+    font-family: 'Newsreader', serif;
+    font-size: 1.15rem;
+    color: #1a1c1a;
+}
+
+.comparison-pick {
+    display: grid;
+    grid-template-columns: auto auto 1fr;
+    grid-template-areas:
+        "rank price name"
+        ". . detail";
+    gap: 0.1rem 0.42rem;
+    padding: 0.4rem 0;
+    border-top: 1px solid rgba(138, 114, 108, 0.14);
+}
+
+.comparison-pick:first-of-type {
+    border-top: none;
+}
+
+.comparison-pick .rank {
+    grid-area: rank;
+    font-family: 'Space Grotesk', monospace;
+    font-size: 0.58rem;
+    letter-spacing: 0.12em;
+    color: #8a726c;
+    text-transform: uppercase;
+}
+
+.comparison-pick .pick-price {
+    grid-area: price;
+    font-weight: 700;
+    color: #a03f28;
+    font-size: 0.8rem;
+}
+
+.comparison-pick a {
+    grid-area: name;
+    color: #1a1c1a;
+    text-decoration: none;
+    font-size: 0.79rem;
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.comparison-pick a:hover {
+    color: #a03f28;
+}
+
+.comparison-pick small {
+    grid-area: detail;
+    color: #5f5e5e;
+    font-size: 0.68rem;
+}
+
+.comparison-empty {
+    margin: 0;
+    font-size: 0.8rem;
+    color: #5f5e5e;
+}
+
+.manual-compare-wrap {
+    margin-top: 0.85rem;
+    background: #efeeeb;
+    border-radius: 6px;
+    padding: 0.7rem;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.manual-compare-table {
+    width: 100%;
+    min-width: 760px;
+    border-collapse: collapse;
+}
+
+.manual-compare-table th,
+.manual-compare-table td {
+    border-top: 1px solid rgba(138, 114, 108, 0.15);
+    padding: 0.45rem 0.4rem;
+    vertical-align: top;
+    text-align: left;
+    font-size: 0.78rem;
+    color: #2b2d2b;
+}
+
+.manual-compare-table thead th {
+    border-top: none;
+    font-family: 'Newsreader', serif;
+    font-size: 0.94rem;
+    color: #1a1c1a;
+}
+
+.manual-compare-table thead th.is-best {
+    color: #a03f28;
+}
+
+.manual-compare-table tbody td:first-child {
+    font-family: 'Space Grotesk', monospace;
+    font-size: 0.58rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #8a726c;
+    white-space: nowrap;
+}
+
+.comparison-table tbody td:first-child,
+.manual-compare-table tbody td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: #efeeeb;
+}
+
+.manual-compare-table td.num {
+    font-weight: 700;
+    color: #a03f28;
+}
+
+.auth-gate-wrap {
+    min-height: 72vh;
+    display: flex;
+    align-items: center;
+}
+
+.auth-gate-card {
+    background: #efeeeb;
+    border-radius: 8px;
+    padding: 1.15rem 1.15rem 1.25rem 1.15rem;
+    border: 1px solid rgba(138, 114, 108, 0.16);
+}
+
+.auth-gate-card h2 {
+    margin: 0;
+    text-align: center;
+    font-size: 2rem;
+}
+
+.auth-kicker {
+    margin: 0 0 0.25rem 0;
+    text-align: center;
+    font-family: 'Space Grotesk', monospace;
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: #8a726c;
+}
+
+.auth-sub {
+    margin: 0.35rem 0 0.85rem 0;
+    text-align: center;
+    color: #5f5e5e;
+}
+
+@media (max-width: 900px) {
+    .section-heading h3 {
+        font-size: clamp(1.7rem, 8vw, 2.3rem) !important;
+    }
+    .card-price {
+        font-size: 1.55rem !important;
+    }
+    .comparison-board {
+        padding: 0.7rem;
+    }
+    .comparison-board-head h4 {
+        font-size: 1.35rem;
+    }
+    .comparison-board-head p {
+        font-size: 0.78rem;
+        line-height: 1.45;
+    }
+    .comparison-table {
+        min-width: 560px;
+    }
+    .manual-compare-table {
+        min-width: 680px;
+    }
+    .comparison-table th,
+    .comparison-table td,
+    .manual-compare-table th,
+    .manual-compare-table td {
+        padding: 0.42rem 0.34rem;
+    }
+    .comparison-pick {
+        grid-template-columns: auto 1fr;
+        grid-template-areas:
+            "rank name"
+            "price detail";
+        gap: 0.18rem 0.36rem;
+    }
+}
+
+@media (max-width: 640px) {
+    .comparison-board {
+        padding: 0.6rem;
+        margin-top: 0.45rem;
+    }
+    .comparison-board-head h4 {
+        font-size: 1.2rem;
+    }
+    .comparison-scroll-hint {
+        font-size: 0.55rem;
+        letter-spacing: 0.1em;
+    }
+    .comparison-table {
+        min-width: 500px;
+    }
+    .manual-compare-table {
+        min-width: 620px;
+    }
+    .comparison-table thead th,
+    .manual-compare-table thead th {
+        font-size: 0.56rem;
+    }
+    .comparison-stack {
+        padding: 0.58rem;
+    }
+    .comparison-stack-title {
+        font-size: 1.02rem;
+    }
+    .comparison-pick a {
+        font-size: 0.75rem;
+    }
+    .comparison-pick .pick-price {
+        font-size: 0.76rem;
+    }
 }
 
 /* Make the sidebar links nicer */

@@ -2,12 +2,14 @@
 
 import contextlib
 import csv
+import hashlib
 import io
 import json
 import os
 import random
 import re
 import time
+from pathlib import Path
 from typing import Any, Optional
 
 import streamlit as st
@@ -57,46 +59,105 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Protezione password con sessione 1 ora ─────────────────────────────────
+_theme_mode = str(st.session_state.get("ui_theme", "light") or "light").strip().lower()
+if _theme_mode not in {"light", "dark"}:
+    _theme_mode = "light"
+load_css(theme_mode=_theme_mode)
+
+_AUTH_SESSIONS_PATH = Path(__file__).parent / ".auth_sessions.json"
+
+
+def _load_auth_sessions() -> dict[str, float]:
+    try:
+        if _AUTH_SESSIONS_PATH.exists():
+            data = json.loads(_AUTH_SESSIONS_PATH.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return {str(k): float(v) for k, v in data.items()}
+    except Exception:
+        pass
+    return {}
+
+
+def _save_auth_sessions(sessions: dict[str, float]) -> None:
+    try:
+        _AUTH_SESSIONS_PATH.write_text(json.dumps(sessions, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _get_client_fingerprint() -> str:
+    """Costruisce un fingerprint stabile del browser per persistenza auth cross-reopen."""
+    ua = ""
+    ip_addr = ""
+    try:
+        _ctx = st.context
+        _headers = getattr(_ctx, "headers", {})
+        if hasattr(_headers, "get"):
+            ua = str(_headers.get("user-agent", "") or _headers.get("User-Agent", ""))
+        ip_addr = str(getattr(_ctx, "ip_address", "") or "")
+    except Exception:
+        pass
+
+    raw = f"{ua}|{ip_addr}|trova-prezzi-mio"
+    return hashlib.sha256(raw.encode("utf-8", errors="ignore")).hexdigest()
+
+
+def _is_client_authenticated(fingerprint: str, now_ts: float) -> bool:
+    sessions = _load_auth_sessions()
+    # Cleanup entries scadute
+    sessions = {k: v for k, v in sessions.items() if float(v) > now_ts}
+    _save_auth_sessions(sessions)
+    return float(sessions.get(fingerprint, 0.0)) > now_ts
+
+
+def _persist_client_auth(fingerprint: str, now_ts: float, ttl_seconds: int = 3600) -> None:
+    sessions = _load_auth_sessions()
+    sessions[fingerprint] = float(now_ts + ttl_seconds)
+    _save_auth_sessions(sessions)
+
+
+# ── Protezione password con persistenza 1 ora ──────────────────────────────
 try:
     _APP_PASSWORD = st.secrets.get("APP_PASSWORD", "") if hasattr(st, "secrets") else ""
 except Exception:
     _APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
-if _APP_PASSWORD:
+_APP_TEST_MODE = os.environ.get("APP_TEST_MODE", "0").strip() == "1"
+if _APP_PASSWORD and not _APP_TEST_MODE:
     _now = time.time()
-    _auth_time = st.session_state.get("_auth_time", 0)
-    _is_valid = st.session_state.get("_authenticated") and (_now - _auth_time) < 3600
+    _fingerprint = _get_client_fingerprint()
+    _session_ok = bool(st.session_state.get("_authenticated") and (_now - float(st.session_state.get("_auth_time", 0))) < 3600)
+    _persistent_ok = _is_client_authenticated(_fingerprint, _now)
+    _is_valid = _session_ok or _persistent_ok
+
+    if _persistent_ok and not _session_ok:
+        st.session_state["_authenticated"] = True
+        st.session_state["_auth_time"] = _now
+
     if not _is_valid:
         st.session_state["_authenticated"] = False
-        st.markdown(
-            "<style>#MainMenu,footer,[data-testid='stToolbar'],[data-testid='stSidebar'],"
-            "[data-testid='stDecoration']{display:none!important}</style>",
-            unsafe_allow_html=True,
-        )
-        st.markdown("<br>" * 4, unsafe_allow_html=True)
+        st.markdown("<div class='auth-gate-wrap'>", unsafe_allow_html=True)
         _lcol, _mcol, _rcol = st.columns([1, 1.2, 1])
         with _mcol:
             st.markdown(
-                "<h2 style='text-align:center;font-family:Manrope,sans-serif;font-weight:800;"
-                "letter-spacing:-0.03em;margin-bottom:0.2rem'>Trova Prezzi Mio</h2>"
-                "<p style='text-align:center;color:#666;font-size:0.9rem;margin-bottom:1.5rem'>"
-                "Accesso riservato</p>",
+                "<div class='auth-gate-card'>"
+                "<p class='auth-kicker'>Accesso riservato</p>"
+                "<h2>Trova Prezzi Mio</h2>"
+                "<p class='auth-sub'>Inserisci la password per aprire la dashboard.</p>",
                 unsafe_allow_html=True,
             )
             _pwd = st.text_input("Password", type="password", placeholder="Password...", label_visibility="collapsed")
             if st.button("Accedi", use_container_width=True, type="primary"):
                 if _pwd == _APP_PASSWORD:
                     st.session_state["_authenticated"] = True
-                    st.session_state["_auth_time"] = time.time()
+                    st.session_state["_auth_time"] = _now
+                    _persist_client_auth(_fingerprint, _now, ttl_seconds=3600)
                     st.rerun()
                 else:
                     st.error("Password errata.")
+            st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
         st.stop()
 
-_theme_mode = str(st.session_state.get("ui_theme", "light") or "light").strip().lower()
-if _theme_mode not in {"light", "dark"}:
-    _theme_mode = "light"
-load_css(theme_mode=_theme_mode)
 render_nav(active_page="tool")
 
 
@@ -185,6 +246,96 @@ def _flush_pending_price_sync() -> None:
 
 def _format_price(value: float) -> str:
     return f"€ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+_FONTE_LABELS: dict[str, str] = {
+    "amazon": "Amazon.it",
+    "ebay": "eBay.it",
+    "vinted": "Vinted.it",
+    "euronics": "Euronics.it",
+    "unieuro": "Unieuro.it",
+    "mediaworld": "MediaWorld.it",
+    "wallapop": "Wallapop.it",
+    "comet": "Comet.it",
+    "expert": "Expert.it",
+    "aliexpress": "AliExpress",
+}
+
+
+def _status_rows_for_sources(
+    offerte: list[Offerta],
+    fonti_backend: list[str],
+    log_text: str,
+) -> list[dict[str, str]]:
+    """Costruisce righe stato fonti per pannello monitor."""
+    counts_by_source: dict[str, int] = {}
+    for o in offerte:
+        fonte = str(o.fonte or "").lower()
+        counts_by_source[fonte] = counts_by_source.get(fonte, 0) + 1
+
+    log_lower = str(log_text or "").lower()
+    rows: list[dict[str, str]] = []
+    for key in fonti_backend:
+        label = _FONTE_LABELS.get(key, key.title())
+        domain_hint = label.lower().replace(" ", "")
+        found = 0
+        for fonte_name, c in counts_by_source.items():
+            if key in fonte_name or domain_hint.split(".")[0] in fonte_name:
+                found += c
+
+        source_error = any(
+            token in log_lower for token in [
+                f"{key} -> errore",
+                f"errore {key}",
+                f"{key} timeout",
+                f"{key} 403",
+                f"{key} 429",
+            ]
+        )
+
+        if source_error:
+            status = "BLOCCATA"
+            dot_class = "is-error"
+            detail = "Errore o blocco"
+        elif found > 0:
+            status = "ONLINE"
+            dot_class = "is-ok"
+            detail = f"{found} risultati"
+        else:
+            status = "IN ATTESA"
+            dot_class = "is-warn"
+            detail = "0 risultati"
+
+        rows.append({
+            "label": label,
+            "status": status,
+            "detail": detail,
+            "dot_class": dot_class,
+        })
+    return rows
+
+
+def _render_source_status_monitor(
+    offerte: list[Offerta],
+    fonti_backend: list[str],
+    log_text: str,
+) -> None:
+    rows = _status_rows_for_sources(offerte, fonti_backend, log_text)
+    st.markdown("<div class='status-monitor-card'>", unsafe_allow_html=True)
+    st.markdown("<h4>Stato fonti</h4>", unsafe_allow_html=True)
+    if not rows:
+        st.caption("Nessuna fonte selezionata.")
+    for row in rows:
+        st.markdown(
+            "<div class='status-row'>"
+            f"<span class='status-dot {row['dot_class']}'></span>"
+            f"<span class='status-label'>{row['label']}</span>"
+            f"<span class='status-pill'>{row['status']}</span>"
+            f"<span class='status-detail'>{row['detail']}</span>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def _get_cerebras_api_key() -> str:
@@ -963,8 +1114,9 @@ def _offerte_to_copy_text(offerte: list[Offerta], query: str = "") -> str:
         lines.append(f"   Prezzo: €{o.prezzo:.2f}")
         if o.spedizione and o.spedizione not in ("n.d.", ""):
             lines.append(f"   Spedizione: {o.spedizione}")
-        if o.condizione:
-            lines.append(f"   Condizione: {o.condizione}")
+        condizione = str(getattr(o, "condizione", "") or "").strip()
+        if condizione:
+            lines.append(f"   Condizione: {condizione}")
         lines.append(f"   Fonte: {o.fonte}")
         lines.append(f"   Link: {o.link}")
         lines.append("")
@@ -1115,6 +1267,220 @@ def _render_specs_grid(offerte: list[Offerta]) -> None:
         cols = st.columns(2, gap="medium")
         for idx, offerta in enumerate(preview[start:start + 2]):
             cols[idx].markdown(_render_offerta_card(offerta, start + idx), unsafe_allow_html=True)
+
+
+def _extract_comparison_spec_keys(
+    grouped_results: dict[str, list[Offerta]],
+    max_keys: int = 6,
+) -> list[str]:
+    counts: dict[str, int] = {}
+    for results in grouped_results.values():
+        for offerta in sorted(results, key=lambda item: item.prezzo)[:3]:
+            if not isinstance(offerta.specs, dict):
+                continue
+            for raw_key, raw_value in offerta.specs.items():
+                if raw_value in (None, "", [], {}):
+                    continue
+                key = str(raw_key or "").strip().lower()
+                if not key:
+                    continue
+                counts[key] = counts.get(key, 0) + 1
+
+    if not counts:
+        return []
+
+    preferred = ["display", "processore", "ram", "storage", "batteria", "camera", "refresh_rate"]
+    ordered = [key for key in preferred if key in counts]
+    tail = sorted([key for key in counts if key not in preferred], key=lambda item: (-counts[item], item))
+    return (ordered + tail)[:max_keys]
+
+
+def _spec_value_for_key(offerta: Offerta, key: str) -> str:
+    if not isinstance(offerta.specs, dict):
+        return "n.d."
+    for raw_key, raw_value in offerta.specs.items():
+        if str(raw_key or "").strip().lower() == key and raw_value not in (None, "", [], {}):
+            return str(raw_value)
+    return "n.d."
+
+
+def _render_comparison_board(cmp_results: dict[str, list[Offerta]]) -> None:
+    import html as _html
+
+    ordered_by_query: dict[str, list[Offerta]] = {}
+    for query, raw_results in cmp_results.items():
+        if isinstance(raw_results, list):
+            ordered_by_query[str(query)] = sorted(raw_results, key=lambda item: item.prezzo)
+
+    valid_queries = [query for query, rows in ordered_by_query.items() if rows]
+    if not valid_queries:
+        st.warning("Nessun risultato disponibile per il confronto richiesto.")
+        return
+
+    spec_keys = _extract_comparison_spec_keys({query: ordered_by_query[query] for query in valid_queries})
+
+    header_cells = "".join(
+        (
+            f"<th>{_html.escape(query.title())}"
+            f"<span>{len(ordered_by_query[query])} risultati</span></th>"
+        )
+        for query in valid_queries
+    )
+
+    price_cells = []
+    spread_cells = []
+    best_offer_cells = []
+    for query in valid_queries:
+        rows = ordered_by_query[query]
+        best = rows[0]
+        price_cells.append(
+            "<td>"
+            f"<span class='value'>{_format_price(best.prezzo)}</span>"
+            f"<span class='meta'>{_html.escape(best.negozio)}</span>"
+            "</td>"
+        )
+
+        if len(rows) >= 3 and rows[0].prezzo > 0:
+            spread = ((rows[2].prezzo - rows[0].prezzo) / rows[0].prezzo) * 100.0
+            spread_label = f"+{spread:.1f}%"
+            spread_detail = "dal #1 al #3"
+        elif len(rows) >= 2 and rows[0].prezzo > 0:
+            spread = ((rows[1].prezzo - rows[0].prezzo) / rows[0].prezzo) * 100.0
+            spread_label = f"+{spread:.1f}%"
+            spread_detail = "dal #1 al #2"
+        else:
+            spread_label = "n.d."
+            spread_detail = "campione ridotto"
+        spread_cells.append(
+            "<td>"
+            f"<span class='value'>{_html.escape(spread_label)}</span>"
+            f"<span class='meta'>{_html.escape(spread_detail)}</span>"
+            "</td>"
+        )
+
+        best_name = best.nome[:68] + ("..." if len(best.nome) > 68 else "")
+        best_offer_cells.append(
+            "<td>"
+            f"<a class='comp-link' href='{_html.escape(best.link, quote=True)}' target='_blank' rel='noopener noreferrer'>{_html.escape(best_name)}</a>"
+            f"<span class='meta'>{_html.escape(best.fonte)}</span>"
+            "</td>"
+        )
+
+    specs_rows_html = ""
+    for key in spec_keys:
+        label = _html.escape(str(key).replace("_", " ").capitalize())
+        values = []
+        for query in valid_queries:
+            best = ordered_by_query[query][0]
+            values.append(f"<td>{_html.escape(_spec_value_for_key(best, key))}</td>")
+        specs_rows_html += f"<tr><td>{label}</td>{''.join(values)}</tr>"
+
+    table_html = (
+        "<div class='comparison-board'>"
+        "<div class='comparison-board-head'>"
+        "<p class='comparison-kicker'>Comparison board</p>"
+        "<h4>Confronto Prodotti</h4>"
+        "<p>Vista sintetica per capire subito valore, spread prezzi e differenze tecniche principali.</p>"
+        "</div>"
+        "<div class='comparison-table-wrap'>"
+        "<p class='comparison-scroll-hint'>Scorri orizzontalmente per vedere tutte le colonne.</p>"
+        "<table class='comparison-table'>"
+        "<thead><tr><th>Parametro</th>"
+        f"{header_cells}"
+        "</tr></thead>"
+        "<tbody>"
+        f"<tr class='row-priority'><td>Miglior prezzo</td>{''.join(price_cells)}</tr>"
+        f"<tr class='row-priority'><td>Spread prezzo</td>{''.join(spread_cells)}</tr>"
+        f"<tr class='row-priority'><td>Best match</td>{''.join(best_offer_cells)}</tr>"
+        f"{specs_rows_html}"
+        "</tbody>"
+        "</table>"
+        "</div>"
+        "</div>"
+    )
+    st.markdown(table_html, unsafe_allow_html=True)
+
+    cmp_cols = st.columns(len(valid_queries), gap="medium")
+    for col, query in zip(cmp_cols, valid_queries):
+        rows = ordered_by_query[query]
+        stack_items = []
+        for rank, offerta in enumerate(rows[:3], start=1):
+            nome = offerta.nome[:62] + ("..." if len(offerta.nome) > 62 else "")
+            stack_items.append(
+                "<div class='comparison-pick'>"
+                f"<span class='rank'>#{rank}</span>"
+                f"<span class='pick-price'>{_format_price(offerta.prezzo)}</span>"
+                f"<a href='{_html.escape(offerta.link, quote=True)}' target='_blank' rel='noopener noreferrer'>{_html.escape(nome)}</a>"
+                f"<small>{_html.escape(offerta.negozio)} · {_html.escape(offerta.fonte)}</small>"
+                "</div>"
+            )
+        stack_html = "".join(stack_items) if stack_items else "<p class='comparison-empty'>Nessun risultato.</p>"
+        with col:
+            st.markdown(
+                "<div class='comparison-stack'>"
+                f"<p class='comparison-stack-title'>{_html.escape(query.title())}</p>"
+                f"{stack_html}"
+                "</div>",
+                unsafe_allow_html=True,
+            )
+
+
+def _render_manual_comparison_matrix(offerte: list[Offerta]) -> None:
+    import html as _html
+
+    if len(offerte) < 2:
+        return
+
+    best_price = min(offerta.prezzo for offerta in offerte)
+    spec_keys = _extract_comparison_spec_keys({"manual": offerte}, max_keys=8)
+
+    header_cells = []
+    for offerta in offerte:
+        name = offerta.nome[:48] + ("..." if len(offerta.nome) > 48 else "")
+        best_class = " is-best" if offerta.prezzo == best_price else ""
+        header_cells.append(f"<th class='{best_class.strip()}'>{_html.escape(name)}</th>")
+
+    rows_html = ""
+    rows_html += "<tr><td>Prezzo</td>" + "".join(
+        f"<td class='num'>{_html.escape(_format_price(offerta.prezzo))}</td>" for offerta in offerte
+    ) + "</tr>"
+    rows_html += "<tr><td>Negozio</td>" + "".join(
+        f"<td>{_html.escape(offerta.negozio)}</td>" for offerta in offerte
+    ) + "</tr>"
+    rows_html += "<tr><td>Fonte</td>" + "".join(
+        f"<td>{_html.escape(offerta.fonte)}</td>" for offerta in offerte
+    ) + "</tr>"
+    rows_html += "<tr><td>Spedizione</td>" + "".join(
+        f"<td>{_html.escape(str(offerta.spedizione or 'n.d.'))}</td>" for offerta in offerte
+    ) + "</tr>"
+
+    for key in spec_keys:
+        label = _html.escape(str(key).replace("_", " ").capitalize())
+        row_values = "".join(f"<td>{_html.escape(_spec_value_for_key(offerta, key))}</td>" for offerta in offerte)
+        rows_html += f"<tr><td>{label}</td>{row_values}</tr>"
+
+    rows_html += "<tr><td>Link</td>" + "".join(
+        (
+            "<td>"
+            f"<a class='comp-link' href='{_html.escape(offerta.link, quote=True)}' target='_blank' rel='noopener noreferrer'>Apri offerta -></a>"
+            "</td>"
+        )
+        for offerta in offerte
+    ) + "</tr>"
+
+    st.markdown(
+        "<div class='manual-compare-wrap'>"
+        "<p class='comparison-kicker'>Confronto manuale</p>"
+        "<p class='comparison-scroll-hint'>Tip: su mobile scorri la tabella verso destra per il confronto completo.</p>"
+        "<table class='manual-compare-table'>"
+        "<thead><tr><th>Parametro</th>"
+        f"{''.join(header_cells)}"
+        "</tr></thead>"
+        f"<tbody>{rows_html}</tbody>"
+        "</table>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
 
 def _run_comparison_search(
@@ -1332,6 +1698,13 @@ cerebras_client = _get_cerebras_client(api_key)
 if kb_manager is not None:
     kb_manager.init_kb_on_startup(api_key)
 
+st.markdown(
+    "<div class='cockpit-top-strip'>"
+    "<span class='label'>System health</span>"
+    "<span class='uptime'>Uptime: 99.9%</span>"
+    "</div>",
+    unsafe_allow_html=True,
+)
 st.write("")
 
 # ── Valori default (sovrascriuti dai widget nel ramo attivo) ──────────────
@@ -1582,38 +1955,10 @@ if st.session_state.get("ricerca_effettuata", False):
     st.markdown("<span id='sezione-confronta'></span>", unsafe_allow_html=True)
     st.markdown("<div class='section-card'>", unsafe_allow_html=True)
 
-    # ── Modalità confronto: risultati side-by-side (sopra la tabella normale) ──
+    # ── Modalità confronto: comparison board (sopra la tabella normale) ──
     if st.session_state.get("comparison_mode") and st.session_state.get("comparison_results"):
         _cmp_results: dict[str, list[Offerta]] = st.session_state["comparison_results"]
-        _cmp_queries = list(_cmp_results.keys())
-        n_cols = len(_cmp_queries)
-
-        st.markdown(
-            "<div class='section-heading'><h3>⚔️ Confronto Prodotti</h3>"
-            "<p>Risultati affiancati per ogni prodotto ricercato.</p></div>",
-            unsafe_allow_html=True,
-        )
-
-        cmp_cols = st.columns(n_cols, gap="medium")
-        for col_idx, q in enumerate(_cmp_queries):
-            res_list = _cmp_results.get(q, [])
-            with cmp_cols[col_idx]:
-                st.markdown(f"#### 🔹 {q.title()}")
-                if not res_list:
-                    st.warning("Nessun risultato trovato.")
-                else:
-                    best = res_list[0]
-                    st.metric("Miglior prezzo", _format_price(best.prezzo), delta=None)
-                    st.caption(f"{best.nome} · {best.negozio}")
-                    for offerta in res_list[:10]:
-                        _price_str = _format_price(offerta.prezzo)
-                        st.markdown(
-                            f"**{_price_str}** — [{offerta.nome[:45]}]({offerta.link})  \n"
-                            f"<small>{offerta.negozio} · {offerta.fonte}</small>",
-                            unsafe_allow_html=True,
-                        )
-                    if len(res_list) > 10:
-                        st.caption(f"... e altri {len(res_list) - 10} risultati.")
+        _render_comparison_board(_cmp_results)
 
         st.divider()
 
@@ -1693,6 +2038,30 @@ if st.session_state.get("ricerca_effettuata", False):
         m3.metric("Negozio migliore", negozio_min)
         m4.metric("Fonti attive", str(fonti_uniche))
 
+        _prices_sorted = sorted([o.prezzo for o in _metriche_src])
+        _top_1 = _prices_sorted[0] if _prices_sorted else 0.0
+        _top_2 = _prices_sorted[1] if len(_prices_sorted) > 1 else _top_1
+        _top_3 = _prices_sorted[2] if len(_prices_sorted) > 2 else _top_2
+        _delta_12 = ((_top_2 - _top_1) / _top_1 * 100.0) if _top_1 > 0 else 0.0
+        _delta_13 = ((_top_3 - _top_1) / _top_1 * 100.0) if _top_1 > 0 else 0.0
+
+        _ins_l, _ins_r = st.columns([1.55, 1], gap="large")
+        with _ins_l:
+            st.markdown(
+                "<div class='market-snapshot-card'>"
+                "<p class='market-kicker'>Snapshot mercato</p>"
+                f"<h4>{_format_price(_top_1)}</h4>"
+                f"<p>Delta top #1-#2: <strong>+{_delta_12:.1f}%</strong> · "
+                f"Delta top #1-#3: <strong>+{_delta_13:.1f}%</strong></p>"
+                "<small>Ranking: prezzo, affidabilita fonte, spedizione.</small>"
+                "</div>",
+                unsafe_allow_html=True,
+            )
+        with _ins_r:
+            _fonti_selected_ui = list(st.session_state.get("fonti_selezionate", _fonti_def))
+            _fonti_selected_backend = [_fonti_map[f] for f in _fonti_selected_ui if f in _fonti_map]
+            _render_source_status_monitor(offerte, _fonti_selected_backend, st.session_state.get("log_ricerca", ""))
+
         if not offerte_vis:
             st.info("ℹ️ Nessun risultato con i filtri correnti. Modifica o rimuovi i filtri.")
         else:
@@ -1713,25 +2082,7 @@ if st.session_state.get("ricerca_effettuata", False):
             )
             _offerte_confronto = [o for o in offerte_vis if o.link in _selezione_links]
             if len(_offerte_confronto) >= 2:
-                st.markdown("**Confronto fianco a fianco**")
-                _ccols = st.columns(len(_offerte_confronto))
-                _best_price = min(o.prezzo for o in _offerte_confronto)
-                for _ccol, _co in zip(_ccols, _offerte_confronto):
-                    _is_best = _co.prezzo == _best_price
-                    if _is_best:
-                        _ccol.markdown("<div class='best-value'>", unsafe_allow_html=True)
-                    _ccol.markdown(f"**{_co.nome[:80]}**")
-                    _ccol.metric("Prezzo", _format_price(_co.prezzo))
-                    _ccol.markdown(f"🏪 {_co.negozio} · {_co.fonte}")
-                    _ccol.markdown(f"📦 Spedizione: {_co.spedizione}")
-                    _ccol.markdown(f"[Apri {_ARROW}]({_co.link})")
-                    if _co.specs:
-                        _ccol.markdown("---")
-                        for _sk, _sv in _co.specs.items():
-                            if _sv not in (None, "", [], {}):
-                                _ccol.markdown(f"**{str(_sk).replace('_', ' ').capitalize()}**: {_sv}")
-                    if _is_best:
-                        _ccol.markdown("</div>", unsafe_allow_html=True)
+                _render_manual_comparison_matrix(_offerte_confronto)
 
             # ── Storico prezzi Amazon (CamelCamelCamel) ────────────────────
             import re as _re
