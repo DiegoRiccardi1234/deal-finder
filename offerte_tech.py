@@ -82,6 +82,11 @@ try:
 except Exception:
     st = None
 
+try:
+    from vinted_scraper import VintedScraper
+except ImportError:
+    VintedScraper = None  # type: ignore[assignment,misc]
+
 # ---------------------------------------------------------------------------
 # Tentativo di importare fake_useragent; fallback a lista statica se assente
 # ---------------------------------------------------------------------------
@@ -1432,140 +1437,42 @@ def scrape_vinted(
     query_tokens: list[str],
     condizione: str = "tutti",
 ) -> list[Offerta]:
-    """Scraper per Vinted Italia (catalog ordinato per prezzo crescente)."""
+    """Scraper per Vinted.it tramite libreria vinted-scraper (gestione cookie automatica)."""
     if condizione == "nuovo":
-        print("\nℹ️ Vinted mostra solo articoli usati")
+        print("\nℹ️ Vinted mostra solo articoli usati — salto per condizione=nuovo")
         return []
-
-    url = f"https://www.vinted.it/catalog?search_text={quote_plus(query)}&order=price_low_to_high"
     print(f"\n🔍 Cerco su Vinted.it: \"{query}\"")
-
     risultati: list[Offerta] = []
+    if VintedScraper is None:
+        print("    ⚠️  Vinted.it: libreria vinted-scraper non installata.")
+        return risultati
     try:
-        headers = get_headers()
-        headers["Referer"] = "https://www.vinted.it/"
-
-        resp = fetch_with_retry(url, headers)
-        resp.raise_for_status()
-
-        soup = BeautifulSoup(resp.text, "html.parser")
-        items = soup.select('[data-testid="grid-item"]')
-        if not items:
-            print("    ⚠️  Nessun prodotto trovato su Vinted — possibile blocco o layout cambiato.")
-            return risultati
-
-        print(f"    ✅ Trovati {len(items)} elementi grezzi su Vinted.it")
-
+        scraper = VintedScraper("https://www.vinted.it")
+        items = scraper.search({"search_text": query, "order": "price_low_to_high", "per_page": 48})
+        print(f"    ✅ Vinted.it: {len(items)} risultati")
         for item in items:
             try:
-                nome_tag = (
-                    item.select_one('[data-testid$="--description-title"]')
-                    or item.select_one('[data-testid="description-title"]')
-                )
-                prezzo_tag = item.select_one('[data-testid="price-text"]')
-                link_tag = item.select_one("a[href]")
-                if not prezzo_tag or not link_tag:
-                    continue
-
-                nome = nome_tag.get_text(strip=True) if nome_tag else ""
-                if not nome or nome.lower() in {"rimosso!", "removed"}:
-                    nome = str(link_tag.get("title", "") or "")
-                if not nome:
-                    img_tag = item.select_one("img")
-                    nome = str(img_tag.get("alt", "") or "") if img_tag else ""
+                nome = str(item.title or "").strip()
                 if not nome:
                     continue
-
-                prezzo_raw = prezzo_tag.get_text(" ", strip=True)
-                m = re.search(r"\d{1,3}(?:[\.\s]\d{3})*,\d{2}|\d+(?:\.\d{2})?", prezzo_raw)
-                if not m:
-                    continue
-                prezzo = parse_price(m.group(0))
-                if not math.isfinite(prezzo):
-                    continue
-
-                href = str(link_tag.get("href", "") or "")
-                if not href:
-                    continue
-                link = href if href.startswith("http") else urljoin("https://www.vinted.it", href)
-
-                if not is_relevant(nome, query_tokens, strict_specs=False):
+                prezzo = float(item.price)
+                if not math.isfinite(prezzo) or prezzo <= 0:
                     continue
                 if not _within_price_range(prezzo, prezzo_min, budget_max):
                     continue
-
-                spedizione = _extract_shipping_from_text(item.get_text(" ", strip=True))
-
-                try:
-                    _img_tag = item.select_one("img")
-                    _img_url = str(_img_tag.get("src", "") or "") if _img_tag else ""
-                except Exception:
-                    _img_url = ""
-
-                risultati.append(
-                    Offerta(nome=nome, prezzo=prezzo, negozio="Vinted", link=link, fonte="vinted.it", spedizione=spedizione, immagine=_img_url)
-                )
-            except (AttributeError, TypeError):
-                continue
-
-        # Fallback: su alcune pagine Vinted i campi prezzo/titolo sono nel title del link.
-        if not risultati:
-            item_links = soup.select('a[href*="/items/"]')
-            seen: set[str] = set()
-            for a_tag in item_links:
-                try:
-                    href = str(a_tag.get("href", "") or "")
-                    if not href:
-                        continue
-                    link = href if href.startswith("http") else urljoin("https://www.vinted.it", href)
-                    if link in seen:
-                        continue
-                    seen.add(link)
-
-                    title_attr = str(a_tag.get("title", "") or "")
-                    if not title_attr:
-                        continue
-
-                    nome = title_attr.split(", brand:")[0].strip()
-                    if not nome:
-                        continue
-
-                    price_match = re.search(r"\d+[\.,]\d{2}", title_attr)
-                    if not price_match:
-                        continue
-                    prezzo = parse_price(price_match.group(0))
-                    if not math.isfinite(prezzo):
-                        continue
-
-                    if not is_relevant(nome, query_tokens, strict_specs=False):
-                        continue
-                    if not _within_price_range(prezzo, prezzo_min, budget_max):
-                        continue
-
-                    spedizione = _extract_shipping_from_text(title_attr)
-
-                    try:
-                        _img_tag = a_tag.select_one("img")
-                        _img_url = str(_img_tag.get("src", "") or "") if _img_tag else ""
-                    except Exception:
-                        _img_url = ""
-
-                    risultati.append(
-                        Offerta(nome=nome, prezzo=prezzo, negozio="Vinted", link=link, fonte="vinted.it", spedizione=spedizione, immagine=_img_url)
-                    )
-                except (AttributeError, TypeError):
+                if not is_relevant(nome, query_tokens, strict_specs=False):
                     continue
-
-    except requests.Timeout:
-        print("    ❌ Vinted.it: timeout raggiunto anche dopo i retry.")
-    except requests.ConnectionError:
-        print("    ❌ Vinted.it: impossibile connettersi al sito.")
-    except requests.HTTPError as exc:
-        print(f"    ❌ Vinted.it: errore HTTP {exc.response.status_code}.")
+                link = str(item.url)
+                foto = item.photo
+                img_url = foto.get("url", "") if isinstance(foto, dict) else ""
+                risultati.append(Offerta(
+                    nome=nome, prezzo=prezzo, negozio="Vinted",
+                    link=link, fonte="vinted.it", spedizione="n.d.", immagine=img_url,
+                ))
+            except (AttributeError, TypeError, ValueError):
+                continue
     except Exception as exc:
-        print(f"    ❌ Vinted.it: errore inatteso → {exc}")
-
-    _random_delay()
+        print(f"    ❌ Vinted.it: errore → {exc}")
     return risultati
 
 
@@ -2780,6 +2687,268 @@ def export_to_csv(offerte: list[Offerta], filename: str = "offerte.csv") -> None
 
 
 # ===========================================================================
+# SCRAPER — wallapop.com
+# ===========================================================================
+_WALLAPOP_COMPONENTS_URL = "https://api.wallapop.com/api/v3/search/components"
+_WALLAPOP_SECTION_URL = "https://api.wallapop.com/api/v3/search/section"
+
+
+def scrape_wallapop(
+    query: str,
+    prezzo_min: float,
+    budget_max: Optional[float],
+    query_tokens: list[str],
+    condizione: str = "tutti",
+) -> list[Offerta]:
+    """
+    Scraper per Wallapop tramite API pubblica (due step: components → section).
+
+    NOTE API (valide ad aprile 2026):
+        Step 1: GET /api/v3/search/components → estrae search_id e category_id
+        Step 2: GET /api/v3/search/section con search_id → items[]
+        Campi: title, price.amount, web_slug, images[0].urls.small
+        URL articolo: https://it.wallapop.com/item/{web_slug}
+        Richiede header x-deviceid (UUID random), x-appversion, mpid.
+    """
+    import uuid as _uuid
+    print(f"\n🔍 Cerco su Wallapop: \"{query}\"")
+    risultati: list[Offerta] = []
+    _headers = {
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "it,it-IT;q=0.9",
+        "Referer": "https://it.wallapop.com/",
+        "User-Agent": get_headers().get("User-Agent", "Mozilla/5.0"),
+        "deviceos": "0",
+        "x-deviceos": "0",
+        "x-appversion": "818810",
+        "x-deviceid": str(_uuid.uuid4()),
+        "mpid": "-3421950124112390907",
+        "trackinguserid": "-3421950124112390907",
+    }
+    try:
+        r1 = requests.get(_WALLAPOP_COMPONENTS_URL, params={
+            "keywords": query, "latitude": 41.9028, "longitude": 12.4964, "source": "search_box",
+        }, headers=_headers, timeout=TIMEOUT)
+        r1.raise_for_status()
+
+        search_id = category_id = None
+        for comp in r1.json().get("components", []):
+            qp = (comp.get("type_data") or {}).get("query_params") or {}
+            if qp.get("search_id"):
+                search_id = qp["search_id"]
+                category_id = qp.get("category_id")
+                break
+        if not search_id:
+            print("    ⚠️  Wallapop: search_id non trovato nella risposta components.")
+            return risultati
+
+        params2: dict = {
+            "keywords": query, "source": "search_box", "search_id": search_id,
+            "latitude": 41.9028, "longitude": 12.4964,
+            "order_by": "most_relevance", "section_type": "organic_search_results",
+        }
+        if category_id:
+            params2["category_id"] = category_id
+
+        r2 = requests.get(_WALLAPOP_SECTION_URL, params=params2, headers=_headers, timeout=TIMEOUT)
+        r2.raise_for_status()
+        items = r2.json().get("data", {}).get("section", {}).get("items", [])
+        print(f"    ✅ Wallapop: {len(items)} risultati")
+
+        for item in items:
+            try:
+                nome = str(item.get("title") or "").strip()
+                if not nome:
+                    continue
+                price_data = item.get("price") or {}
+                prezzo = float(price_data.get("amount", 0))
+                if not math.isfinite(prezzo) or prezzo <= 0:
+                    continue
+                if not _within_price_range(prezzo, prezzo_min, budget_max):
+                    continue
+                if not is_relevant(nome, query_tokens, strict_specs=False):
+                    continue
+                web_slug = str(item.get("web_slug") or "").strip()
+                if not web_slug:
+                    continue
+                link = f"https://it.wallapop.com/item/{web_slug}"
+                imgs = item.get("images") or []
+                img_url = imgs[0].get("urls", {}).get("small", "") if imgs else ""
+                ship = item.get("shipping") or {}
+                spedizione = "Spedizione disponibile" if ship.get("user_allows_shipping") else "Solo ritiro"
+                if condizione == "nuovo" and item.get("is_refurbished"):
+                    continue
+                risultati.append(Offerta(
+                    nome=nome, prezzo=prezzo, negozio="Wallapop",
+                    link=link, fonte="wallapop.com", spedizione=spedizione, immagine=img_url,
+                ))
+            except (AttributeError, TypeError, ValueError, KeyError):
+                continue
+    except requests.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else "?"
+        print(f"    ⚠️  Wallapop: errore HTTP {status}.")
+    except Exception as exc:
+        print(f"    ❌ Wallapop: errore inatteso → {exc}")
+    return risultati
+
+
+# ===========================================================================
+# SCRAPER — comet.it  (Algolia API)
+# ===========================================================================
+_COMET_ALGOLIA_URL = "https://mvk2s77iyi-dsn.algolia.net/1/indexes/*/queries"
+_COMET_ALGOLIA_APP_ID = "MVK2S77IYI"
+_COMET_ALGOLIA_API_KEY = "f7f4f516742fcb4597c1e71641f7d0ed"
+
+
+def scrape_comet(
+    query: str,
+    prezzo_min: float,
+    budget_max: Optional[float],
+    query_tokens: list[str],
+) -> list[Offerta]:
+    """
+    Scraper per Comet.it tramite Algolia (API pubblica embedded nel frontend).
+
+    NOTE API (valide ad aprile 2026):
+        App ID: MVK2S77IYI  |  Index: products  |  Filter: visible=1
+        Hit fields: name, pFinale (prezzo finale), url (assoluto), image (assoluto)
+    """
+    print(f"\n🔍 Cerco su Comet.it: \"{query}\"")
+    risultati: list[Offerta] = []
+    try:
+        payload = json.dumps({"requests": [{
+            "indexName": "products",
+            "query": query,
+            "hitsPerPage": 40,
+            "page": 0,
+            "filters": "visible=1",
+        }]})
+        headers = {
+            "Content-Type": "application/json",
+            "x-algolia-api-key": _COMET_ALGOLIA_API_KEY,
+            "x-algolia-application-id": _COMET_ALGOLIA_APP_ID,
+            "Origin": "https://www.comet.it",
+            "Referer": "https://www.comet.it/",
+        }
+        resp = requests.post(_COMET_ALGOLIA_URL, data=payload, headers=headers, timeout=TIMEOUT)
+        resp.raise_for_status()
+        hits = resp.json().get("results", [{}])[0].get("hits", [])
+        if not hits:
+            print("    ⚠️  Comet.it: nessun prodotto trovato.")
+            return risultati
+        print(f"    ✅ Comet.it (Algolia): {len(hits)} risultati")
+        for hit in hits:
+            try:
+                nome = str(hit.get("name") or "").strip()
+                if not nome:
+                    continue
+                prezzo = float(hit.get("pFinale") or hit.get("pListino") or 0)
+                if not math.isfinite(prezzo) or prezzo <= 0:
+                    continue
+                if not _within_price_range(prezzo, prezzo_min, budget_max):
+                    continue
+                if not is_relevant(nome, query_tokens, strict_specs=False):
+                    continue
+                if not hit.get("isAcquistabile", True):
+                    continue
+                link = str(hit.get("url") or "").strip()
+                if not link:
+                    continue
+                img_url = str(hit.get("image") or "").strip()
+                risultati.append(Offerta(
+                    nome=nome, prezzo=prezzo, negozio="Comet",
+                    link=link, fonte="comet.it", spedizione="n.d.", immagine=img_url,
+                ))
+            except (AttributeError, TypeError, ValueError, KeyError):
+                continue
+    except requests.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else "?"
+        print(f"    ⚠️  Comet.it: errore HTTP {status}.")
+    except Exception as exc:
+        print(f"    ❌ Comet.it: errore inatteso → {exc}")
+    return risultati
+
+
+# ===========================================================================
+# SCRAPER — expert.it
+# ===========================================================================
+
+
+def scrape_expert(
+    query: str,
+    prezzo_min: float,
+    budget_max: Optional[float],
+    query_tokens: list[str],
+) -> list[Offerta]:
+    """
+    Scraper per Expert.it tramite JSON-LD ItemList nella pagina di ricerca.
+
+    NOTE SELETTORI (validi ad aprile 2026):
+        URL ricerca: /it/it/exp/shop/search?terms={query}
+        Data: <script type="application/ld+json"> @type=ItemList
+        Campi item: name, offers.price (str→float), url (assoluto), image (assoluto)
+    """
+    url = f"https://www.expert.it/it/it/exp/shop/search?terms={quote_plus(query)}"
+    print(f"\n🔍 Cerco su Expert.it: \"{query}\"")
+    risultati: list[Offerta] = []
+    try:
+        headers = get_headers()
+        headers["Referer"] = "https://www.expert.it/"
+        resp = fetch_with_retry(url, headers)
+        if resp.status_code in (401, 403, 429, 503):
+            print(f"    ⚠️  Expert.it: accesso bloccato (HTTP {resp.status_code}).")
+            return risultati
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        ld_tags = soup.select('script[type="application/ld+json"]')
+        items: list = []
+        for tag in ld_tags:
+            try:
+                data = json.loads(tag.string or "")
+                if data.get("@type") == "ItemList":
+                    items = data.get("itemListElement", [])
+                    break
+            except (json.JSONDecodeError, AttributeError):
+                continue
+
+        if not items:
+            print("    ⚠️  Expert.it: nessun prodotto trovato (JSON-LD ItemList assente).")
+            return risultati
+        print(f"    ✅ Expert.it: {len(items)} risultati")
+
+        for el in items:
+            try:
+                item = el.get("item", {})
+                nome = str(item.get("name") or "").strip()
+                if not nome:
+                    continue
+                prezzo = float(item.get("offers", {}).get("price", 0))
+                if not math.isfinite(prezzo) or prezzo <= 0:
+                    continue
+                if not _within_price_range(prezzo, prezzo_min, budget_max):
+                    continue
+                if not is_relevant(nome, query_tokens, strict_specs=False):
+                    continue
+                link = str(item.get("url") or "").strip()
+                if not link:
+                    continue
+                img_url = str(item.get("image") or "").strip()
+                risultati.append(Offerta(
+                    nome=nome, prezzo=prezzo, negozio="Expert",
+                    link=link, fonte="expert.it", spedizione="n.d.", immagine=img_url,
+                ))
+            except (AttributeError, TypeError, ValueError, KeyError):
+                continue
+    except requests.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else "?"
+        print(f"    ⚠️  Expert.it: errore HTTP {status}.")
+    except Exception as exc:
+        print(f"    ❌ Expert.it: errore inatteso → {exc}")
+    return risultati
+
+
+# ===========================================================================
 # SCRAPER — subito.it
 # ===========================================================================
 
@@ -3254,7 +3423,7 @@ def cerca_offerte(
     fonti_norm = {f.strip().lower() for f in (fonti or []) if str(f).strip()}
     if not fonti_norm:
         # subito/aliexpress/temu/alibaba sono bloccati da bot-protection — esclusi dal default
-        fonti_norm = {"amazon", "ebay", "vinted", "euronics", "unieuro", "mediaworld"}
+        fonti_norm = {"amazon", "ebay", "vinted", "euronics", "unieuro", "mediaworld", "wallapop", "comet", "expert"}
     print(f"  🌐 Fonti attive: {', '.join(sorted(fonti_norm))}")
 
     # Lancio scraper in parallelo sulle fonti selezionate
@@ -3287,6 +3456,12 @@ def cerca_offerte(
             future_to_label[executor.submit(_timed_call, scrape_unieuro, "Unieuro.it", query, prezzo_min, budget_max, query_tokens)] = "Unieuro.it"
         if "mediaworld" in fonti_norm:
             future_to_label[executor.submit(_timed_call, scrape_mediaworld, "MediaWorld.it", query, prezzo_min, budget_max, query_tokens, condizione)] = "MediaWorld.it"
+        if "wallapop" in fonti_norm:
+            future_to_label[executor.submit(_timed_call, scrape_wallapop, "Wallapop", query, prezzo_min, budget_max, query_tokens, condizione)] = "Wallapop"
+        if "comet" in fonti_norm:
+            future_to_label[executor.submit(_timed_call, scrape_comet, "Comet.it", query, prezzo_min, budget_max, query_tokens)] = "Comet.it"
+        if "expert" in fonti_norm:
+            future_to_label[executor.submit(_timed_call, scrape_expert, "Expert.it", query, prezzo_min, budget_max, query_tokens)] = "Expert.it"
         if "subito" in fonti_norm:
             future_to_label[executor.submit(_timed_call, scrape_subito, "Subito.it", query, prezzo_min, budget_max, query_tokens, condizione)] = "Subito.it"
         if "aliexpress" in fonti_norm:
@@ -3415,7 +3590,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--fonti",
         nargs="+",
-        choices=["amazon", "ebay", "vinted", "euronics", "unieuro", "mediaworld"],
+        choices=["amazon", "ebay", "vinted", "euronics", "unieuro", "mediaworld", "wallapop", "comet", "expert"],
         default=None,
         metavar="FONTE",
         help="Seleziona le fonti da consultare (default: tutte)",

@@ -3,3 +3,4 @@ beautifulsoup4
 fake-useragent
 streamlit
 cerebras-cloud-sdk
+vinted-scraper>=3.0.0

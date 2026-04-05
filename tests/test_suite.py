@@ -1,3 +1,4 @@
+import json
 import math
 from unittest.mock import MagicMock
 
@@ -194,6 +195,9 @@ def _make_monkeypatch_cerca(monkeypatch: pytest.MonkeyPatch, amazon_results: lis
     monkeypatch.setattr("offerte_tech.scrape_euronics", lambda *a, **kw: [])
     monkeypatch.setattr("offerte_tech.scrape_unieuro", lambda *a, **kw: [])
     monkeypatch.setattr("offerte_tech.scrape_mediaworld", lambda *a, **kw: [])
+    monkeypatch.setattr("offerte_tech.scrape_wallapop", lambda *a, **kw: [])
+    monkeypatch.setattr("offerte_tech.scrape_comet", lambda *a, **kw: [])
+    monkeypatch.setattr("offerte_tech.scrape_expert", lambda *a, **kw: [])
     monkeypatch.setattr("offerte_tech.fetch_specs_ai", lambda offerte, categoria, cerebras_client: offerte)
 
 
@@ -371,15 +375,22 @@ def test_filtra_risultati_con_ai_logga_motivi_scarto(
 
 
 def test_nuove_fonti_vuote(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verifica che le nuove fonti (euronics/unieuro/mediaworld) restituiscano lista vuota su errore o blocco."""
-    from unittest.mock import patch
-    import requests
+    """Verifica che le nuove fonti restituiscano lista vuota su errore di rete."""
+    import requests as _req
 
-    for scraper in (scrape_euronics, scrape_unieuro, scrape_mediaworld):
-        with patch("offerte_tech.fetch_with_retry") as mock_fetch:
-            mock_fetch.side_effect = requests.ConnectionError("test")
-            result = scraper("notebook", 0, 1000, ["notebook"])
-            assert result == [], f"{scraper.__name__} doveva restituire [] su ConnectionError"
+    def _raise_conn(*a, **kw):
+        raise _req.ConnectionError("test")
+
+    # Patch sia fetch_with_retry (euronics/mediaworld/expert) sia requests.post (unieuro/comet)
+    # sia requests.get (wallapop) per garantire isolamento completo dalla rete.
+    monkeypatch.setattr("offerte_tech.fetch_with_retry", _raise_conn)
+    monkeypatch.setattr("offerte_tech.requests.post", _raise_conn)
+    monkeypatch.setattr("offerte_tech.requests.get", _raise_conn)
+
+    from offerte_tech import scrape_euronics, scrape_unieuro, scrape_mediaworld, scrape_comet, scrape_wallapop, scrape_expert
+    for scraper in (scrape_euronics, scrape_unieuro, scrape_mediaworld, scrape_comet, scrape_wallapop, scrape_expert):
+        result = scraper("notebook", 0, 1000, ["notebook"])
+        assert result == [], f"{scraper.__name__} doveva restituire [] su ConnectionError"
 
 
 def test_cerca_offerte_nuove_fonti_integrate(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -583,5 +594,151 @@ def test_chat_refine_state2_non_crasha(page: Page, base_url: str, streamlit_serv
     expect(page.get_by_role("button", name="Cerca offerte")).to_be_visible(timeout=10000)
     body_text = page.locator("section[data-testid='stMain']").inner_text(timeout=15000).lower()
     assert "uncaught app execution" not in body_text
+
+
+# ===========================================================================
+# Vinted (library-based)
+# ===========================================================================
+
+def test_scrape_vinted_library_returns_results(monkeypatch: pytest.MonkeyPatch) -> None:
+    """scrape_vinted deve usare VintedScraper e restituire Offerta objects."""
+    from offerte_tech import scrape_vinted
+
+    class _FakeItem:
+        title = "Notebook Lenovo usato"
+        price = 150.0
+        url = "https://www.vinted.it/items/123-notebook"
+        photo = {"url": "https://images1.vinted.net/photo.jpg"}
+
+    class _FakeScraper:
+        def __init__(self, base_url: str) -> None:
+            pass
+        def search(self, params: dict) -> list:
+            return [_FakeItem()]
+
+    monkeypatch.setattr("offerte_tech.VintedScraper", _FakeScraper)
+
+    results = scrape_vinted("notebook", 0.0, 500.0, ["notebook"])
+    assert len(results) == 1
+    assert results[0].negozio == "Vinted"
+    assert results[0].prezzo == 150.0
+    assert results[0].immagine == "https://images1.vinted.net/photo.jpg"
+
+
+def test_scrape_vinted_skips_nuovo_condizione(monkeypatch: pytest.MonkeyPatch) -> None:
+    from offerte_tech import scrape_vinted
+    results = scrape_vinted("notebook", 0.0, 500.0, ["notebook"], condizione="nuovo")
+    assert results == []
+
+
+# ===========================================================================
+# Wallapop
+# ===========================================================================
+
+def test_scrape_wallapop_returns_results(monkeypatch: pytest.MonkeyPatch) -> None:
+    from offerte_tech import scrape_wallapop
+
+    comp_resp = {
+        "components": [{"type": "search_results", "type_data": {"query_params": {
+            "search_id": "abc-123", "category_id": "24200",
+        }}}]
+    }
+    section_resp = {
+        "data": {"section": {"items": [{
+            "title": "Notebook HP 15 usato",
+            "price": {"amount": 280.0, "currency": "EUR"},
+            "web_slug": "notebook-hp-15-280",
+            "images": [{"urls": {"small": "https://cdn.wallapop.com/img.jpg"}}],
+            "shipping": {"user_allows_shipping": True},
+            "is_refurbished": False,
+        }]}}
+    }
+
+    call_count: dict[str, int] = {"n": 0}
+
+    class _FakeResp:
+        status_code = 200
+        def __init__(self, data: dict) -> None:
+            self._data = data
+        def json(self) -> dict:
+            return self._data
+        def raise_for_status(self) -> None:
+            pass
+
+    def fake_get(url: str, **kwargs):
+        call_count["n"] += 1
+        if "components" in url:
+            return _FakeResp(comp_resp)
+        return _FakeResp(section_resp)
+
+    monkeypatch.setattr("offerte_tech.requests.get", fake_get)
+
+    results = scrape_wallapop("notebook", 0.0, 500.0, ["notebook"])
+    assert call_count["n"] == 2
+    assert len(results) == 1
+    assert results[0].negozio == "Wallapop"
+    assert results[0].prezzo == 280.0
+    assert results[0].link == "https://it.wallapop.com/item/notebook-hp-15-280"
+
+
+# ===========================================================================
+# Comet
+# ===========================================================================
+
+def test_scrape_comet_returns_results(monkeypatch: pytest.MonkeyPatch) -> None:
+    from offerte_tech import scrape_comet
+
+    algolia_resp = {"results": [{"hits": [{
+        "name": "Lenovo IdeaPad 3 15 - 16GB/512GB",
+        "pFinale": 549.0,
+        "url": "https://www.comet.it/lenovo-ideapad-3-LEN001",
+        "image": "https://static.comet.it/img/LEN001.jpg",
+        "isAcquistabile": True,
+    }]}]}
+
+    class _FakeResp:
+        status_code = 200
+        def json(self) -> dict:
+            return algolia_resp
+        def raise_for_status(self) -> None:
+            pass
+
+    monkeypatch.setattr("offerte_tech.requests.post", lambda *a, **k: _FakeResp())
+
+    results = scrape_comet("notebook", 0.0, 800.0, ["notebook", "lenovo"])
+    assert len(results) == 1
+    assert results[0].negozio == "Comet"
+    assert results[0].prezzo == 549.0
+    assert "comet.it" in results[0].link
+
+
+# ===========================================================================
+# Expert
+# ===========================================================================
+
+def test_scrape_expert_returns_results(monkeypatch: pytest.MonkeyPatch) -> None:
+    from offerte_tech import scrape_expert
+
+    json_ld = json.dumps({
+        "@context": "https://schema.org",
+        "@type": "ItemList",
+        "numberOfItems": "1",
+        "itemListElement": [{"@type": "ListItem", "position": 1, "item": {
+            "@type": "Product",
+            "name": "NOTEBOOK ACER ASPIRE 15 - Intel Ultra 5",
+            "url": "https://www.expert.it/it/it/exp/shop/product/notebook-acer/exp123456",
+            "image": "https://d3s2y7lmzr67yx.cloudfront.net/IMG/EXPERT/EXP123456.jpg",
+            "offers": {"@type": "Offer", "price": "699", "priceCurrency": "EUR"},
+        }}],
+    })
+    html = f'<html><head></head><body><script type="application/ld+json">{json_ld}</script></body></html>'
+
+    monkeypatch.setattr("offerte_tech.fetch_with_retry", lambda *a, **k: _FakeResponse(html, 200))
+
+    results = scrape_expert("notebook", 0.0, 800.0, ["notebook", "acer"])
+    assert len(results) == 1
+    assert results[0].negozio == "Expert"
+    assert results[0].prezzo == 699.0
+    assert "expert.it" in results[0].link
 
 
