@@ -53,7 +53,10 @@ st.set_page_config(
 )
 
 # ── Protezione password con sessione 1 ora ─────────────────────────────────
-_APP_PASSWORD = st.secrets.get("APP_PASSWORD", "") if hasattr(st, "secrets") else ""
+try:
+    _APP_PASSWORD = st.secrets.get("APP_PASSWORD", "") if hasattr(st, "secrets") else ""
+except Exception:
+    _APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
 if _APP_PASSWORD:
     _now = time.time()
     _auth_time = st.session_state.get("_auth_time", 0)
