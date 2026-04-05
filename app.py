@@ -1312,13 +1312,14 @@ _presearch_done = st.session_state.get("presearch_ready", False)
 query_input: str = ""
 top_n_input: int = int(st.session_state.get("ultimo_top_n", 10))
 condizione: str = st.session_state.get("condizione", "tutti")
-_fonti_options = ["Amazon", "eBay", "Vinted", "Euronics", "MediaWorld", "Unieuro", "Wallapop", "Comet", "Expert"]
+_fonti_options = ["Amazon", "eBay", "Vinted", "Euronics", "MediaWorld", "Unieuro", "Wallapop", "Comet", "Expert", "AliExpress"]
 _fonti_def = ["Amazon", "eBay", "Vinted", "Euronics", "MediaWorld", "Unieuro", "Wallapop", "Comet", "Expert"]
 fonti_selezionate: list[str] = list(st.session_state.get("fonti_selezionate", _fonti_def))
 _fonti_map = {
     "Amazon": "amazon", "eBay": "ebay", "Vinted": "vinted",
     "Euronics": "euronics", "Unieuro": "unieuro", "MediaWorld": "mediaworld",
     "Wallapop": "wallapop", "Comet": "comet", "Expert": "expert",
+    "AliExpress": "aliexpress",
 }
 fonti_backend: list[str] = [_fonti_map[f] for f in fonti_selezionate if f in _fonti_map]
 avvia_ricerca: bool = False
