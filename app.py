@@ -108,7 +108,7 @@ def _init_state() -> None:
         "ultimo_prezzo_min": 0,
         "ultimo_prezzo_max": 800,
         "ultimo_top_n": 20,
-        "fonti_selezionate": ["Amazon", "eBay", "Vinted", "Euronics", "MediaWorld"],
+        "fonti_selezionate": ["Amazon", "eBay", "Vinted", "Euronics", "MediaWorld", "Unieuro", "Wallapop", "Comet", "Expert"],
         "price_min_input": 0,
         "budget_max_input": 800,
         "price_range_slider": (0, 800),
@@ -928,6 +928,27 @@ def _build_mock_results(query: str, categoria: str, prezzo_min: int, budget_max:
     return [item for item in results if prezzo_min <= item.prezzo <= budget_max]
 
 
+def _offerte_to_copy_text(offerte: list[Offerta], query: str = "") -> str:
+    lines = []
+    if query:
+        lines.append(f"Ricerca: {query}")
+        lines.append("")
+    lines.append(f"Ho trovato {len(offerte)} risultati:")
+    lines.append("")
+    for i, o in enumerate(offerte, 1):
+        lines.append(f"{i}. {o.nome}")
+        lines.append(f"   Prezzo: €{o.prezzo:.2f}")
+        if o.spedizione and o.spedizione not in ("n.d.", ""):
+            lines.append(f"   Spedizione: {o.spedizione}")
+        if o.condizione:
+            lines.append(f"   Condizione: {o.condizione}")
+        lines.append(f"   Fonte: {o.fonte}")
+        lines.append(f"   Link: {o.link}")
+        lines.append("")
+    lines.append("Analizza questi risultati: sono buoni per la mia ricerca? Quali consiglieresti e perché?")
+    return "\n".join(lines)
+
+
 def _offerte_to_csv_bytes(offerte: list[Offerta]) -> bytes:
     buf = io.StringIO()
     writer = csv.DictWriter(
@@ -1291,11 +1312,13 @@ _presearch_done = st.session_state.get("presearch_ready", False)
 query_input: str = ""
 top_n_input: int = int(st.session_state.get("ultimo_top_n", 10))
 condizione: str = st.session_state.get("condizione", "tutti")
-_fonti_def = ["Amazon", "eBay", "Vinted", "Euronics", "MediaWorld", "Unieuro"]
+_fonti_options = ["Amazon", "eBay", "Vinted", "Euronics", "MediaWorld", "Unieuro", "Wallapop", "Comet", "Expert"]
+_fonti_def = ["Amazon", "eBay", "Vinted", "Euronics", "MediaWorld", "Unieuro", "Wallapop", "Comet", "Expert"]
 fonti_selezionate: list[str] = list(st.session_state.get("fonti_selezionate", _fonti_def))
 _fonti_map = {
     "Amazon": "amazon", "eBay": "ebay", "Vinted": "vinted",
     "Euronics": "euronics", "Unieuro": "unieuro", "MediaWorld": "mediaworld",
+    "Wallapop": "wallapop", "Comet": "comet", "Expert": "expert",
 }
 fonti_backend: list[str] = [_fonti_map[f] for f in fonti_selezionate if f in _fonti_map]
 avvia_ricerca: bool = False
@@ -1329,7 +1352,7 @@ if _history:
                 st.rerun()
 
 if not _presearch_done:
-    sources = ["Amazon", "eBay", "Vinted", "Euronics", "Unieuro", "MediaWorld", "Trovaprezzi"]
+    sources = ["Amazon", "eBay", "Vinted", "Euronics", "Unieuro", "MediaWorld", "Wallapop", "Comet", "Expert"]
     st.markdown(
         "<div class='source-strip'><span class='source-strip-label'>Monitoraggio in tempo reale su</span>"
         + "".join(f"<span>{s}</span>" for s in sources)
@@ -1395,7 +1418,7 @@ if not _presearch_done:
                                    index={"tutti": 0, "nuovo": 1, "usato": 2}.get(
                                        st.session_state.get("condizione", "tutti"), 0))
                 condizione = _cond_m.lower()
-            fonti_selezionate = st.multiselect("Fonti", _fonti_def,
+            fonti_selezionate = st.multiselect("Fonti", _fonti_options,
                                                default=st.session_state.get("fonti_selezionate", _fonti_def),
                                                key="fonti_ms_manual")
             st.session_state["fonti_selezionate"] = fonti_selezionate
@@ -1459,7 +1482,7 @@ else:
         condizione = condizione_ui.lower()
 
     fonti_selezionate = st.multiselect(
-        "Fonti da consultare", _fonti_def,
+        "Fonti da consultare", _fonti_options,
         default=st.session_state.get("fonti_selezionate", _fonti_def),
     )
     st.session_state["fonti_selezionate"] = fonti_selezionate
@@ -1712,15 +1735,11 @@ if st.session_state.get("ricerca_effettuata", False):
                 _render_specs_grid(offerte_vis)
 
         _offerte_export = offerte_vis if offerte_vis else offerte
-        csv_bytes = _offerte_to_csv_bytes(_offerte_export)
-        nome_file = f"offerte_{st.session_state.get('ultima_query', 'ricerca')[:30].replace(' ', '_')}.csv"
-        st.download_button(
-            label="↓ Esporta CSV",
-            data=csv_bytes,
-            file_name=nome_file,
-            mime="text/csv",
-            help=f"Scarica {len(_offerte_export)} risultati in formato CSV compatibile Excel.",
-        )
+        _copy_query = st.session_state.get("ultima_query", "")
+        _copy_text = _offerte_to_copy_text(_offerte_export, _copy_query)
+        with st.expander(f"📋 Copia risultati per AI ({len(_offerte_export)} prodotti)", expanded=False):
+            st.caption("Copia il testo qui sotto e incollalo in Claude, ChatGPT o altra AI per un'analisi approfondita.")
+            st.code(_copy_text, language=None)
 
         st.write("")
         with st.expander("💬 Consiglio AI", expanded=True):

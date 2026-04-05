@@ -4,3 +4,4 @@ fake-useragent
 streamlit
 cerebras-cloud-sdk
 vinted-scraper>=3.0.0
+playwright>=1.40.0

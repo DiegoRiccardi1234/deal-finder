@@ -3068,115 +3068,101 @@ def scrape_aliexpress(
     budget_max: Optional[float],
     query_tokens: list[str],
 ) -> list[Offerta]:
-    """Scraper per AliExpress — pagina anti-bot cifrata (1.8KB, nessun dato)."""
+    """Scraper per AliExpress via Playwright headless."""
     print(f"\n🔍 Cerco su AliExpress.com: \"{query}\"")
-    print("    ⚠️  AliExpress.com: risposta anti-bot cifrata (challenge page). Fonte non disponibile senza browser headless.")
-    return []
-    # Implementazione HTML/JSON conservata per riferimento futuro:
-    url = f"https://it.aliexpress.com/wholesale?SearchText={quote_plus(query)}&SortType=price_asc"
-
-    risultati: list[Offerta] = []
     try:
-        headers = get_headers()
-        headers["Referer"] = "https://it.aliexpress.com/"
-        headers["Accept-Language"] = "it-IT,it;q=0.9,en;q=0.5"
+        from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+    except ImportError:
+        print("    ⚠️  AliExpress: playwright non installato. Esegui: pip install playwright && playwright install chromium")
+        return []
 
-        resp = fetch_with_retry(url, headers)
-        resp.raise_for_status()
+    url = f"https://it.aliexpress.com/wholesale?SearchText={quote_plus(query)}&SortType=price_asc"
+    risultati: list[Offerta] = []
 
-        soup = BeautifulSoup(resp.text, "html.parser")
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage"],
+            )
+            ctx = browser.new_context(
+                locale="it-IT",
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                ),
+            )
+            page = ctx.new_page()
+            try:
+                page.goto(url, wait_until="domcontentloaded", timeout=25000)
+                page.wait_for_timeout(5000)
 
-        # AliExpress usa componenti React; su alcune pagine inietta JSON nel DOM
-        # Prova prima il parsing JSON embedded, poi fallback HTML
-        json_data = None
-        for script in soup.find_all("script"):
-            script_text = script.string or ""
-            if "window._dida_config_" in script_text or '"items"' in script_text:
-                m = re.search(r'"items"\s*:\s*(\[.*?\])\s*[,}]', script_text, re.DOTALL)
-                if m:
-                    try:
-                        json_data = json.loads(m.group(1))
+                cards = []
+                for sel in [
+                    '[class*="product-snippet"]',
+                    '[class*="manhattan--"]',
+                    '[class*="list--gallery--"]',
+                    '[data-widget-cid*="product"]',
+                    'a[href*="/item/"]',
+                ]:
+                    found = page.query_selector_all(sel)
+                    if len(found) > 3:
+                        cards = found
+                        print(f"    ✅ AliExpress: {len(cards)} card con selettore '{sel}'")
                         break
-                    except Exception:
-                        pass
 
-        if json_data:
-            for item in json_data[:40]:
-                try:
-                    nome = str(item.get("title", "") or item.get("subject", "") or "")
-                    if not nome:
-                        continue
-                    prezzo_raw = str(item.get("price", {}).get("minPrice", {}).get("value", "") or
-                                     item.get("salePrice", {}).get("minPrice", {}).get("value", "") or "")
-                    if not prezzo_raw:
-                        continue
-                    prezzo = parse_price(prezzo_raw)
-                    if not math.isfinite(prezzo):
-                        continue
-                    item_id = str(item.get("itemId", "") or item.get("productId", "") or "")
-                    link = f"https://it.aliexpress.com/item/{item_id}.html" if item_id else ""
-                    if not link:
-                        continue
-                    if not is_relevant(nome, query_tokens, strict_specs=False):
-                        continue
-                    if not _within_price_range(prezzo, prezzo_min, budget_max):
-                        continue
-                    img_url = str(item.get("imageUrl", "") or "")
-                    risultati.append(
-                        Offerta(nome=nome, prezzo=prezzo, negozio="AliExpress", link=link,
-                                fonte="aliexpress.com", spedizione="n.d.", immagine=img_url)
-                    )
-                except Exception:
-                    continue
-        else:
-            # Fallback HTML: cerca card prodotto nel DOM renderizzato
-            cards = soup.select('[class*="product-snippet"]') or soup.select('[class*="manhattan--"]')
-            if not cards:
-                print("    ⚠️  AliExpress.it: pagina JS-rendered, nessun risultato via HTML statico.")
-                return risultati
+                if not cards:
+                    print("    ⚠️  AliExpress: nessuna card trovata nella pagina.")
+                else:
+                    for card in cards[:20]:
+                        try:
+                            testo = card.inner_text()
+                            href = card.get_attribute("href") or ""
+                            if not href:
+                                link_el = card.query_selector("a[href*='/item/']")
+                                href = link_el.get_attribute("href") if link_el else ""
+                            if not href or "/item/" not in href:
+                                continue
+                            link = href if href.startswith("http") else "https://it.aliexpress.com" + href
 
-            print(f"    ✅ Trovate {len(cards)} card grezze su AliExpress.com")
-            for card in cards:
-                try:
-                    nome_tag = card.select_one('[class*="title"]') or card.select_one('a')
-                    if not nome_tag:
-                        continue
-                    nome = nome_tag.get_text(strip=True)
-                    if not nome:
-                        continue
-                    prezzo_tag = card.select_one('[class*="price"]')
-                    if not prezzo_tag:
-                        continue
-                    prezzo = parse_price(prezzo_tag.get_text(strip=True))
-                    if not math.isfinite(prezzo):
-                        continue
-                    link_tag = card.select_one("a[href]")
-                    if not link_tag:
-                        continue
-                    href = str(link_tag.get("href", "") or "")
-                    link = href if href.startswith("http") else "https://it.aliexpress.com" + href
-                    if not is_relevant(nome, query_tokens, strict_specs=False):
-                        continue
-                    if not _within_price_range(prezzo, prezzo_min, budget_max):
-                        continue
-                    risultati.append(
-                        Offerta(nome=nome, prezzo=prezzo, negozio="AliExpress", link=link,
-                                fonte="aliexpress.com", spedizione="n.d.")
-                    )
-                except (AttributeError, TypeError):
-                    continue
+                            righe = [r.strip() for r in testo.splitlines() if r.strip()]
+                            nome = righe[0] if righe else ""
+                            if not nome or len(nome) < 5:
+                                continue
 
-    except requests.HTTPError as exc:
-        status = exc.response.status_code if exc.response is not None else "?"
-        print(f"    ⚠️  AliExpress.com: accesso bloccato (HTTP {status}), salto la fonte.")
-    except requests.Timeout:
-        print("    ❌ AliExpress.com: timeout.")
-    except requests.ConnectionError:
-        print("    ❌ AliExpress.com: impossibile connettersi.")
+                            prezzo = math.inf
+                            for r in righe:
+                                p = parse_price(r)
+                                if math.isfinite(p) and p > 0:
+                                    prezzo = p
+                                    break
+                            if not math.isfinite(prezzo):
+                                continue
+
+                            if not is_relevant(nome, query_tokens, strict_specs=False):
+                                continue
+                            if not _within_price_range(prezzo, prezzo_min, budget_max):
+                                continue
+
+                            risultati.append(
+                                Offerta(nome=nome, prezzo=prezzo, negozio="AliExpress",
+                                        link=link, fonte="aliexpress.com", spedizione="n.d.")
+                            )
+                        except Exception:
+                            continue
+
+            except PWTimeout:
+                print("    ❌ AliExpress: timeout Playwright.")
+            finally:
+                page.close()
+                ctx.close()
+                browser.close()
+
     except Exception as exc:
-        print(f"    ❌ AliExpress.com: errore inatteso → {exc}")
+        print(f"    ❌ AliExpress: errore Playwright → {exc}")
 
-    _random_delay()
+    print(f"    → {len(risultati)} risultati AliExpress")
     return risultati
 
 
