@@ -1,0 +1,722 @@
+{
+  "updated_at": "2026-04-05T18:33:35.367925",
+  "version": 1,
+  "categorie": {
+    "smartphone": {
+      "brands": [
+        "Apple",
+        "Samsung",
+        "Xiaomi",
+        "Google",
+        "OnePlus",
+        "Motorola",
+        "Nothing",
+        "Oppo",
+        "Honor",
+        "Sony"
+      ],
+      "modelli": [
+        "iPhone 16",
+        "iPhone 16 Pro",
+        "iPhone 16 Pro Max",
+        "iPhone SE (2026)",
+        "Samsung Galaxy S25",
+        "Samsung Galaxy S25+",
+        "Samsung Galaxy S25 Ultra",
+        "Samsung Galaxy Z Fold 6",
+        "Samsung Galaxy Z Flip 6",
+        "Google Pixel 9",
+        "Google Pixel 9 Pro",
+        "Google Pixel 9 Pro XL",
+        "OnePlus 12",
+        "OnePlus 12R",
+        "Xiaomi 14",
+        "Xiaomi 14 Pro",
+        "Honor Magic 6 Pro",
+        "Nothing Phone (3)",
+        "Oppo Find X7",
+        "Motorola Edge 50 Ultra"
+      ],
+      "specs_importanti": [
+        "storage",
+        "RAM",
+        "display_size",
+        "fotocamera",
+        "batteria",
+        "OS"
+      ],
+      "domande_guida": [
+        "Qual è l'autonomia della batteria e il supporto alla ricarica rapida?",
+        "Il dispositivo ha resistenza all'acqua e certificazione IP?",
+        "Supporta gli ultimi standard di connettività (5G, Wi-Fi 7, Bluetooth 5.4)?",
+        "Quali sono le prestazioni della fotocamera principale e in condizioni di scarsa luce?",
+        "È compatibile con gli aggiornamenti software a lungo termine (almeno 5 anni)?"
+      ],
+      "fasce_prezzo": {
+        "budget": "< 400€",
+        "medio": "400-800€",
+        "top": "> 800€"
+      },
+      "novita_2026": [
+        "iPhone 16 con tasto azione personalizzabile e fotocamera da 48 MP su tutti i modelli",
+        "Samsung Galaxy Z Fold 6 con design più compatto e S-Pen integrata",
+        "Google Pixel 9 Pro XL con AI avanzata per foto e video in tempo reale",
+        "Wi-Fi 7 diventa standard su tutti i flagship",
+        "Aumento dell'adozione di materiali riciclati e imballaggi eco-friendly nei top di gamma"
+      ]
+    },
+    "laptop": {
+      "brands": [
+        "Apple",
+        "Lenovo",
+        "ASUS",
+        "HP",
+        "Dell",
+        "Acer",
+        "MSI",
+        "Razer",
+        "Samsung",
+        "Microsoft"
+      ],
+      "modelli": [
+        "MacBook Air 13 M3",
+        "MacBook Air 15 M3",
+        "MacBook Pro 14 M4",
+        "MacBook Pro 16 M4",
+        "MacBook Pro 14 M4 Max",
+        "Lenovo ThinkPad X1 Carbon Gen 13",
+        "Lenovo ThinkPad Z16 Gen 3",
+        "Lenovo Legion Pro 5i Gen 10",
+        "ASUS ZenBook S 14 OLED",
+        "ASUS ROG Zephyrus G16 2026",
+        "ASUS TUF Gaming A16",
+        "HP Spectre x360 14 2026",
+        "HP OmniBook X",
+        "Dell XPS 14 9440",
+        "Dell Latitude 9450",
+        "Acer Swift Edge 16",
+        "Acer Predator Helios Neo 16",
+        "MSI Stealth 14 AI Evo",
+        "Razer Blade 14 2026",
+        "Samsung Galaxy Book5 Pro 360"
+      ],
+      "specs_importanti": [
+        "RAM",
+        "storage",
+        "display_size",
+        "GPU",
+        "CPU",
+        "peso",
+        "autonomia"
+      ],
+      "domande_guida": [
+        "Quali sono le prestazioni richieste? (navigazione, gaming, editing video)",
+        "Serve una durata della batteria superiore alle 10 ore?",
+        "È prioritaria la portabilità o la potenza di elaborazione?",
+        "È necessario uno schermo touchscreen o convertibile?",
+        "Si preferisce un sistema operativo macOS, Windows o ChromeOS?"
+      ],
+      "fasce_prezzo": {
+        "budget": "< 800€",
+        "medio": "800-1800€",
+        "top": "> 1800€"
+      },
+      "novita_2026": [
+        "Apple MacBook Pro 14 con chip M4 Max (2026)",
+        "ASUS ROG Zephyrus G16 con CPU Intel Lunar Lake e GPU RTX 5070",
+        "HP OmniBook X: laptop business con AI integrata e Windows 12",
+        "MSI Stealth 14 AI Evo con NPU dedicata per workload AI locali",
+        "Samsung Galaxy Book5 Pro 360 con integrazione avanzata con Galaxy AI e foldable display opzionale"
+      ]
+    },
+    "tablet": {
+      "brands": [
+        "Apple",
+        "Samsung",
+        "Lenovo",
+        "Xiaomi",
+        "Microsoft",
+        "Huawei",
+        "Amazon",
+        "Google",
+        "Asus",
+        "Acer"
+      ],
+      "modelli": [
+        "iPad mini 7",
+        "iPad 10a generazione",
+        "iPad Air 13 M2",
+        "iPad Pro 11 M4",
+        "iPad Pro 13 M4",
+        "Samsung Galaxy Tab S10 Ultra",
+        "Samsung Galaxy Tab S10",
+        "Samsung Galaxy Tab S10 FE",
+        "Lenovo Tab P12 Pro",
+        "Lenovo Tab P11 Plus",
+        "Xiaomi Pad 7 Pro",
+        "Xiaomi Pad 6S Pro",
+        "Microsoft Surface Pro 11",
+        "Microsoft Surface Go 4",
+        "Huawei MatePad Pro 13.2",
+        "Amazon Fire Max 11",
+        "Google Pixel Tablet 2",
+        "Asus ZenPad Pro 12.6",
+        "Acer Iconia Tab 10",
+        "Samsung Galaxy Tab A9+"
+      ],
+      "specs_importanti": [
+        "display_size",
+        "storage",
+        "connettività_LTE",
+        "compatibilità_stilo"
+      ],
+      "domande_guida": [
+        "Qual è l'uso principale del tablet (lavoro, studio, intrattenimento, disegno)?",
+        "È necessaria la compatibilità con tastiera e penna attiva?",
+        "Quale sistema operativo preferisci: iPadOS, Android o Windows?",
+        "Serve una connessione 5G o basta il Wi-Fi?",
+        "Quanta memoria interna e RAM sono necessarie per le tue esigenze?"
+      ],
+      "fasce_prezzo": {
+        "budget": "< 300€",
+        "medio": "300-800€",
+        "top": "> 800€"
+      },
+      "novita_2026": [
+        "Samsung Galaxy Tab S10 Ultra con display 14\" OLED 144Hz e S-Pen integrata con AI",
+        "Apple iPad Pro 13 M4 con supporto nativo a occhiali Apple Vision Pro",
+        "Xiaomi Pad 7 Pro con Snapdragon 8 Gen 4 e ricarica rapida 120W",
+        "Microsoft Surface Pro 11 con chip Qualcomm Snapdragon X Elite e autonomia 20h",
+        "Amazon Fire Max 11 con Alexa integrata in hardware dedicato e schermo antiriflesso"
+      ]
+    },
+    "smartwatch": {
+      "brands": [
+        "Apple",
+        "Samsung",
+        "Garmin",
+        "Xiaomi",
+        "Amazfit",
+        "Fitbit",
+        "Polar",
+        "Suunto",
+        "Huawei",
+        "Withings"
+      ],
+      "modelli": [
+        "Apple Watch Series 11",
+        "Apple Watch Ultra 3",
+        "Apple Watch SE 3",
+        "Samsung Galaxy Watch 8",
+        "Samsung Galaxy Watch 8 Ultra",
+        "Garmin Fenix 9",
+        "Garmin Venu 4",
+        "Garmin Forerunner 1045",
+        "Fitbit Sense 3",
+        "Xiaomi Watch S4",
+        "Amazfit GTR 5",
+        "Polar Pacer Pro",
+        "Suunto 9 Peak",
+        "Huawei Watch GT 5",
+        "Withings ScanWatch Horizon",
+        "Apple Watch Pro",
+        "Samsung Galaxy Watch FE",
+        "Garmin Instinct 3",
+        "Xiaomi Mi Band 9",
+        "Amazfit Balance"
+      ],
+      "specs_importanti": [
+        "compatibilità_telefono",
+        "autonomia_gg",
+        "GPS",
+        "sport_tracking",
+        "ECG"
+      ],
+      "domande_guida": [
+        "Quali funzioni di salute e fitness sono più importanti per te (ECG, saturazione O2, monitoraggio del sonno, GPS avanzato)?",
+        "Cerchi uno smartwatch compatibile con iPhone o Android?",
+        "Preferisci un design sportivo, elegante o classico?",
+        "Quanto deve durare la batteria per le tue esigenze?",
+        "Hai bisogno di funzionalità avanzate come pagamenti contactless, musica offline o chiamate indipendenti?"
+      ],
+      "fasce_prezzo": {
+        "budget": "< 150€",
+        "medio": "150-400€",
+        "top": "> 400€"
+      },
+      "novita_2026": [
+        "Apple Watch Pro con schermo OLED flessibile e rilevamento della temperatura corporea avanzato",
+        "Samsung Galaxy Watch 8 con batteria a ricarica ultrarapida e AI per il benessere personalizzato",
+        "Garmin Fenix 9 con autonomia fino a 30 giorni e navigazione satellitare offline migliorata",
+        "Amazfit Balance con monitoraggio della glicemia non invasivo (tecnologia ottica)",
+        "Withings ScanWatch Horizon con ECG a 3 derivazioni e certificazione medica per apnea notturna"
+      ]
+    },
+    "cuffie": {
+      "brands": [
+        "Sony",
+        "Bose",
+        "Apple",
+        "Sennheiser",
+        "Jabra",
+        "Samsung",
+        "JBL",
+        "Bang & Olufsen",
+        "Audio-Technica",
+        "Technics"
+      ],
+      "modelli": [
+        "Sony WH-1000XM6",
+        "Sony WF-1000XM5",
+        "Bose QuietComfort Ultra Headphones",
+        "Bose QuietComfort 45",
+        "Apple AirPods Pro 2",
+        "Apple AirPods 4",
+        "Apple AirPods Max",
+        "Samsung Galaxy Buds3 Pro",
+        "Jabra Evolve2 85",
+        "Sennheiser Momentum 4 Wireless",
+        "Sennheiser HD 490 Pro",
+        "JBL Tune 770NC",
+        "Bang & Olufsen Beoplay HX",
+        "Audio-Technica ATH-M50xBT2",
+        "Technics EAH-AZ80",
+        "Sony INZONE H9",
+        "Bose Ultra Open Earbuds",
+        "Apple AirPods Pro 3 (uscita prevista 2026)",
+        "Sennheiser MOMENTUM Wireless 5",
+        "Jabra Elite 10"
+      ],
+      "specs_importanti": [
+        "tipo_cuffia",
+        "ANC",
+        "autonomia_ore",
+        "wireless",
+        "codec"
+      ],
+      "domande_guida": [
+        "Cerchi cuffie con cancellazione attiva del rumore per uso in viaggio o in ufficio?",
+        "Preferisci un design over-ear, in-ear o open-ear per comfort e isolamento?",
+        "Hai bisogno di una lunga durata della batteria e ricarica rapida?",
+        "Usi principalmente dispositivi Apple, Android o PC gaming?",
+        "Quale importanza dai alla qualità audio professionale o all'equalizzazione personalizzata?"
+      ],
+      "fasce_prezzo": {
+        "budget": "< 100€",
+        "medio": "100-250€",
+        "top": "> 250€"
+      },
+      "novita_2026": [
+        "Apple AirPods Pro 3 con rilevamento posturale e audio spaziale dinamico",
+        "Sony WH-1000XM6 con AI adattiva e integrazione metaverso",
+        "Sennheiser MOMENTUM Wireless 5 con driver in grafene e app AI per benessere uditivo",
+        "Bose Ultra Open Earbuds: nuovo formato open-fit con audio direzionale avanzato",
+        "Integrazione universale USB-C e standard LE Audio su modelli premium 2026"
+      ]
+    },
+    "televisore": {
+      "brands": [
+        "Samsung",
+        "LG",
+        "Sony",
+        "Hisense",
+        "TCL",
+        "Philips",
+        "Panasonic",
+        "Xiaomi",
+        "Skyworth",
+        "Bosch"
+      ],
+      "modelli": [
+        "Samsung QN90F Neo QLED",
+        "Samsung S95F OLED",
+        "LG G5 OLED evo",
+        "LG C5 OLED",
+        "Sony A95L OLED",
+        "Sony X95L LED",
+        "Hisense U8NQ MiniLED",
+        "Hisense E8N ULED",
+        "TCL C845 MiniLED",
+        "TCL QM8 QLED",
+        "Philips OLED+909",
+        "Philips PUS8610",
+        "Xiaomi TV Q2 MiniLED",
+        "Panasonic MZ2000 OLED",
+        "Skyworth Q9F OLED",
+        "LG QNED99",
+        "Sony XR-75X91L",
+        "Hisense 55U7NQ MiniLED",
+        "TCL 55C805 MiniLED",
+        "Samsung QE55QN85D Neo QLED"
+      ],
+      "specs_importanti": [
+        "diagonale_pollici",
+        "tecnologia_pannello",
+        "risoluzione",
+        "HDR",
+        "HDMI_21",
+        "smart_OS"
+      ],
+      "domande_guida": [
+        "Qual è la dimensione dello schermo più adatta alla mia stanza?",
+        "OLED, QLED o MiniLED: quale tecnologia offre il miglior rapporto qualità-prezzo per le mie esigenze?",
+        "Il televisore supporta HDMI 2.1 e VRR per il gaming su console next-gen?",
+        "È dotato di sistema operativo smart TV aggiornato (es. Google TV, webOS 24)?",
+        "Ha un consumo energetico efficiente (classe F o superiore) in linea con le nuove normative UE?"
+      ],
+      "fasce_prezzo": {
+        "budget": "< 600€",
+        "medio": "600-1500€",
+        "top": "> 1500€"
+      },
+      "novita_2026": [
+        "LG G5 OLED evo con luminosità migliorata del 30% grazie a Brightness Booster Extreme",
+        "Samsung S95F OLED con pannello MAJRO 2.0 e supporto AI upscaling in tempo reale",
+        "Hisense U8NQ MiniLED con 4000 nits di picco e IA per ottimizzazione HDR",
+        "TCL C845 MiniLED con Google TV 14 e design senza bordi",
+        "Introduzione di TV modulari con schermi espandibili (prototipi commerciali limitati)"
+      ]
+    },
+    "console": {
+      "brands": [
+        "Sony",
+        "Microsoft",
+        "Nintendo",
+        "Asus",
+        "Logitech",
+        "Razer",
+        "Valve",
+        "AMD",
+        "Hyperkin",
+        "Sega"
+      ],
+      "modelli": [
+        "PlayStation 5 Pro",
+        "PlayStation 5 Slim",
+        "Xbox Series X",
+        "Xbox Series S",
+        "Nintendo Switch 2",
+        "Nintendo Switch OLED",
+        "Steam Deck OLED",
+        "Asus ROG Ally X",
+        "Logitech G Cloud",
+        "Razer Edge 5G",
+        "PlayStation Portal",
+        "Xbox Elite Wireless Controller Series 3",
+        "DualSense Edge",
+        "Joy-Con Nintendo Switch 2",
+        "Steam Controller 2026",
+        "Hyperkin Duke X",
+        "Sega Genesis Mini 2",
+        "AMD Ryzen AI Handheld",
+        "Nintendo Switch 2 VR Kit",
+        "Valve Index VR Link"
+      ],
+      "specs_importanti": [
+        "esclusivi_giochi",
+        "servizio_online",
+        "retrocompatibilità",
+        "4K"
+      ],
+      "domande_guida": [
+        "Qual è la differenza di prestazioni tra PlayStation 5 Pro e Xbox Series X?",
+        "La Nintendo Switch 2 supporta i giochi della vecchia generazione?",
+        "Quale console è più adatta per il gaming portatile con prestazioni elevate?",
+        "Quali sono le opzioni di abbonamento ai giochi nel 2026 (es. PS Plus, Game Pass)?",
+        "È possibile espandere lo storage su Xbox Series S e Steam Deck OLED?"
+      ],
+      "fasce_prezzo": {
+        "budget": "< 300€",
+        "medio": "300-600€",
+        "top": "> 600€"
+      },
+      "novita_2026": [
+        "Asus ROG Ally X con Snapdragon X Elite",
+        "Steam Deck OLED da 1TB",
+        "Nintendo Switch 2 con retrocompatibilità completa",
+        "Razer Edge 5G con cloud gaming integrato",
+        "PlayStation 5 Pro con supporto AI per upscaling in tempo reale"
+      ]
+    },
+    "fotocamera": {
+      "brands": [
+        "Sony",
+        "Canon",
+        "Nikon",
+        "Fujifilm",
+        "Panasonic",
+        "GoPro",
+        "DJI",
+        "OM System",
+        "Pentax",
+        "Leica"
+      ],
+      "modelli": [
+        "Sony Alpha 7 IV",
+        "Sony ZV-E10 II",
+        "Sony FX30",
+        "Sony Alpha 9 III",
+        "Canon EOS R5 Mark II",
+        "Canon EOS R8",
+        "Canon EOS R6 Mark II",
+        "Nikon Z6 III",
+        "Nikon Z50 II",
+        "Nikon Z8",
+        "Fujifilm X-T50",
+        "Fujifilm X100VI",
+        "Fujifilm X-S20",
+        "Panasonic Lumix S5 II",
+        "Panasonic Lumix GH7",
+        "GoPro Hero 13 Black",
+        "DJI Osmo Action 5 Pro",
+        "OM System OM-5",
+        "Leica Q3",
+        "Pentax K-3 Mark III"
+      ],
+      "specs_importanti": [
+        "tipo",
+        "sensore",
+        "video_4K",
+        "stabilizzazione",
+        "obiettivo_incluso"
+      ],
+      "domande_guida": [
+        "Cerchi una fotocamera per foto fisse, video o entrambi?",
+        "Preferisci un modello con sensore full-frame o APS-C?",
+        "Hai bisogno di stabilizzazione integrata per video o riprese in movimento?",
+        "Vuoi funzionalità per streaming o vlogging integrato?",
+        "Qual è il tuo limite di budget per fotocamera e obiettivi?"
+      ],
+      "fasce_prezzo": {
+        "budget": "< 800€",
+        "medio": "800-2500€",
+        "top": "> 2500€"
+      },
+      "novita_2026": [
+        "Sony Alpha 9 III: nuova mirrorless full-frame con autofocus AI avanzato e 120 fps in RAW senza blackout",
+        "Canon EOS R5 Mark II: uscita ufficiale in Italia nel Q1 2026 con registrazione 8K 60fps e miglioramenti termici",
+        "Panasonic Lumix GH7: lancio commerciale in Europa con codec interni ProRes 422 e sensore Micro Four Thirds da 25.2 MP",
+        "Fujifilm X-S20: aggiornamento del modello entry-mid con IBIS e registrazione 6K",
+        "DJI Osmo Action 5 Pro: nuova action cam con sensore più grande e AI per tracking automatico"
+      ]
+    },
+    "abbigliamento": {
+      "brands": [
+        "Nike",
+        "Adidas",
+        "Zara",
+        "H&M",
+        "The North Face",
+        "Levi's",
+        "Stone Island",
+        "Ralph Lauren",
+        "Arket",
+        "Patagonia"
+      ],
+      "categorie_item": [
+        "t-shirt",
+        "felpa",
+        "giacca",
+        "cappotto",
+        "pantaloni",
+        "jeans",
+        "maglione",
+        "camicia",
+        "tuta sportiva",
+        "shorts"
+      ],
+      "specs_importanti": [
+        "taglia",
+        "genere",
+        "stagione",
+        "occasione",
+        "materiale"
+      ],
+      "domande_guida": [
+        "Qual è l'uso principale del capo (quotidiano, sportivo, formale)?",
+        "Cerchi materiali sostenibili o tecnologie innovative (es. termoregolazione, anti-odore)?",
+        "Preferisci un fit slim, regular o oversize?",
+        "Hai bisogno di resistenza all'acqua o al vento per l'outdoor?",
+        "Qual è il tuo budget massimo per questo acquisto?"
+      ],
+      "fasce_prezzo": {
+        "budget": "< 50€",
+        "medio": "50-150€",
+        "top": "> 150€"
+      },
+      "novita_2026": [
+        "Linea Nike EcoPerformance con tessuti biodegradabili e tracciabilità RFID",
+        "Adidas Primeblue+ con tecnologia di raffreddamento attivo integrata",
+        "Zara SmartWear: camicie con sensori per postura e benessere",
+        "The North Face FutureLight Adaptive: membrane auto-regolanti per clima",
+        "Collezione H&M Conscious Capsule in collaborazione con Eco-Age, 100% circolare"
+      ],
+      "modelli": [
+        "t-shirt",
+        "felpa",
+        "giacca",
+        "cappotto",
+        "pantaloni",
+        "jeans",
+        "maglione",
+        "camicia",
+        "tuta sportiva",
+        "shorts",
+        "pantalone tecnico",
+        "giacca impermeabile leggera",
+        "felpe con cappuccio riciclate",
+        "camicia slim fit",
+        "pantaloni cargo sostenibili",
+        "t-shirt performance traspirante",
+        "giacca termica ultraleggera",
+        "abito casual eco-friendly",
+        "intimo tecnico a regolazione termica",
+        "accessori smart tessili"
+      ]
+    },
+    "scarpe": {
+      "brands": [
+        "Nike",
+        "Adidas",
+        "New Balance",
+        "Hoka",
+        "On Running",
+        "Salomon",
+        "Lowa",
+        "Diadora",
+        "Geox",
+        "Merrell"
+      ],
+      "categorie_item": [
+        "sneakers",
+        "scarpe da corsa",
+        "trail running",
+        "stivali",
+        "mocassini",
+        "sandali",
+        "scarpe eleganti"
+      ],
+      "specs_importanti": [
+        "numero_EU",
+        "genere",
+        "uso",
+        "drop_mm"
+      ],
+      "domande_guida": [
+        "Per quale attività principale utilizzerai le scarpe?",
+        "Cerchi un modello con supporto ortopedico o ammortizzazione avanzata?",
+        "Preferisci materiali sostenibili o tecnologie innovative come termoregolazione?",
+        "Qual è il tuo range di spesa ideale?",
+        "Hai bisogno di scarpe impermeabili o adatte a climi estremi?"
+      ],
+      "fasce_prezzo": {
+        "budget": "< 80€",
+        "medio": "80-180€",
+        "top": "> 180€"
+      },
+      "novita_2026": [
+        "Nike Adapt BB 2.0 con aggiornamento firmware per personalizzazione dinamica della calzata",
+        "Adidas Futurecraft.Loop 2.0: scarpa completamente riciclabile in ciclo chiuso",
+        "Hoka Kaha 3 GTX con membrana rigenerativa e materiali bio-based",
+        "On CloudTrek: scarpa ibrida per trail e uso urbano con ammortizzazione adattiva",
+        "Salomon X Ultra Urban: design lifestyle ispirato al trail con tecnologia SensiFit 360°"
+      ],
+      "modelli": [
+        "sneakers",
+        "scarpe da corsa",
+        "trail running",
+        "stivali",
+        "mocassini",
+        "sandali",
+        "scarpe eleganti",
+        "scarpe da trekking",
+        "scarpe da città",
+        "scarpe ortopediche",
+        "scarpe per il tempo libero",
+        "pantofole smart",
+        "scarpe con suola ammortizzata",
+        "scarpe leggere estive",
+        "scarpe impermeabili",
+        "scarpe per lavoratori",
+        "scarpe con tecnologia termoregolante",
+        "scarpe riciclate",
+        "scarpe con personalizzazione 3D",
+        "scarpe per attività indoor"
+      ]
+    },
+    "elettrodomestico": {
+      "brands": [
+        "Bosch, Samsung, LG, Whirlpool, Electrolux, Candy, Beko, Siemens, Hoover, Samsung"
+      ],
+      "categorie_item": [
+        "lavatrice",
+        "lavasciuga",
+        "frigorifero",
+        "lavastoviglie",
+        "forno",
+        "microonde",
+        "aspirapolvere robot",
+        "asciugatrice"
+      ],
+      "specs_importanti": [
+        "capacità_kg_lt",
+        "classe_energetica",
+        "dimensioni_cm",
+        "rumorosità_dB"
+      ],
+      "domande_guida": [
+        "Qual è il livello di rumorosità del prodotto durante l'uso?",
+        "Il modello è compatibile con assistenti vocali e app per lo smart home?",
+        "Quali funzioni di risparmio energetico e acqua offre?",
+        "È presente un sistema di manutenzione automatica o predittiva?",
+        "Il prodotto ha funzioni di igienizzazione o sanificazione integrate?"
+      ],
+      "fasce_prezzo": {
+        "budget": "< 300€",
+        "medio": "300-700€",
+        "top": "> 700€"
+      },
+      "novita_2026": [
+        "Lavatrice Samsung con IA per ottimizzazione carico e consumo in tempo reale",
+        "Frigorifero LG con display OLED interno e controllo vocale avanzato",
+        "Aspirapolvere robot Hoover con navigazione laser 4.0 e auto-pulizia del filtro",
+        "Lavastoviglie Beko con ciclo zero residui e riduzione del 50% del consumo idrico",
+        "Forno Siemens con cottura predittiva basata su foto del cibo scattata dall'utente"
+      ],
+      "modelli": [
+        "lavatrice carica frontale con IA",
+        "lavasciuga smart con riconoscimento tessuti",
+        "frigorifero combinato con display touch",
+        "lavastoviglie silenziosa <40 dB",
+        "forno multifunzione con cottura a vapore",
+        "microonde grill con sensori di cottura",
+        "aspirapolvere robot con mappatura 3D",
+        "asciugatrice a pompa di calore con app",
+        "frigorifero side by side con erogatore acqua",
+        "lavatrice con funzione igienizzante a vapore",
+        "lavastoviglie slim ad incasso",
+        "forno a microonde combinato con funzione airfry",
+        "aspirapolvere robot con auto-svuotamento",
+        "asciugatrice con riconoscimento umidità residua",
+        "frigorifero con zona freschezza regolabile",
+        "lavatrice con connettività Wi-Fi e manutenzione predittiva",
+        "lavasciuga con sistema di riduzione pieghe",
+        "microonde con riconoscimento vocale",
+        "aspirapolvere robot per pavimenti delicati",
+        "lavastoviglie con ciclo express 15 min"
+      ]
+    },
+    "altro": {
+      "brands": [],
+      "modelli": [],
+      "specs_importanti": [],
+      "domande_guida": [
+        "Che prodotto cerchi esattamente?",
+        "Qual è il tuo budget?",
+        "Nuovo o usato?"
+      ],
+      "fasce_prezzo": {},
+      "novita_2026": []
+    }
+  }
+}

@@ -46,6 +46,12 @@
 - Se le credenziali eBay mancano, la fonte va saltata con log chiaro ma senza interrompere la ricerca.
 - Amazon su ambienti cloud può restituire HTTP 503 per blocco anti-bot: mostra un messaggio informativo Streamlit senza alterare la logica di retry.
 
+## Runtime Validation Notes (2026-04-05)
+- Per validare eBay in ambiente reale (Render/Streamlit), verifica sempre il flusso Browse API (`scrape_ebay` con `EBAY_APP_ID` + `EBAY_CERT_ID`) dai log di `cerca_offerte`.
+- `tests/probe_scrapers.py` usa eBay HTML fallback (`_scrape_ebay_html`) e non è adatto a certificare lo stato della Browse API.
+- Se eBay risulta 0 nel probe HTML ma funziona in app con chiavi configurate, considera valido il risultato dell'app.
+- AliExpress con Playwright può essere query/IP dipendente: stessa sessione può alternare CAPTCHA e risultati validi. Prima di dichiararlo "non utilizzabile", testare almeno 2 query diverse.
+
 ## AI / Cerebras Conventions
 - Selezione modello dinamica via `cerebras_model.py` → `get_best_model(client)` interroga `/v1/models` e sceglie il modello con context_window più grande (con cache in-memory). Fallback statico: `llama-3.3-70b`.
 - Costante centrale in app.py: `CEREBRAS_MODEL = "llama-3.3-70b"` (fallback); a runtime si usa `_get_best_model(client)`.
