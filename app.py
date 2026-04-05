@@ -27,6 +27,11 @@ except Exception:
 CEREBRAS_MODEL = "llama-3.3-70b"  # fallback statico
 
 try:
+    import knowledge_base as kb_manager
+except Exception:
+    kb_manager = None  # type: ignore[assignment]
+
+try:
     from offerte_tech import Offerta, cerca_offerte, parse_search_intent, parse_comparison_query
 except ImportError as _e:
     st.error(
@@ -688,12 +693,30 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
     if client is None:
         result = _presearch_fallback()
     else:
+        # Inietta contesto KB nel prompt se disponibile
+        _kb_context_str = ""
+        if kb_manager is not None:
+            _kb = kb_manager.load_kb()
+            _kb_inferred_cat = _infer_categoria_from_query(transcript.split("\n")[0]) if transcript else "altro"
+            _kb_context_str = kb_manager.get_category_context(_kb, _kb_inferred_cat)
+            # Traccia modelli sconosciuti menzionati dall'utente
+            if transcript:
+                _known = set(
+                    m.lower()
+                    for cat_data in _kb.get("categorie", {}).values()
+                    for m in (cat_data.get("modelli") or cat_data.get("categorie_item") or [])
+                )
+                for word in re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z0-9][a-zA-Z0-9]*){1,3}', transcript):
+                    if word.lower() not in _known and len(word) > 5:
+                        kb_manager.track_unknown(_kb_inferred_cat, word)
+
         system_prompt = (
             "Sei un consulente acquisti esperto italiano. Il tuo obiettivo e' capire le esigenze dell'utente "
             "per dargli una RACCOMANDAZIONE FINALE motivata e personalizzata.\n"
             "Per farlo devi conoscere: 1) categoria/tipo prodotto, 2) uso principale, 3) budget, "
             "4) preferenze fisiche/hardware.\n"
-            "Categorie supportate: smartphone, laptop, tablet, televisore, elettrodomestico, abbigliamento, scarpe, sport, libri, beauty, casa, altro.\n"
+            + (f"{_kb_context_str}\n\n" if _kb_context_str else "")
+            + "Categorie supportate: smartphone, laptop, tablet, televisore, elettrodomestico, abbigliamento, scarpe, sport, libri, beauty, casa, altro.\n"
             "REGOLE IMPORTANTI:\n"
             "- Se il messaggio contiene gia' tipo prodotto + budget/range e almeno 1 altra preferenza: vai SUBITO a pronto:true\n"
             "- Se manca tipo prodotto OPPURE budget: fai UNA SOLA domanda specifica\n"
@@ -1305,6 +1328,10 @@ def _run_search(
 api_key = _get_cerebras_api_key()
 cerebras_client = _get_cerebras_client(api_key)
 
+# Aggiorna KB in background se scaduto (non blocca la UI)
+if kb_manager is not None:
+    kb_manager.init_kb_on_startup(api_key)
+
 st.write("")
 
 # ── Valori default (sovrascriuti dai widget nel ramo attivo) ──────────────
@@ -1492,6 +1519,8 @@ else:
     avvia_ricerca = st.button("🔍 Cerca offerte", type="primary", width="stretch",
                               disabled=not query_input)
     st.caption("💬 Puoi affinare la query o il budget scrivendo nell'input in basso prima di cercare.")
+    if kb_manager is not None:
+        st.caption(f"🧠 {kb_manager.get_status()}")
 if not st.session_state.get("ricerca_effettuata", False):
     _pre_placeholder = (
         "Descrivi prodotto, uso, vincoli e preferenze"
