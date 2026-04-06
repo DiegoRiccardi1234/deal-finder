@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import streamlit as st
 
 
@@ -21,6 +22,8 @@ def load_css(theme_mode: str = "light") -> None:
         mode = "light"
 
     if mode == "dark":
+        # In dark mode disattiva i blocchi :root (tema light) prima di attivare i selettori dark.
+        css = re.sub(r":root\s*\{", ".__light_disabled__ {", css)
         css = css.replace('[data-theme="dark"]', ":root")
     else:
         # Neutralizza: Streamlit può impostare data-theme="dark" autonomamente

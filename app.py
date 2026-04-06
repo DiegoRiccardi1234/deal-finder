@@ -135,7 +135,6 @@ if _APP_PASSWORD and not _APP_TEST_MODE:
 
     if not _is_valid:
         st.session_state["_authenticated"] = False
-        st.markdown("<div class='auth-gate-wrap'>", unsafe_allow_html=True)
         _lcol, _mcol, _rcol = st.columns([1, 1.2, 1])
         with _mcol:
             st.markdown(
@@ -155,7 +154,6 @@ if _APP_PASSWORD and not _APP_TEST_MODE:
                 else:
                     st.error("Password errata.")
             st.markdown("</div>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
         st.stop()
 
 render_nav(active_page="tool")
