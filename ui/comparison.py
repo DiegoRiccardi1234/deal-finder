@@ -21,7 +21,7 @@ except Exception:
     Cerebras = None
 
 try:
-    from cerebras_model import (
+    from offerte.ai import (
         get_best_model as _get_best_model,
         cerebras_chat_with_retry as _cerebras_chat_lib,
     )

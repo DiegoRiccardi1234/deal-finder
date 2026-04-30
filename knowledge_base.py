@@ -16,9 +16,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
-_KB_PATH = Path(__file__).parent / "knowledge_base.json"
-_UNKNOWN_PATH = Path(__file__).parent / "kb_unknown_items.json"
-_REPORT_PATH = Path(__file__).parent / "kb_update_report.md"
+_DATA_DIR = Path(__file__).parent / "data"
+_DATA_DIR.mkdir(exist_ok=True)
+_KB_PATH = _DATA_DIR / "knowledge_base.json"
+_UNKNOWN_PATH = _DATA_DIR / "kb_unknown_items.json"
+_REPORT_PATH = _DATA_DIR / "kb_update_report.md"
 _UPDATE_INTERVAL_DAYS = 7
 
 _lock = threading.Lock()
@@ -283,7 +285,7 @@ def _save_kb(kb: dict[str, Any]) -> None:
 
 def _get_model_name(client: Any) -> str:
     try:
-        from cerebras_model import get_best_model
+        from offerte.ai import get_best_model
         return get_best_model(client) or "llama-3.3-70b"
     except Exception:
         return "llama-3.3-70b"

@@ -21,7 +21,7 @@ except Exception:
     Cerebras = None
 
 try:
-    from cerebras_model import (
+    from offerte.ai import (
         get_best_model as _get_best_model,
         cerebras_chat_with_retry as _cerebras_chat_lib,
     )
@@ -45,6 +45,20 @@ except ImportError:
         return []
     def _save_search(**kw: Any) -> None:
         return None
+
+
+_FONTE_LABELS: dict[str, str] = {
+    "amazon": "Amazon.it",
+    "ebay": "eBay.it",
+    "vinted": "Vinted.it",
+    "euronics": "Euronics.it",
+    "unieuro": "Unieuro.it",
+    "mediaworld": "MediaWorld.it",
+    "wallapop": "Wallapop.it",
+    "comet": "Comet.it",
+    "expert": "Expert.it",
+    "aliexpress": "AliExpress",
+}
 
 
 def _status_rows_for_sources(

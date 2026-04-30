@@ -22,14 +22,6 @@ try:
 except Exception:
     Cerebras = None
 
-try:
-    from cerebras_model import (
-        get_best_model as _get_best_model,
-        cerebras_chat_with_retry as _cerebras_chat_lib,
-    )
-except Exception:
-    _get_best_model = None  # type: ignore[assignment]
-    _cerebras_chat_lib = None  # type: ignore[assignment]
 
 _CEREBRAS_MODEL_FALLBACK = "llama-3.3-70b"
 from offerte._constants import *  # noqa: F401,F403
@@ -762,3 +754,77 @@ def filtra_risultati_con_ai(risultati: list[Offerta], filtri: dict[str, str]) ->
     return [o for _, o in filtered]
 
 
+
+# === Cerebras model resolver + chat-with-retry (ex cerebras_model.py) ======== #
+_BLACKLIST = {"llama3.1-8b"}
+_FALLBACK_MODEL = "llama-3.3-70b"
+_cached_model: str | None = None
+
+
+def get_best_model(client=None, force_refresh: bool = False) -> str:
+    """Restituisce il miglior modello Cerebras disponibile, con cache."""
+    global _cached_model
+    if _cached_model and not force_refresh:
+        return _cached_model
+    try:
+        if client is None:
+            if Cerebras is None:
+                return _FALLBACK_MODEL
+            api_key = os.environ.get("CEREBRAS_API_KEY", "")
+            if not api_key:
+                return _FALLBACK_MODEL
+            client = Cerebras(api_key=api_key)
+        models = client.models.list()
+        available = [
+            m for m in (models.data or [])
+            if getattr(m, "id", None) and m.id not in _BLACKLIST
+        ]
+        if not available:
+            _cached_model = _FALLBACK_MODEL
+            return _cached_model
+        available.sort(key=lambda m: getattr(m, "context_window", 0), reverse=True)
+        _cached_model = available[0].id
+    except Exception:
+        _cached_model = _FALLBACK_MODEL
+    return _cached_model
+
+
+def invalidate_model() -> None:
+    """Svuota la cache del modello (es. dopo un 404)."""
+    global _cached_model
+    _cached_model = None
+
+
+def cerebras_chat_with_retry(
+    client,
+    messages: list,
+    model: str | None = None,
+    max_retries: int = 4,
+    base_delay: float = 2.0,
+    **kwargs,
+):
+    """Chiama client.chat.completions.create() con retry su 404/429."""
+    if model is None:
+        model = get_best_model(client=client)
+    last_exc = None
+    for attempt in range(max_retries):
+        try:
+            return client.chat.completions.create(
+                model=model, messages=messages, **kwargs,
+            )
+        except Exception as exc:
+            last_exc = exc
+            exc_str = str(exc)
+            if "404" in exc_str or "model_not_found" in exc_str or "does not exist" in exc_str:
+                invalidate_model()
+                model = get_best_model(client=client, force_refresh=True)
+                time.sleep(1.0)
+                continue
+            if "429" in exc_str or "rate_limit" in exc_str or "too many" in exc_str.lower():
+                wait = base_delay * (2 ** attempt)
+                time.sleep(wait)
+                continue
+            if attempt < max_retries - 1:
+                time.sleep(base_delay)
+    raise last_exc  # type: ignore[misc]
+# =============================================================================

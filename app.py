@@ -24,7 +24,7 @@ try:
 except Exception:
     Cerebras = None
 try:
-    from cerebras_model import get_best_model as _get_best_model, cerebras_chat_with_retry as _cerebras_chat_lib
+    from offerte.ai import get_best_model as _get_best_model, cerebras_chat_with_retry as _cerebras_chat_lib
 except Exception:
     _get_best_model = None  # type: ignore[assignment]
     _cerebras_chat_lib = None  # type: ignore[assignment]
@@ -98,7 +98,6 @@ _theme_mode = str(st.session_state.get("ui_theme", "light") or "light").strip().
 if _theme_mode not in {"light", "dark"}:
     _theme_mode = "light"
 load_css(theme_mode=_theme_mode)
-_AUTH_SESSIONS_PATH = Path(__file__).parent / ".auth_sessions.json"
 try:
     _APP_PASSWORD = st.secrets.get("APP_PASSWORD", "") if hasattr(st, "secrets") else ""
 except Exception:
@@ -139,18 +138,6 @@ if _APP_PASSWORD and not _APP_TEST_MODE:
         st.stop()
 render_nav(active_page="tool")
 _init_state()
-_FONTE_LABELS: dict[str, str] = {
-    "amazon": "Amazon.it",
-    "ebay": "eBay.it",
-    "vinted": "Vinted.it",
-    "euronics": "Euronics.it",
-    "unieuro": "Unieuro.it",
-    "mediaworld": "MediaWorld.it",
-    "wallapop": "Wallapop.it",
-    "comet": "Comet.it",
-    "expert": "Expert.it",
-    "aliexpress": "AliExpress",
-}
 api_key = _get_cerebras_api_key()
 cerebras_client = _get_cerebras_client(api_key)
 if kb_manager is not None:
