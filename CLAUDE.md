@@ -59,28 +59,55 @@ pytest tests/test_suite.py -k "not playwright"
 
 ## Architecture
 
-The project has two main files and a test suite:
+Il progetto è organizzato in due package principali + script top-level + test suite:
 
-### `offerte_tech.py` — Core scraping engine
-- Defines the `Offerta` dataclass (product result)
-- `cerca_offerte(query, budget, condizione, n)` — main entry point, orchestrates all scrapers concurrently via `ThreadPoolExecutor`
-- Per-source scraper functions: `scrape_trovaprezzi`, `scrape_amazon`, `scrape_ebay`, `scrape_vinted`, etc.
-- `parse_search_intent(query)` — AI-powered intent parsing (Cerebras) to extract specs (RAM, storage, display size, budget)
-- `parse_comparison_query(query)` — detects "X vs Y" comparison queries
-- `filtra_risultati_con_ai(results, query)` — AI post-filter to remove irrelevant results
-- Hard filters: `filtra_hard(results, intent)` — enforces RAM/storage/display size constraints
-- `fetch_with_retry(url, session)` — HTTP wrapper with bot-detection fallback and retry logic
-- `_deduplica(results)` — deduplicates across sources by normalized title
+### `offerte/` — Core scraping engine (ex `offerte_tech.py`)
+- `offerte/models.py` — `Offerta` dataclass (product result)
+- `offerte/orchestrator.py` — `cerca_offerte(query, budget, condizione, n)` (ThreadPoolExecutor su tutti gli scraper + dedup + filtri AI)
+- `offerte/scrapers/{amazon,ebay,vinted,euronics,unieuro,mediaworld,trovaprezzi,wallapop,comet,expert,subito,aliexpress,temu,alibaba}.py` — uno scraper per fonte
+- `offerte/scrapers/__init__.py` — registry `SCRAPERS`
+- `offerte/scrapers/_base.py` — helper condivisi (eBay token, ecc.)
+- `offerte/ai.py` — Cerebras: `parse_search_intent`, `parse_comparison_query`, `detect_category_and_questions`, `fetch_specs_ai`, `filtra_risultati_con_ai`, `get_best_model`, `cerebras_chat_with_retry` (assorbito da ex `cerebras_model.py`)
+- `offerte/parsing.py` — `parse_price`, `_extract_*` helpers (gb, ram, storage, inches, clothing, shipping), `tokenize_query`
+- `offerte/filters.py` — `is_relevant`, hard spec filters
+- `offerte/dedup.py` — `_deduplica` (cross-source dedup)
+- `offerte/http.py` — `fetch_with_retry`, `_random_delay`, `get_headers`
+- `offerte/_constants.py` — costanti globali (UA, stopwords, alias, brand)
+- `offerte/export.py` — `print_results`, `export_to_csv`
+- `offerte/cli.py` — `main()` argparse + entry-point CLI
+- `offerte_tech.py` — shim sottile che ri-esporta `from offerte import *` per backward-compat
 
-### `app.py` — Streamlit web UI
-- Imports `Offerta`, `cerca_offerte`, `parse_search_intent`, `parse_comparison_query` from `offerte_tech`
-- Two modes: pre-search AI chat (Cerebras `gpt-oss-120b`) and product search results
-- Custom dark-mode CSS (accent `#c45c2d`, bg `#0e0e12`) with Manrope/Fraunces fonts
-- `APP_TEST_MODE=1` env var disables certain features for Playwright testing
+### `ui/` — Streamlit web UI (ex `app.py`)
+- `ui/auth.py` — auth gate + persistenza session token (`data/auth_sessions.json`)
+- `ui/state.py` — `_init_state`, sync prezzo slider/numbers, `_format_price`
+- `ui/sources.py` — status fonti + `_FONTE_LABELS`
+- `ui/ai_client.py` — Cerebras client UI-side, mock client per test, `_extract_json_object`
+- `ui/presearch.py` — chat di pre-ricerca (raccolta requisiti utente)
+- `ui/recommendation.py` — payload prodotti + chat finale "consiglia"
+- `ui/test_mode.py` — `_build_mock_results` per `APP_TEST_MODE=1`
+- `ui/export.py` — `_offerte_to_copy_text`, `_offerte_to_csv_bytes`, `_specs_from_name`, `_summarize_specs`
+- `ui/cards.py` — render card, grid risultati, grid specs
+- `ui/comparison.py` — flow comparison "X vs Y" (board + matrix manuale)
+- `ui/search.py` — `_run_search` (orchestrazione completa ricerca)
+- `app.py` — entry point Streamlit: page config, gate auth, top-level render flow (~620 righe)
+- `_shared.py` — `load_css`, `render_nav`, theme toggle (utility cross-pagina)
+
+### `data/` — Dati persistenti (runtime)
+- `knowledge_base.json`, `kb_unknown_items.json` — KB prodotti (auto-update via Cerebras ogni 7gg)
+- `search_history.json` — storico ricerche utente
+- `auth_sessions.json` — token sessione (in `.gitignore`)
+
+### Altri moduli top-level
+- `knowledge_base.py` — gestione KB (auto-update background, delega Cerebras a `offerte.ai`)
+- `search_history.py` — persistenza storico
 
 ### `tests/`
-- `test_suite.py` — unit tests using `monkeypatch` to mock HTTP responses (`_FakeResponse`, `_FakeSession`)
-- `conftest.py` — shared fixtures: `cerebras_mock` (mocks AI client), `streamlit_server` (starts app on port 8501 for Playwright E2E tests)
+- `test_suite.py` — unit tests con `monkeypatch` su `offerte.scrapers.<fonte>.X` o `offerte.orchestrator.scrape_*`
+- `conftest.py` — fixtures: `cerebras_mock`, `streamlit_server` (Playwright E2E)
+- `probe_*.py` — script di probing real-network (non automatizzati nella suite)
+
+### `tools/`
+- `split_offerte.py`, `split_app.py`, `migrate_test_patches.py` — script one-shot del refactor (riutilizzabili per riproduzione/audit)
 
 ## Configuration
 
