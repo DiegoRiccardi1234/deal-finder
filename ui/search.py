@@ -1,0 +1,189 @@
+"""ui: ui/search.py"""
+from __future__ import annotations
+
+import contextlib
+import csv
+import hashlib
+import io
+import json
+import os
+import random
+import re
+import time
+from pathlib import Path
+from typing import Any, Optional
+
+import streamlit as st
+
+try:
+    from cerebras.cloud.sdk import Cerebras
+except Exception:
+    Cerebras = None
+
+try:
+    from cerebras_model import (
+        get_best_model as _get_best_model,
+        cerebras_chat_with_retry as _cerebras_chat_lib,
+    )
+except Exception:
+    _get_best_model = None  # type: ignore[assignment]
+    _cerebras_chat_lib = None  # type: ignore[assignment]
+
+CEREBRAS_MODEL = "llama-3.3-70b"
+
+try:
+    import knowledge_base as kb_manager
+except Exception:
+    kb_manager = None  # type: ignore[assignment]
+
+from offerte_tech import Offerta, cerca_offerte, parse_search_intent, parse_comparison_query
+
+try:
+    from search_history import load_history, save_search as _save_search
+except ImportError:
+    def load_history() -> list[dict[str, Any]]:
+        return []
+    def _save_search(**kw: Any) -> None:
+        return None
+from ui.cards import _render_offerta_card, _render_results_grid, _render_specs_grid
+from ui.comparison import _render_comparison_board, _render_manual_comparison_matrix, _run_comparison_search
+from ui.export import _offerte_to_copy_text, _offerte_to_csv_bytes, _offerte_to_records, _specs_from_name, _summarize_specs
+from ui.recommendation import _build_products_payload, _build_comparison_payload, _call_final_recommendation
+from ui.state import _format_price
+from ui.test_mode import _build_mock_results
+from ui.sources import _status_rows_for_sources, _render_source_status_monitor
+
+
+def _run_search(
+    *,
+    query: str,
+    prezzo_min: int,
+    budget_max: int,
+    top_n: int,
+    condizione: str,
+    fonti_backend: list[str],
+    cerebras_client: Optional[object],
+) -> None:
+    st.session_state["ricerca_effettuata"] = True
+    st.session_state["ultima_query"] = query
+    st.session_state["_query_prefilled"] = query
+    st.session_state["ultimo_prezzo_min"] = int(prezzo_min)
+    st.session_state["ultimo_prezzo_max"] = int(budget_max)
+    st.session_state["ultimo_top_n"] = int(top_n)
+    st.session_state["condizione"] = condizione
+    st.session_state["final_chat_messages"] = []
+    st.session_state["auto_recommend_tried"] = False
+    st.session_state["risultati"] = []
+    st.session_state["log_ricerca"] = ""
+
+    categoria = str(st.session_state.get("categoria", "altro") or "altro")
+    if not categoria:
+        categoria = _infer_categoria_from_query(query)
+
+    try:
+        ebay_app_id = str(st.secrets.get("EBAY_APP_ID", "") or "")
+    except Exception:
+        ebay_app_id = ""
+    try:
+        ebay_cert_id = str(st.secrets.get("EBAY_CERT_ID", "") or "")
+    except Exception:
+        ebay_cert_id = ""
+    ebay_app_id = ebay_app_id or os.environ.get("EBAY_APP_ID", "")
+    ebay_cert_id = ebay_cert_id or os.environ.get("EBAY_CERT_ID", "")
+
+    log_buffer = io.StringIO()
+    if _is_test_mode():
+        risultati = _build_mock_results(query, categoria, prezzo_min, budget_max)
+        st.session_state["risultati"] = risultati
+        st.session_state["log_ricerca"] = "[mock-mode] risultati generati localmente per la suite UI"
+        st.session_state["filtri_ai_ultima_ricerca"] = st.session_state.get("filtri_ai", {})
+        return
+
+    # ── Cache: stessa ricerca entro 5 minuti → riusa i risultati ──────────────
+    _cache_key = (
+        query.strip().lower(), int(prezzo_min), int(budget_max),
+        condizione, tuple(sorted(fonti_backend)),
+    )
+    _cache = st.session_state.get("_search_cache", {})
+    if _cache.get("key") == _cache_key and (time.time() - float(_cache.get("ts", 0))) < 300:
+        st.session_state["risultati"] = _cache["risultati"]
+        st.session_state["log_ricerca"] = _cache.get("log", "")
+        st.session_state["filtri_ai_ultima_ricerca"] = st.session_state.get("filtri_ai", {})
+        st.toast("⚡ Risultati dalla cache (< 5 min) — clicca di nuovo Cerca per aggiornare.")
+        return
+
+    # Reset filtri tabella per la nuova ricerca
+    st.session_state["filtro_fonti_tabella"] = []
+    st.session_state["filtro_prezzo_range_tabella"] = None
+    st.session_state["filtro_condizione_tabella"] = "tutti"
+    st.session_state["comparatore_selezione"] = []
+    # Reset chat AI post-ricerca e flag auto top-3 ad ogni nuova ricerca
+    st.session_state["final_chat_messages"] = []
+    st.session_state["auto_recommend_tried"] = False
+
+    try:
+        with st.status("⏳ Ricerca in corso sulle fonti selezionate...", expanded=True) as search_status:
+
+            def on_source_done(source_label: str, count: int) -> None:
+                if count > 0:
+                    st.write(f"✅ **{source_label}** → {count} {'risultato' if count == 1 else 'risultati'}")
+                elif count == -2:
+                    st.write(f"⚙️ **{source_label}** → non configurato (chiavi API mancanti)")
+                elif count == -1:
+                    st.write(f"❌ **{source_label}** → errore inatteso durante lo scraping")
+                else:
+                    st.write(f"⚪ **{source_label}** → nessun risultato nel range selezionato")
+
+            try:
+                with contextlib.redirect_stdout(log_buffer):
+                    risultati = cerca_offerte(
+                        query=query,
+                        budget_max=float(budget_max),
+                        prezzo_min=float(prezzo_min),
+                        filtri_ai=st.session_state.get("filtri_ai", {}),
+                        top_n=int(top_n),
+                        export_csv=False,
+                        condizione=condizione,
+                        fonti=fonti_backend,
+                        categoria=categoria,
+                        cerebras_client=cerebras_client,
+                        app_id=ebay_app_id,
+                        cert_id=ebay_cert_id,
+                        progress_callback=on_source_done,
+                    )
+                n = len(risultati)
+                search_status.update(
+                    label=f"✅ Ricerca completata — {n} {'offerta trovata' if n == 1 else 'offerte trovate'}",
+                    state="complete",
+                    expanded=False,
+                )
+            except Exception:
+                search_status.update(label="❌ Errore durante la ricerca", state="error")
+                raise
+
+        st.session_state["risultati"] = risultati
+        st.session_state["log_ricerca"] = log_buffer.getvalue()
+        st.session_state["filtri_ai_ultima_ricerca"] = st.session_state.get("filtri_ai", {})
+        # Salva in cache per 5 minuti
+        st.session_state["_search_cache"] = {
+            "key": _cache_key,
+            "ts": time.time(),
+            "risultati": risultati,
+            "log": log_buffer.getvalue(),
+        }
+        _save_search(
+            query=query,
+            budget_min=prezzo_min,
+            budget_max=budget_max,
+            condizione=condizione,
+            fonti=fonti_backend,
+            results_count=len(risultati),
+        )
+    except Exception as exc:
+        st.session_state["log_ricerca"] = log_buffer.getvalue()
+        st.error(
+            f"❌ Si e verificato un errore durante la ricerca:\n\n```\n{exc}\n```\n\n"
+            "Verifica la connessione internet e riprova."
+        )
+
+
