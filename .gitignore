@@ -3,8 +3,9 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+.pytest_cache/
 
-# Virtual environment (ignored by IDE)
+# Virtual environment
 .venv/
 
 # Streamlit secrets
@@ -18,6 +19,7 @@ skills-lock.json
 .agents/
 .claude/
 
+# Obsoleti / dirs di lavoro
 /screen
 /temp
 /stitch
@@ -25,4 +27,7 @@ skills-lock.json
 /fix
 .playwright-mcp
 google stitch
+
+# Runtime data (sensibili)
 .auth_sessions.json
+data/auth_sessions.json
