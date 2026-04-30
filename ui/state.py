@@ -95,7 +95,7 @@ def _init_state() -> None:
         "comparison_queries": [],
         "comparison_results": {},
         "_pending_price_sync": None,
-        "ui_theme": _theme_mode,
+        "ui_theme": "light",
     }
     for key, value in defaults.items():
         if key not in st.session_state:

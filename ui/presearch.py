@@ -49,6 +49,7 @@ from ui.ai_client import (
     _cerebras_chat_with_retry, _extract_json_object,
     _get_cerebras_client, _is_test_mode,
 )
+from ui.state import _queue_price_sync
 
 
 def _infer_categoria_from_query(query: str) -> str:
@@ -362,7 +363,7 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
         ]
     )
 
-    client = cerebras_client
+    client = _get_cerebras_client(api_key)
     result: dict[str, Any]
 
     if client is None:

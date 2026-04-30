@@ -45,9 +45,11 @@ except ImportError:
         return []
     def _save_search(**kw: Any) -> None:
         return None
+from ui.ai_client import _is_test_mode
 from ui.cards import _render_offerta_card, _render_results_grid, _render_specs_grid
 from ui.comparison import _render_comparison_board, _render_manual_comparison_matrix, _run_comparison_search
 from ui.export import _offerte_to_copy_text, _offerte_to_csv_bytes, _offerte_to_records, _specs_from_name, _summarize_specs
+from ui.presearch import _infer_categoria_from_query
 from ui.recommendation import _build_products_payload, _build_comparison_payload, _call_final_recommendation
 from ui.state import _format_price
 from ui.test_mode import _build_mock_results
