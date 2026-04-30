@@ -21,7 +21,7 @@ except Exception:
     Cerebras = None
 
 try:
-    from cerebras_model import (
+    from offerte.ai import (
         get_best_model as _get_best_model,
         cerebras_chat_with_retry as _cerebras_chat_lib,
     )
@@ -45,6 +45,11 @@ except ImportError:
         return []
     def _save_search(**kw: Any) -> None:
         return None
+
+
+_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+_DATA_DIR.mkdir(exist_ok=True)
+_AUTH_SESSIONS_PATH = _DATA_DIR / "auth_sessions.json"
 
 
 def _load_auth_sessions() -> dict[str, float]:

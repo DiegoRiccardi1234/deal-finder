@@ -7,7 +7,9 @@ import os
 from datetime import datetime
 from typing import Any
 
-HISTORY_FILE = os.path.join(os.path.dirname(__file__), "search_history.json")
+_DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+os.makedirs(_DATA_DIR, exist_ok=True)
+HISTORY_FILE = os.path.join(_DATA_DIR, "search_history.json")
 MAX_ENTRIES = 20
 
 
