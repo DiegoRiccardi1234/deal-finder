@@ -72,10 +72,10 @@ def test_scrape_amazon_retry_second_attempt_with_open_session(monkeypatch: pytes
             return _FakeResponse(desktop_with_card, 200)
         return _FakeResponse(desktop_empty, 200)
 
-    monkeypatch.setattr("offerte_tech.fetch_with_retry", fake_fetch_with_retry)
-    monkeypatch.setattr("offerte_tech.requests.Session", _FakeSession)
-    monkeypatch.setattr("offerte_tech._random_delay", lambda: None)
-    monkeypatch.setattr("offerte_tech.time.sleep", lambda *_: None)
+    monkeypatch.setattr("offerte.scrapers.amazon.fetch_with_retry", fake_fetch_with_retry)
+    monkeypatch.setattr("offerte.scrapers.amazon.requests.Session", _FakeSession)
+    monkeypatch.setattr("offerte.scrapers.amazon._random_delay", lambda: None)
+    monkeypatch.setattr("offerte.scrapers.amazon.time.sleep", lambda *_: None)
 
     risultati = __import__("offerte_tech").scrape_amazon(
         "iphone 16", prezzo_min=300, budget_max=1000, query_tokens=["iphone", "16"], condizione="nuovo"
@@ -95,10 +95,10 @@ def test_scrape_amazon_does_not_use_broken_rh_condition_filter(monkeypatch: pyte
         calls.append(url)
         return _FakeResponse("<html><body></body></html>", 200)
 
-    monkeypatch.setattr("offerte_tech.fetch_with_retry", fake_fetch_with_retry)
-    monkeypatch.setattr("offerte_tech.requests.Session", _FakeSession)
-    monkeypatch.setattr("offerte_tech._random_delay", lambda: None)
-    monkeypatch.setattr("offerte_tech.time.sleep", lambda *_: None)
+    monkeypatch.setattr("offerte.scrapers.amazon.fetch_with_retry", fake_fetch_with_retry)
+    monkeypatch.setattr("offerte.scrapers.amazon.requests.Session", _FakeSession)
+    monkeypatch.setattr("offerte.scrapers.amazon._random_delay", lambda: None)
+    monkeypatch.setattr("offerte.scrapers.amazon.time.sleep", lambda *_: None)
 
     __import__("offerte_tech").scrape_amazon(
         "iphone 16", prezzo_min=300, budget_max=1000, query_tokens=["iphone", "16"], condizione="nuovo"
@@ -125,10 +125,10 @@ def test_scrape_amazon_condizione_nuovo_filtra_ricondizionato(monkeypatch: pytes
         "</body></html>"
     )
 
-    monkeypatch.setattr("offerte_tech.fetch_with_retry", lambda *a, **k: _FakeResponse(html, 200))
-    monkeypatch.setattr("offerte_tech.requests.Session", _FakeSession)
-    monkeypatch.setattr("offerte_tech._random_delay", lambda: None)
-    monkeypatch.setattr("offerte_tech.time.sleep", lambda *_: None)
+    monkeypatch.setattr("offerte.scrapers.amazon.fetch_with_retry", lambda *a, **k: _FakeResponse(html, 200))
+    monkeypatch.setattr("offerte.scrapers.amazon.requests.Session", _FakeSession)
+    monkeypatch.setattr("offerte.scrapers.amazon._random_delay", lambda: None)
+    monkeypatch.setattr("offerte.scrapers.amazon.time.sleep", lambda *_: None)
 
     risultati = __import__("offerte_tech").scrape_amazon(
         "iphone 16", prezzo_min=300, budget_max=1000, query_tokens=["iphone", "16"], condizione="nuovo"
@@ -158,10 +158,10 @@ def test_scrape_amazon_fallback_mobile_on_desktop_503(monkeypatch: pytest.Monkey
             return _FakeResponse(mobile_html, 200)
         return _FakeResponse("<html><body>503</body></html>", 503)
 
-    monkeypatch.setattr("offerte_tech.fetch_with_retry", fake_fetch_with_retry)
-    monkeypatch.setattr("offerte_tech.requests.Session", _FakeSession)
-    monkeypatch.setattr("offerte_tech._random_delay", lambda: None)
-    monkeypatch.setattr("offerte_tech.time.sleep", lambda *_: None)
+    monkeypatch.setattr("offerte.scrapers.amazon.fetch_with_retry", fake_fetch_with_retry)
+    monkeypatch.setattr("offerte.scrapers.amazon.requests.Session", _FakeSession)
+    monkeypatch.setattr("offerte.scrapers.amazon._random_delay", lambda: None)
+    monkeypatch.setattr("offerte.scrapers.amazon.time.sleep", lambda *_: None)
 
     risultati = __import__("offerte_tech").scrape_amazon(
         "iphone 16", prezzo_min=300, budget_max=1000, query_tokens=["iphone", "16"], condizione="nuovo"
@@ -189,16 +189,16 @@ def test_parse_price_range() -> None:
 
 def _make_monkeypatch_cerca(monkeypatch: pytest.MonkeyPatch, amazon_results: list[Offerta] | None = None) -> None:
     """Helper: patcha tutte le fonti di cerca_offerte."""
-    monkeypatch.setattr("offerte_tech.scrape_amazon", lambda *a, **kw: amazon_results or [])
-    monkeypatch.setattr("offerte_tech.scrape_ebay", lambda *a, **kw: [])
-    monkeypatch.setattr("offerte_tech.scrape_vinted", lambda *a, **kw: [])
-    monkeypatch.setattr("offerte_tech.scrape_euronics", lambda *a, **kw: [])
-    monkeypatch.setattr("offerte_tech.scrape_unieuro", lambda *a, **kw: [])
-    monkeypatch.setattr("offerte_tech.scrape_mediaworld", lambda *a, **kw: [])
-    monkeypatch.setattr("offerte_tech.scrape_wallapop", lambda *a, **kw: [])
-    monkeypatch.setattr("offerte_tech.scrape_comet", lambda *a, **kw: [])
-    monkeypatch.setattr("offerte_tech.scrape_expert", lambda *a, **kw: [])
-    monkeypatch.setattr("offerte_tech.fetch_specs_ai", lambda offerte, categoria, cerebras_client: offerte)
+    monkeypatch.setattr("offerte.orchestrator.scrape_amazon", lambda *a, **kw: amazon_results or [])
+    monkeypatch.setattr("offerte.orchestrator.scrape_ebay", lambda *a, **kw: [])
+    monkeypatch.setattr("offerte.orchestrator.scrape_vinted", lambda *a, **kw: [])
+    monkeypatch.setattr("offerte.orchestrator.scrape_euronics", lambda *a, **kw: [])
+    monkeypatch.setattr("offerte.orchestrator.scrape_unieuro", lambda *a, **kw: [])
+    monkeypatch.setattr("offerte.orchestrator.scrape_mediaworld", lambda *a, **kw: [])
+    monkeypatch.setattr("offerte.orchestrator.scrape_wallapop", lambda *a, **kw: [])
+    monkeypatch.setattr("offerte.orchestrator.scrape_comet", lambda *a, **kw: [])
+    monkeypatch.setattr("offerte.orchestrator.scrape_expert", lambda *a, **kw: [])
+    monkeypatch.setattr("offerte.orchestrator.fetch_specs_ai", lambda offerte, categoria, cerebras_client: offerte)
 
 
 def test_prezzo_min_filter(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -291,18 +291,18 @@ def test_is_relevant_product_alias() -> None:
 def test_spec_aware_sorting(monkeypatch: pytest.MonkeyPatch) -> None:
     """I prodotti con spec tokens nel titolo vengono ordinati prima."""
     monkeypatch.setattr(
-        "offerte_tech.scrape_amazon",
+        "offerte.orchestrator.scrape_amazon",
         lambda *args, **kwargs: [
             Offerta(nome="HP Laptop 14 pollici Intel i5", prezzo=600.0, negozio="Amazon", link="https://example.com/1"),
             Offerta(nome="HP Laptop 14 pollici 16GB RAM SSD", prezzo=700.0, negozio="Amazon", link="https://example.com/2"),
         ],
     )
-    monkeypatch.setattr("offerte_tech.scrape_ebay", lambda *args, **kwargs: [])
-    monkeypatch.setattr("offerte_tech.scrape_vinted", lambda *args, **kwargs: [])
-    monkeypatch.setattr("offerte_tech.scrape_euronics", lambda *args, **kwargs: [])
-    monkeypatch.setattr("offerte_tech.scrape_unieuro", lambda *args, **kwargs: [])
-    monkeypatch.setattr("offerte_tech.scrape_mediaworld", lambda *args, **kwargs: [])
-    monkeypatch.setattr("offerte_tech.fetch_specs_ai", lambda offerte, categoria, cerebras_client: offerte)
+    monkeypatch.setattr("offerte.orchestrator.scrape_ebay", lambda *args, **kwargs: [])
+    monkeypatch.setattr("offerte.orchestrator.scrape_vinted", lambda *args, **kwargs: [])
+    monkeypatch.setattr("offerte.orchestrator.scrape_euronics", lambda *args, **kwargs: [])
+    monkeypatch.setattr("offerte.orchestrator.scrape_unieuro", lambda *args, **kwargs: [])
+    monkeypatch.setattr("offerte.orchestrator.scrape_mediaworld", lambda *args, **kwargs: [])
+    monkeypatch.setattr("offerte.orchestrator.fetch_specs_ai", lambda offerte, categoria, cerebras_client: offerte)
 
     risultati = cerca_offerte(
         query="notebook 14 pollici 16gb ram",
@@ -350,7 +350,7 @@ def test_filtra_risultati_con_ai_logga_motivi_scarto(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Il filtro deve loggare il motivo dello scarto (hard filter / score basso)."""
-    monkeypatch.setattr("offerte_tech._get_cerebras_client", lambda: None)
+    monkeypatch.setattr("offerte.ai._get_cerebras_client", lambda: None)
 
     risultati = [
         Offerta(nome='Notebook 17,3" 16GB RAM 512GB SSD', prezzo=579.0, negozio="A", link="https://x/1"),
@@ -383,9 +383,9 @@ def test_nuove_fonti_vuote(monkeypatch: pytest.MonkeyPatch) -> None:
 
     # Patch sia fetch_with_retry (euronics/mediaworld/expert) sia requests.post (unieuro/comet)
     # sia requests.get (wallapop) per garantire isolamento completo dalla rete.
-    monkeypatch.setattr("offerte_tech.fetch_with_retry", _raise_conn)
-    monkeypatch.setattr("offerte_tech.requests.post", _raise_conn)
-    monkeypatch.setattr("offerte_tech.requests.get", _raise_conn)
+    monkeypatch.setattr("offerte.orchestrator.fetch_with_retry", _raise_conn)
+    monkeypatch.setattr("offerte.orchestrator.requests.post", _raise_conn)
+    monkeypatch.setattr("offerte.orchestrator.requests.get", _raise_conn)
 
     from offerte_tech import scrape_euronics, scrape_unieuro, scrape_mediaworld, scrape_comet, scrape_wallapop, scrape_expert
     for scraper in (scrape_euronics, scrape_unieuro, scrape_mediaworld, scrape_comet, scrape_wallapop, scrape_expert):
@@ -395,22 +395,22 @@ def test_nuove_fonti_vuote(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_cerca_offerte_nuove_fonti_integrate(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verifica che cerca_offerte aggreghi i risultati da euronics/unieuro/mediaworld."""
-    monkeypatch.setattr("offerte_tech.scrape_amazon", lambda *a, **kw: [])
-    monkeypatch.setattr("offerte_tech.scrape_ebay", lambda *a, **kw: [])
-    monkeypatch.setattr("offerte_tech.scrape_vinted", lambda *a, **kw: [])
+    monkeypatch.setattr("offerte.orchestrator.scrape_amazon", lambda *a, **kw: [])
+    monkeypatch.setattr("offerte.orchestrator.scrape_ebay", lambda *a, **kw: [])
+    monkeypatch.setattr("offerte.orchestrator.scrape_vinted", lambda *a, **kw: [])
     monkeypatch.setattr(
-        "offerte_tech.scrape_euronics",
+        "offerte.orchestrator.scrape_euronics",
         lambda *a, **kw: [Offerta(nome="Samsung Galaxy A55 128GB", prezzo=349.0, negozio="Euronics", link="https://euronics.it/1", fonte="euronics.it")],
     )
     monkeypatch.setattr(
-        "offerte_tech.scrape_unieuro",
+        "offerte.orchestrator.scrape_unieuro",
         lambda *a, **kw: [Offerta(nome="Samsung Galaxy A55 256GB", prezzo=399.0, negozio="Unieuro", link="https://unieuro.it/1", fonte="unieuro.it")],
     )
     monkeypatch.setattr(
-        "offerte_tech.scrape_mediaworld",
+        "offerte.orchestrator.scrape_mediaworld",
         lambda *a, **kw: [Offerta(nome="Samsung Galaxy A56 128GB", prezzo=429.0, negozio="MediaWorld", link="https://mw.it/1", fonte="mediaworld.it")],
     )
-    monkeypatch.setattr("offerte_tech.fetch_specs_ai", lambda offerte, categoria, cerebras_client: offerte)
+    monkeypatch.setattr("offerte.orchestrator.fetch_specs_ai", lambda offerte, categoria, cerebras_client: offerte)
 
     risultati = cerca_offerte(
         query="samsung galaxy",
@@ -629,7 +629,7 @@ def test_scrape_vinted_library_returns_results(monkeypatch: pytest.MonkeyPatch) 
         def search(self, params: dict) -> list:
             return [_FakeItem()]
 
-    monkeypatch.setattr("offerte_tech.VintedScraper", _FakeScraper)
+    monkeypatch.setattr("offerte.scrapers.vinted.VintedScraper", _FakeScraper)
 
     results = scrape_vinted("notebook", 0.0, 500.0, ["notebook"])
     assert len(results) == 1
@@ -684,7 +684,7 @@ def test_scrape_wallapop_returns_results(monkeypatch: pytest.MonkeyPatch) -> Non
             return _FakeResp(comp_resp)
         return _FakeResp(section_resp)
 
-    monkeypatch.setattr("offerte_tech.requests.get", fake_get)
+    monkeypatch.setattr("offerte.scrapers.wallapop.requests.get", fake_get)
 
     results = scrape_wallapop("notebook", 0.0, 500.0, ["notebook"])
     assert call_count["n"] == 2
@@ -716,7 +716,7 @@ def test_scrape_comet_returns_results(monkeypatch: pytest.MonkeyPatch) -> None:
         def raise_for_status(self) -> None:
             pass
 
-    monkeypatch.setattr("offerte_tech.requests.post", lambda *a, **k: _FakeResp())
+    monkeypatch.setattr("offerte.scrapers.comet.requests.post", lambda *a, **k: _FakeResp())
 
     results = scrape_comet("notebook", 0.0, 800.0, ["notebook", "lenovo"])
     assert len(results) == 1
@@ -746,7 +746,7 @@ def test_scrape_expert_returns_results(monkeypatch: pytest.MonkeyPatch) -> None:
     })
     html = f'<html><head></head><body><script type="application/ld+json">{json_ld}</script></body></html>'
 
-    monkeypatch.setattr("offerte_tech.fetch_with_retry", lambda *a, **k: _FakeResponse(html, 200))
+    monkeypatch.setattr("offerte.scrapers.expert.fetch_with_retry", lambda *a, **k: _FakeResponse(html, 200))
 
     results = scrape_expert("notebook", 0.0, 800.0, ["notebook", "acer"])
     assert len(results) == 1
