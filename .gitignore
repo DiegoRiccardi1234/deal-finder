@@ -35,6 +35,9 @@ data/auth_sessions.json
 # Dati utente / runtime rigenerabili (knowledge_base.json resta come seed)
 data/search_history.json
 data/kb_unknown_items.json
+data/search_cache.json
+data/watchlist.json
+data/price_history.json
 
 # Handoff di sessione (locale, mai committato)
 HANDOFF.md
