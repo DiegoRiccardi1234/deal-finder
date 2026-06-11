@@ -144,6 +144,25 @@ if _APP_PASSWORD and not _APP_TEST_MODE:
         st.stop()
 render_nav(active_page="tool")
 _init_state()
+_get_cerebras_api_key()  # bootstrap secret provider → env var
+# Selettore provider AI: solo tra quelli con API key configurata
+from offerte import providers as _providers
+_configured_ai = _providers.configured_providers()
+if _configured_ai:
+    _cur_ai = _providers.active_provider()
+    if _cur_ai not in _configured_ai:
+        _cur_ai = _configured_ai[0]
+    _sel_ai = st.sidebar.selectbox(
+        "🧠 Provider AI",
+        _configured_ai,
+        index=_configured_ai.index(_cur_ai),
+        format_func=lambda p: _providers.PROVIDERS[p].label,
+        key="ai_provider_sel",
+    )
+    if _sel_ai != _providers.active_provider():
+        os.environ["AI_PROVIDER"] = _sel_ai
+        from offerte.ai import invalidate_model
+        invalidate_model()
 api_key = _get_cerebras_api_key()
 cerebras_client = _get_cerebras_client(api_key)
 if kb_manager is not None:

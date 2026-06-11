@@ -32,13 +32,9 @@ from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import _hard_spec_mismatch_reasons, _passes_hard_spec_filters, is_relevant
 
 def _cerebras_model(client=None) -> str:
-    """Restituisce il miglior modello Cerebras disponibile (con cache)."""
-    if _get_best_model is not None:
-        try:
-            return _get_best_model(client)
-        except Exception:
-            pass
-    return DEFAULT_CEREBRAS_MODEL
+    """Restituisce il miglior modello disponibile per il provider AI attivo."""
+    from offerte import providers
+    return providers.best_model(client=client)
 
 
 def _cerebras_chat(client, messages: list, temperature: float = 0.1, max_retries: int = 4) -> object:
@@ -766,37 +762,18 @@ _cached_model: str | None = None
 
 
 def get_best_model(client=None, force_refresh: bool = False) -> str:
-    """Sceglie dinamicamente il miglior modello Cerebras DISPONIBILE.
+    """Sceglie dinamicamente il miglior modello DISPONIBILE per il provider attivo.
 
-    Interroga `client.models.list()`, scarta i blacklistati e prende quello con
-    il context_window più ampio. Nessun modello è hardcodato come scelta: la
-    lista di fallback `_FALLBACK_MODELS` è usata solo quando l'API non è
-    raggiungibile (SDK assente, niente API key, errore di rete). Risultato in cache.
+    Delega a `offerte.providers.best_model()`: preferisce un candidato noto del
+    provider effettivamente disponibile, altrimenti il modello col context_window
+    più ampio. Nessun modello hardcodato come scelta. Risultato in cache (svuota
+    con `invalidate_model()`, es. al cambio provider).
     """
     global _cached_model
     if _cached_model and not force_refresh:
         return _cached_model
-    try:
-        if client is None:
-            if Cerebras is None:
-                return _FALLBACK_MODEL
-            api_key = os.environ.get("CEREBRAS_API_KEY", "")
-            if not api_key:
-                return _FALLBACK_MODEL
-            client = Cerebras(api_key=api_key)
-        models = client.models.list()
-        available = [
-            m for m in (models.data or [])
-            if getattr(m, "id", None) and m.id not in _BLACKLIST
-        ]
-        if not available:
-            _cached_model = _FALLBACK_MODEL
-            return _cached_model
-        # Scelta dinamica: il modello disponibile col context_window più ampio.
-        available.sort(key=lambda m: getattr(m, "context_window", 0), reverse=True)
-        _cached_model = available[0].id
-    except Exception:
-        _cached_model = _FALLBACK_MODEL
+    from offerte import providers
+    _cached_model = providers.best_model(client=client)
     return _cached_model
 
 

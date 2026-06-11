@@ -48,14 +48,14 @@ except ImportError:
 
 
 def _get_cerebras_api_key() -> str:
-    key = ""
+    """Bootstrap dei secret Streamlit nelle env var e ritorna la API key del
+    provider AI attivo (multi-provider via offerte.providers)."""
+    from offerte import providers
     try:
-        key = str(st.secrets.get("CEREBRAS_API_KEY", "") or "")
+        providers.load_keys_from(st.secrets)
     except Exception:
-        key = ""
-    if not key.strip():
-        key = os.environ.get("CEREBRAS_API_KEY", "")
-    return key.strip()
+        pass
+    return providers.get_api_key(providers.active_provider())
 
 
 def _is_test_mode() -> bool:
@@ -147,12 +147,8 @@ class _MockCerebrasClient:
 def _get_cerebras_client(api_key: str) -> Optional[object]:
     if _is_test_mode():
         return _MockCerebrasClient()
-    if not api_key or Cerebras is None:
-        return None
-    try:
-        return Cerebras(api_key=api_key)
-    except Exception:
-        return None
+    from offerte import providers
+    return providers.build_client(providers.active_provider())
 
 
 def _cerebras_chat_with_retry(
