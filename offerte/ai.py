@@ -26,6 +26,7 @@ except Exception:
 _CEREBRAS_MODEL_FALLBACK = "llama-3.3-70b"
 from offerte._constants import *  # noqa: F401,F403
 from offerte.models import Offerta
+from offerte.config import DEFAULT_CEREBRAS_MODEL, CEREBRAS_MODEL_BLACKLIST
 from offerte.http import fetch_with_retry, get_headers
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import _hard_spec_mismatch_reasons, _passes_hard_spec_filters, is_relevant
@@ -37,7 +38,7 @@ def _cerebras_model(client=None) -> str:
             return _get_best_model(client)
         except Exception:
             pass
-    return _CEREBRAS_MODEL_FALLBACK
+    return DEFAULT_CEREBRAS_MODEL
 
 
 def _cerebras_chat(client, messages: list, temperature: float = 0.1, max_retries: int = 4) -> object:
@@ -756,8 +757,8 @@ def filtra_risultati_con_ai(risultati: list[Offerta], filtri: dict[str, str]) ->
 
 
 # === Cerebras model resolver + chat-with-retry (ex cerebras_model.py) ======== #
-_BLACKLIST = {"llama3.1-8b"}
-_FALLBACK_MODEL = "llama-3.3-70b"
+_BLACKLIST = CEREBRAS_MODEL_BLACKLIST
+_FALLBACK_MODEL = DEFAULT_CEREBRAS_MODEL
 _cached_model: str | None = None
 
 
