@@ -75,6 +75,8 @@ Il progetto è organizzato in due package principali + script top-level + test s
 - `offerte/_constants.py` — costanti globali (UA, stopwords, alias, brand)
 - `offerte/export.py` — `print_results`, `export_to_csv`
 - `offerte/cli.py` — `main()` argparse + entry-point CLI
+- `offerte/config.py` — config centralizzata (solo stdlib, no import interni): `CEREBRAS_FALLBACK_MODELS` (lista candidati ordinata, usata solo se l'API non è interrogabile; override del primo via env `CEREBRAS_FALLBACK_MODEL`), `DEFAULT_CEREBRAS_MODEL` (= primo candidato, compat), `CEREBRAS_MODEL_BLACKLIST`. La scelta normale del modello è dinamica via `offerte.ai.get_best_model()` (migliore disponibile per context_window), non hardcodata
+- `offerte/cache.py` — cache ricerche persistente su disco con TTL (`make_cache_key`, `read`, `write`; `data/search_cache.json`)
 - `offerte_tech.py` — shim sottile che ri-esporta `from offerte import *` per backward-compat
 
 ### `ui/` — Streamlit web UI (ex `app.py`)
@@ -100,6 +102,8 @@ Il progetto è organizzato in due package principali + script top-level + test s
 ### Altri moduli top-level
 - `knowledge_base.py` — gestione KB (auto-update background, delega Cerebras a `offerte.ai`)
 - `search_history.py` — persistenza storico
+- `watchlist.py` — preferiti/watchlist (`add_item` dedup per link, `load`, `remove`, `is_watched`; `data/watchlist.json`)
+- `price_history.py` — storico prezzo-minimo per query (`record`, `history_for`, `lowest_ever`, `is_new_low`, `below_threshold`; `data/price_history.json`)
 
 ### `tests/`
 - `test_suite.py` — unit tests con `monkeypatch` su `offerte.scrapers.<fonte>.X` o `offerte.orchestrator.scrape_*`
