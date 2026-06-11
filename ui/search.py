@@ -45,6 +45,14 @@ except ImportError:
         return []
     def _save_search(**kw: Any) -> None:
         return None
+
+try:
+    import price_history
+    from offerte import cache as _disk_cache
+    from dataclasses import asdict as _asdict
+except Exception:
+    price_history = None  # type: ignore[assignment]
+    _disk_cache = None  # type: ignore[assignment]
 from ui.ai_client import _is_test_mode
 from ui.cards import _render_offerta_card, _render_results_grid, _render_specs_grid
 from ui.comparison import _render_comparison_board, _render_manual_comparison_matrix, _run_comparison_search
@@ -114,6 +122,23 @@ def _run_search(
         st.toast("⚡ Risultati dalla cache (< 5 min) — clicca di nuovo Cerca per aggiornare.")
         return
 
+    # ── Cache su disco: persiste tra sessioni/riavvii ─────────────────────────
+    _disk_key = (
+        _disk_cache.make_cache_key(query, prezzo_min, budget_max, condizione, fonti_backend)
+        if _disk_cache else None
+    )
+    if _disk_key:
+        _disk_hit = _disk_cache.read(_disk_key, ttl=300)
+        if _disk_hit is not None:
+            try:
+                st.session_state["risultati"] = [Offerta(**_d) for _d in _disk_hit]
+                st.session_state["log_ricerca"] = "♻️ Risultati dalla cache su disco (< 5 min)."
+                st.session_state["filtri_ai_ultima_ricerca"] = st.session_state.get("filtri_ai", {})
+                st.toast("♻️ Risultati dalla cache su disco — clicca di nuovo Cerca per aggiornare.")
+                return
+            except Exception:
+                pass
+
     # Reset filtri tabella per la nuova ricerca
     st.session_state["filtro_fonti_tabella"] = []
     st.session_state["filtro_prezzo_range_tabella"] = None
@@ -181,6 +206,19 @@ def _run_search(
             fonti=fonti_backend,
             results_count=len(risultati),
         )
+        # Cache su disco + storico prezzo minimo (best-effort, non bloccante)
+        if _disk_key and _disk_cache:
+            try:
+                _disk_cache.write(_disk_key, [_asdict(o) for o in risultati])
+            except Exception:
+                pass
+        if price_history is not None:
+            try:
+                _min_price = min((o.prezzo for o in risultati if o.prezzo), default=None)
+                if _min_price is not None:
+                    price_history.record(query, _min_price)
+            except Exception:
+                pass
     except Exception as exc:
         st.session_state["log_ricerca"] = log_buffer.getvalue()
         st.error(

@@ -62,6 +62,12 @@ from ui.auth import (
     _load_auth_sessions, _persist_client_auth, _save_auth_sessions,
 )
 from ui.cards import _render_offerta_card, _render_results_grid, _render_specs_grid
+try:
+    import watchlist
+    import price_history
+except Exception:
+    watchlist = None  # type: ignore[assignment]
+    price_history = None  # type: ignore[assignment]
 from ui.comparison import (
     _extract_comparison_spec_keys, _render_comparison_board,
     _render_manual_comparison_matrix, _run_comparison_search,
@@ -516,6 +522,47 @@ if st.session_state.get("ricerca_effettuata", False):
             _offerte_confronto = [o for o in offerte_vis if o.link in _selezione_links]
             if len(_offerte_confronto) >= 2:
                 _render_manual_comparison_matrix(_offerte_confronto)
+
+            # ── Trend prezzo minimo (storico interno multi-fonte) ──────────
+            _wl_query = st.session_state.get("ultima_query", "")
+            if price_history is not None and _wl_query:
+                _hist = price_history.history_for(_wl_query)
+                _low = price_history.lowest_ever(_wl_query)
+                if _low is not None and len(_hist) >= 2:
+                    _cur_min = min((o.prezzo for o in offerte_vis if o.prezzo), default=None)
+                    _trend = f"📊 Minimo storico per “{_wl_query}”: {_format_price(_low)}"
+                    if _cur_min is not None:
+                        _trend += f" · ora {_format_price(_cur_min)}"
+                    st.caption(_trend + f" ({len(_hist)} rilevazioni)")
+
+            # ── Preferiti / watchlist ──────────────────────────────────────
+            if watchlist is not None:
+                _wl_add = st.multiselect(
+                    "⭐ Salva prodotti nei preferiti",
+                    options=list(_link_labels.keys()),
+                    format_func=lambda lk: _link_labels.get(lk, lk),
+                    key="watchlist_add_selezione",
+                    placeholder="Seleziona prodotti da salvare...",
+                )
+                if _wl_add and st.button("⭐ Aggiungi ai preferiti", key="watchlist_save_btn"):
+                    _added = sum(
+                        1 for _o in offerte_vis
+                        if _o.link in _wl_add and watchlist.add_item(_o.nome, _o.prezzo, _o.link, _o.fonte)
+                    )
+                    st.toast(f"⭐ {_added} prodotto/i salvato/i nei preferiti")
+                _wl_items = watchlist.load()
+                if _wl_items:
+                    with st.expander(f"⭐ Preferiti salvati ({len(_wl_items)})", expanded=False):
+                        for _wi in _wl_items:
+                            _wc1, _wc2 = st.columns([6, 1])
+                            _wprezzo = _format_price(_wi["prezzo"]) if _wi.get("prezzo") is not None else "n.d."
+                            _wc1.markdown(
+                                f"[{_wi.get('nome', '')[:70]}]({_wi.get('link', '')}) — "
+                                f"{_wprezzo} · {_wi.get('fonte', '')}"
+                            )
+                            if _wc2.button("🗑", key=f"wl_del_{_wi.get('link', '')}"):
+                                watchlist.remove(_wi.get("link", ""))
+                                st.rerun()
 
             # ── Storico prezzi Amazon (CamelCamelCamel) ────────────────────
             import re as _re
