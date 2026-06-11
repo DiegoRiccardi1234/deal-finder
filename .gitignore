@@ -44,3 +44,6 @@ HANDOFF.md
 
 # Artefatto Windows (nome device riservato)
 nul
+
+# ZIP di release generati localmente
+dist/
