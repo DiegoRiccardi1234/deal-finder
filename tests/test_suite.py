@@ -1,9 +1,15 @@
+from __future__ import annotations
+
 import json
 import math
 from unittest.mock import MagicMock
 
 import pytest
-from playwright.sync_api import Page, expect
+
+try:
+    from playwright.sync_api import Page, expect
+except ImportError:  # Playwright opzionale: i test E2E vengono skippati (vedi conftest)
+    Page = expect = None  # type: ignore[assignment,misc]
 
 from offerte_tech import (
     Offerta,
@@ -381,11 +387,14 @@ def test_nuove_fonti_vuote(monkeypatch: pytest.MonkeyPatch) -> None:
     def _raise_conn(*a, **kw):
         raise _req.ConnectionError("test")
 
-    # Patch sia fetch_with_retry (euronics/mediaworld/expert) sia requests.post (unieuro/comet)
-    # sia requests.get (wallapop) per garantire isolamento completo dalla rete.
-    monkeypatch.setattr("offerte.orchestrator.fetch_with_retry", _raise_conn)
-    monkeypatch.setattr("offerte.orchestrator.requests.post", _raise_conn)
-    monkeypatch.setattr("offerte.orchestrator.requests.get", _raise_conn)
+    # Le fonti usano due meccanismi: fetch_with_retry (euronics/mediaworld/expert)
+    # e requests.post/get diretti (unieuro/comet/wallapop). Va patchato il vero
+    # call-site dentro ciascun modulo scraper, non quello di orchestrator (che le
+    # fonti non usano), altrimenti il test colpisce la rete reale.
+    for _mod in ("euronics", "mediaworld", "expert"):
+        monkeypatch.setattr(f"offerte.scrapers.{_mod}.fetch_with_retry", _raise_conn)
+    monkeypatch.setattr("requests.get", _raise_conn)
+    monkeypatch.setattr("requests.post", _raise_conn)
 
     from offerte_tech import scrape_euronics, scrape_unieuro, scrape_mediaworld, scrape_comet, scrape_wallapop, scrape_expert
     for scraper in (scrape_euronics, scrape_unieuro, scrape_mediaworld, scrape_comet, scrape_wallapop, scrape_expert):

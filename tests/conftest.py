@@ -14,6 +14,25 @@ import pytest
 ROOT_DIR = Path(__file__).resolve().parents[1]
 
 
+def pytest_collection_modifyitems(config, items):
+    """Marca come `playwright` i test E2E (usano la fixture `page`) così che
+    `-k "not playwright"` li escluda davvero, e li skippa quando Playwright
+    non è installato, lasciando girare la suite unit."""
+    try:
+        import playwright.sync_api  # noqa: F401
+
+        have_playwright = True
+    except ImportError:
+        have_playwright = False
+
+    skip_e2e = pytest.mark.skip(reason="Playwright non installato")
+    for item in items:
+        if "page" in getattr(item, "fixturenames", ()):
+            item.add_marker(pytest.mark.playwright)
+            if not have_playwright:
+                item.add_marker(skip_e2e)
+
+
 def _wait_for_server(url: str, timeout: float = 30.0) -> None:
     deadline = time.time() + timeout
     while time.time() < deadline:
