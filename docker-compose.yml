@@ -1,0 +1,22 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8501:8501"
+    environment:
+      # Provider AI attivo e chiavi (compila solo quelle che usi)
+      - AI_PROVIDER=${AI_PROVIDER:-cerebras}
+      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      # Accesso dashboard + eBay (opzionali)
+      - APP_PASSWORD=${APP_PASSWORD:-}
+      - EBAY_APP_ID=${EBAY_APP_ID:-}
+      - EBAY_CERT_ID=${EBAY_CERT_ID:-}
+    volumes:
+      # Persiste KB, storico, preferiti, cache tra i riavvii del container
+      - ./data:/app/data
+    restart: unless-stopped

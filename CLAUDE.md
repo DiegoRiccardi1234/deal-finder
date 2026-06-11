@@ -77,6 +77,7 @@ Il progetto è organizzato in due package principali + script top-level + test s
 - `offerte/cli.py` — `main()` argparse + entry-point CLI
 - `offerte/config.py` — config centralizzata (solo stdlib, no import interni): `CEREBRAS_FALLBACK_MODELS` (lista candidati ordinata, usata solo se l'API non è interrogabile; override del primo via env `CEREBRAS_FALLBACK_MODEL`), `DEFAULT_CEREBRAS_MODEL` (= primo candidato, compat), `CEREBRAS_MODEL_BLACKLIST`. La scelta normale del modello è dinamica via `offerte.ai.get_best_model()` (migliore disponibile per context_window), non hardcodata
 - `offerte/cache.py` — cache ricerche persistente su disco con TTL (`make_cache_key`, `read`, `write`; `data/search_cache.json`)
+- `offerte/providers.py` — astrazione multi-provider AI (Cerebras/Groq/OpenAI/OpenRouter via OpenAI-compatible; Anthropic/Gemini via adapter). `PROVIDERS`, `active_provider` (env `AI_PROVIDER`), `build_client`, `best_model`, `configured_providers`, `load_keys_from`. SDK importati lazy
 - `offerte_tech.py` — shim sottile che ri-esporta `from offerte import *` per backward-compat
 
 ### `ui/` — Streamlit web UI (ex `app.py`)

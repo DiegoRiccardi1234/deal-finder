@@ -1,202 +1,120 @@
-# Offerte Tech Italia
+# 🛒 Trova Prezzi Mio
 
-Tool Python per cercare offerte di prodotti tech in Italia, con:
-- scraper multi-fonte (`trovaprezzi.it` via Google Shopping + `amazon.it` + `ebay.it` via Browse API + `vinted.it` + `euronics.it` + `unieuro.it` + `mediaworld.it`),
-- filtro per query e budget,
-- ordinamento per prezzo,
-- interfaccia web Streamlit con **dark mode** di default,
-- chat pre-ricerca AI (Cerebras `gpt-oss-120b`) che raccoglie query, budget e specs separati,
-- raccomandazione **top-3 automatica** al termine di ogni ricerca,
-- esportazione CSV.
+> AI-assisted price-comparison tool that scrapes Italian e-commerce sites in parallel and recommends the best deal through a conversational interface.
 
-## Requisiti
-- Python `3.10+` (consigliato `3.11`)
-- Sistema operativo: Windows/macOS/Linux (istruzioni venv qui sotto includono Windows PowerShell)
+[![CI](https://github.com/DiegoRiccardi1234/trova-prezzi/actions/workflows/ci.yml/badge.svg)](https://github.com/DiegoRiccardi1234/trova-prezzi/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.11-blue)
+![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-Dipendenze Python:
-- `requests`
-- `beautifulsoup4`
-- `fake-useragent`
-- `streamlit`
-- `cerebras-cloud-sdk`
+Describe what you want in plain language — the AI turns it into an optimized query, budget and technical filters, then scrapes up to 14 sources in parallel and ranks the results. A built-in chat recommends which product to buy and why.
 
-Credenziali opzionali:
-- `CEREBRAS_API_KEY` — chat pre-ricerca + raccomandazione AI
-- `EBAY_APP_ID`
-- `EBAY_CERT_ID`
+![Screenshot](docs/screenshot.png)
 
-## Installazione dipendenze
-Dalla root del progetto:
+---
 
-```powershell
-cd "d:\DiegoD\Trova Prezzi Mio"
+## ✨ Features
+
+- **Conversational search** — an LLM extracts query, budget and hardware specs from a free-text request, then auto-generates a ranked top-3 recommendation.
+- **Multi-provider AI** — swap the LLM backend at runtime: **Cerebras, Groq, OpenAI, OpenRouter, Anthropic (Claude), Google Gemini**. Model is picked dynamically among the available ones.
+- **14 scrapers in parallel** — Amazon, eBay, Vinted, Euronics, Unieuro, MediaWorld, Trovaprezzi, Wallapop, Comet, Expert, Subito, AliExpress, Temu, Alibaba — aggregated, de-duplicated and price-ranked via a `ThreadPoolExecutor`.
+- **Watchlist** — save products and review them later.
+- **Price history + alerts** — tracks the minimum price per query over time and flags new lows / below-threshold deals.
+- **Persistent search cache** — disk-backed with TTL, to cut repeated scraping and rate-limits.
+- **CSV export**, side-by-side comparison, Amazon price history (CamelCamelCamel).
+- **Resilient by design** — retries, randomized delays, rotating user agents, graceful degradation when a key/provider/SDK is missing.
+
+## 🚀 Quickstart
+
+Three ways to run it — pick one.
+
+### A. Hosted demo (Streamlit Community Cloud)
+Deploy `app.py` straight from the GitHub repo on [share.streamlit.io](https://share.streamlit.io), then add your keys under **Settings → Secrets** (use [`.streamlit/secrets.toml.example`](.streamlit/secrets.toml.example) as a template). Zero local setup — the link to put on a CV.
+
+### B. Docker (recommended for local real use)
+```bash
+cp .streamlit/secrets.toml.example .streamlit/secrets.toml   # then fill in your keys
+docker compose up --build
+# open http://localhost:8501
+```
+Keys can also be passed via a `.env` file or shell environment (see `docker-compose.yml`).
+
+### C. Local (no Docker)
+```bash
+# Windows
+run.bat
+
+# macOS / Linux
+./run.sh
+```
+The script creates a virtualenv, installs dependencies and launches the UI on `http://localhost:8501`.
+
+<details>
+<summary>Manual setup</summary>
+
+```bash
 python -m venv .venv
-```
-
-### Attivazione venv su Windows PowerShell
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
-
-Se PowerShell blocca gli script (`execution of scripts is disabled`), usa uno di questi fix:
-
-1. Solo per la sessione corrente (consigliato per test rapidi):
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\.venv\Scripts\Activate.ps1
-```
-
-2. Permanente per il tuo utente (piu comodo):
-```powershell
-Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
-.\.venv\Scripts\Activate.ps1
-```
-
-Dopo l'attivazione:
-
-```powershell
-pip install requests beautifulsoup4 fake-useragent streamlit cerebras-cloud-sdk
-```
-
-## Avvio UI Streamlit
-```powershell
+source .venv/Scripts/activate      # Windows: .venv\Scripts\activate.bat
+pip install -r requirements.txt
 streamlit run app.py
 ```
+</details>
 
-Poi apri:
-- `http://localhost:8501`
+## 🔑 Configuration
 
-## Configurazione AI (Cerebras)
-Per abilitare l'assistente AI in `app.py`:
+Copy `.streamlit/secrets.toml.example` to `.streamlit/secrets.toml` and fill in what you need. Everything is optional — scraping works without any key (AI features just stay off).
 
-1. Crea una API key gratuita su:
-	- `https://cloud.cerebras.ai`
+| Setting | Purpose |
+|---|---|
+| `AI_PROVIDER` | active LLM provider (default `cerebras`) |
+| `APP_PASSWORD` | dashboard login password |
+| `EBAY_APP_ID` / `EBAY_CERT_ID` | eBay Browse API (falls back to HTML scraping if absent) |
 
-2. Crea il file `.streamlit/secrets.toml` nella root progetto con:
+### AI providers
 
-```toml
-# Esempio (non committare mai chiavi reali)
-CEREBRAS_API_KEY = "csk_..."
+Set the key of any provider(s) you want; the sidebar lets you switch among the configured ones.
+
+| Provider | Secret | Where to get a key |
+|---|---|---|
+| Cerebras (default) | `CEREBRAS_API_KEY` | https://cloud.cerebras.ai |
+| Groq | `GROQ_API_KEY` | https://console.groq.com |
+| OpenAI | `OPENAI_API_KEY` | https://platform.openai.com |
+| OpenRouter | `OPENROUTER_API_KEY` | https://openrouter.ai |
+| Anthropic (Claude) | `ANTHROPIC_API_KEY` | https://console.anthropic.com |
+| Google Gemini | `GEMINI_API_KEY` | https://aistudio.google.com |
+
+## 🧱 Architecture
+
+```
+offerte/      core engine — scrapers, orchestrator, AI, parsing, dedup, providers, cache, config
+ui/           Streamlit UI — auth, search flow, cards, comparison, recommendation
+app.py        entry point (page config, auth gate, render flow)
+watchlist.py, price_history.py, search_history.py, knowledge_base.py   persistence
+tests/        unit suite (monkeypatched) + Playwright E2E
 ```
 
-3. Assicurati che `cerebras-cloud-sdk` sia installato:
+The LLM backend is abstracted in [`offerte/providers.py`](offerte/providers.py): OpenAI-compatible providers share one client, while Anthropic and Gemini are wrapped in thin adapters exposing the same `chat.completions.create` / `models.list` shape — so the rest of the codebase is provider-agnostic. See [`CLAUDE.md`](CLAUDE.md) for the full module map.
 
-```powershell
-pip install cerebras-cloud-sdk
-```
+## 🖥️ CLI
 
-**Modello usato**: `gpt-oss-120b` (disponibile nel piano gratuito Cerebras).
-
-Nota sicurezza:
-- `secrets.toml` non va mai committato su git.
-- Il progetto include `.gitignore` con la regola `.streamlit/secrets.toml`.
-
-Comportamento chat AI:
-- La chat pre-ricerca raccoglie: tipo prodotto, uso principale, budget, specifiche hardware.
-- Le specifiche tecniche (RAM, storage) vengono separate dalla query di ricerca in `filtri_ai`.
-- Al termine di ogni ricerca, l'AI genera **automaticamente** una raccomandazione top-3 motivata.
-- L'utente può continuare la conversazione con domande aggiuntive nella sezione "Consiglio AI".
-
-## Configurazione eBay Browse API
-Per abilitare i risultati eBay via API ufficiale configura una delle due opzioni:
-
-```toml
-EBAY_APP_ID = "..."
-EBAY_CERT_ID = "..."
-```
-
-oppure variabili ambiente `EBAY_APP_ID` e `EBAY_CERT_ID`.
-
-Se le chiavi mancano, eBay viene saltato automaticamente senza interrompere la ricerca.
-
-## Uso CLI
-Esempio base:
-
-```powershell
-python offerte_tech.py -q "notebook 14 pollici 16gb" -b 800 -n 10
-```
-
-Con export CSV:
-
-```powershell
-python offerte_tech.py -q "ssd 1tb" --export csv --output offerte_ssd.csv
-```
-
-Parametri principali:
-- `-q, --query` (obbligatorio): testo di ricerca
-- `-b, --budget` (opzionale): budget massimo in euro
-- `-n, --top` (opzionale): numero massimo risultati (default 10)
-- `--condizione` (opzionale): filtro condizione Amazon (`tutti`, `nuovo`, `usato`; default `tutti`)
-- `--fonti` (opzionale): lista fonti da usare (`amazon`, `ebay`, `vinted`, `trovaprezzi`)
-- `--export csv` (opzionale): abilita export CSV
-- `--output` (opzionale): nome file CSV
-
-Esempi con condizione:
-
-```powershell
+```bash
 python offerte_tech.py -q "notebook 14 pollici 16gb" -b 800 --condizione nuovo -n 5
-python offerte_tech.py -q "iphone 17" --condizione usato -n 10
-python offerte_tech.py -q "iphone usato" --fonti ebay vinted -n 5
+python offerte_tech.py -q "ssd 1tb" --export csv --output offerte.csv
 ```
+`-q` query · `-b` budget · `-n` max results · `--condizione` (tutti/nuovo/usato) · `--fonti` source list · `--export csv`.
 
-Note fonti:
-- Vinted mostra solo articoli usati: con `--condizione nuovo` la fonte viene saltata.
-- Se `--fonti` non e specificato, vengono usate tutte le fonti disponibili.
-- `euronics`, `unieuro`, `mediaworld` sono selezionabili via `--fonti` nella CLI e attive di default nella UI.
-- Euronics/Unieuro/MediaWorld usano parsing CSS + JSON-LD come fallback; i selettori potrebbero richiedere aggiornamento se il sito cambia layout.
+## ✅ Tests & CI
 
-## Categorie trovaprezzi supportate (auto-mapping da query)
-- `notebook`, `laptop` -> `notebook/offerte/notebook`
-- `ssd` -> `ssd/offerte/ssd`
-- `smartphone`, `telefono`, `iphone`, `samsung`, `xiaomi`, `pixel`, `android` -> `smartphone/offerte/smartphone`
-- `monitor` -> `monitor/offerte/monitor`
-- `gpu`, `scheda` -> `schede-video/offerte/schede-video`
-- `ram` -> `memorie-ram/offerte/memorie-ram`
-- `router`, `wifi` -> `router/offerte/router`
-- `smartwatch` -> `smartwatch/offerte/smartwatch`
-- `cuffie`, `auricolari`, `airpods`, `earbuds` -> `cuffie/offerte/cuffie`
-- `mouse` -> `mouse/offerte/mouse`
-- `tastiera` -> `tastiere/offerte/tastiere`
-- `webcam` -> `webcam/offerte/webcam`
-- `stampante` -> `stampanti/offerte/stampanti`
-- `hard`, `hdd`, `disco` -> `hard-disk-esterni/offerte/hard-disk-esterni`
-- `tablet` -> `tablet/offerte/tablet`
-- `tv` -> `televisori-lcd-plasma/offerte/televisori`
-
-## Troubleshooting
-
-### 1) `trovaprezzi.it` non mostra risultati / errore 403 o 404
-Il progetto usa pagine categoria statiche (es. `.../notebook/offerte/notebook`) e filtra lato codice con i token query.
-
-Se trovi 403/404 o zero risultati:
-- riprova dopo qualche minuto (possibile blocco anti-bot/rate limit),
-- usa query con token categoria supportati (vedi sezione categorie),
-- prova una query piu semplice,
-- controlla se la struttura HTML e cambiata e richiede aggiornamento selettori.
-
-### 2) Amazon mostra CAPTCHA / robot check / HTTP 503
-Sintomi: pochi/zero risultati o pagina anti-bot.
-
-Cosa fare:
-- attendi e riprova,
-- riduci frequenza richieste,
-- usa query meno aggressive,
-- verifica connessione/rete/IP.
-
-Nota: il codice include User-Agent realistico, delay random e retry automatico.
-
-Su Streamlit Cloud Amazon può rispondere con `503` in modo sistematico perché blocca IP cloud riconosciuti come bot. In quel caso l'app mostra un avviso esplicito e conviene usare eBay/Trovaprezzi o avviare l'app in locale.
-
-### 3) Errore PowerShell su attivazione venv
-Errore tipico: `running scripts is disabled on this system`.
-
-Risoluzione rapida:
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\.venv\Scripts\Activate.ps1
+```bash
+pytest tests/ -k "not playwright"     # fast offline unit suite
+pytest tests/                          # full suite incl. Playwright E2E
 ```
+GitHub Actions runs the offline suite on every push and pull request (`.github/workflows/ci.yml`).
 
-Risoluzione persistente per utente:
-```powershell
-Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
-```
+## 🛠️ Tech stack
+
+Python 3.11 · Streamlit · BeautifulSoup / requests · Playwright · ThreadPoolExecutor · Cerebras / OpenAI / Anthropic / Google SDKs · pytest.
+
+## 📄 License
+
+MIT — see [`LICENSE`](LICENSE).
