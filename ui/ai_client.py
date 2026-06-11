@@ -29,7 +29,7 @@ except Exception:
     _get_best_model = None  # type: ignore[assignment]
     _cerebras_chat_lib = None  # type: ignore[assignment]
 
-CEREBRAS_MODEL = "llama-3.3-70b"
+from offerte.config import DEFAULT_CEREBRAS_MODEL as CEREBRAS_MODEL
 
 try:
     import knowledge_base as kb_manager

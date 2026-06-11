@@ -284,11 +284,12 @@ def _save_kb(kb: dict[str, Any]) -> None:
 # ── Cerebras update ───────────────────────────────────────────────────────────
 
 def _get_model_name(client: Any) -> str:
+    from offerte.config import DEFAULT_CEREBRAS_MODEL
     try:
         from offerte.ai import get_best_model
-        return get_best_model(client) or "llama-3.3-70b"
+        return get_best_model(client) or DEFAULT_CEREBRAS_MODEL
     except Exception:
-        return "llama-3.3-70b"
+        return DEFAULT_CEREBRAS_MODEL
 
 
 def _call_cerebras_for_category(client: Any, categoria: str, base_info: dict[str, Any]) -> Optional[dict[str, Any]]:
