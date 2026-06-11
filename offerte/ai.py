@@ -26,7 +26,7 @@ except Exception:
 _CEREBRAS_MODEL_FALLBACK = "llama-3.3-70b"
 from offerte._constants import *  # noqa: F401,F403
 from offerte.models import Offerta
-from offerte.config import DEFAULT_CEREBRAS_MODEL, CEREBRAS_MODEL_BLACKLIST
+from offerte.config import DEFAULT_CEREBRAS_MODEL, CEREBRAS_FALLBACK_MODELS, CEREBRAS_MODEL_BLACKLIST
 from offerte.http import fetch_with_retry, get_headers
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import _hard_spec_mismatch_reasons, _passes_hard_spec_filters, is_relevant
@@ -758,12 +758,21 @@ def filtra_risultati_con_ai(risultati: list[Offerta], filtri: dict[str, str]) ->
 
 # === Cerebras model resolver + chat-with-retry (ex cerebras_model.py) ======== #
 _BLACKLIST = CEREBRAS_MODEL_BLACKLIST
-_FALLBACK_MODEL = DEFAULT_CEREBRAS_MODEL
+# Candidati di fallback (lista ordinata), usati solo se non si può interrogare
+# l'API. La scelta normale è dinamica: vedi get_best_model().
+_FALLBACK_MODELS = CEREBRAS_FALLBACK_MODELS
+_FALLBACK_MODEL = _FALLBACK_MODELS[0]
 _cached_model: str | None = None
 
 
 def get_best_model(client=None, force_refresh: bool = False) -> str:
-    """Restituisce il miglior modello Cerebras disponibile, con cache."""
+    """Sceglie dinamicamente il miglior modello Cerebras DISPONIBILE.
+
+    Interroga `client.models.list()`, scarta i blacklistati e prende quello con
+    il context_window più ampio. Nessun modello è hardcodato come scelta: la
+    lista di fallback `_FALLBACK_MODELS` è usata solo quando l'API non è
+    raggiungibile (SDK assente, niente API key, errore di rete). Risultato in cache.
+    """
     global _cached_model
     if _cached_model and not force_refresh:
         return _cached_model
@@ -783,6 +792,7 @@ def get_best_model(client=None, force_refresh: bool = False) -> str:
         if not available:
             _cached_model = _FALLBACK_MODEL
             return _cached_model
+        # Scelta dinamica: il modello disponibile col context_window più ampio.
         available.sort(key=lambda m: getattr(m, "context_window", 0), reverse=True)
         _cached_model = available[0].id
     except Exception:
