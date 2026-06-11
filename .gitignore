@@ -31,3 +31,13 @@ google stitch
 # Runtime data (sensibili)
 .auth_sessions.json
 data/auth_sessions.json
+
+# Dati utente / runtime rigenerabili (knowledge_base.json resta come seed)
+data/search_history.json
+data/kb_unknown_items.json
+
+# Handoff di sessione (locale, mai committato)
+HANDOFF.md
+
+# Artefatto Windows (nome device riservato)
+nul
