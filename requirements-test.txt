@@ -1,4 +1,4 @@
-pytest
-pytest-asyncio
-pytest-playwright
-playwright
+pytest==9.0.3
+pytest-asyncio==1.4.0
+pytest-playwright==0.8.0
+playwright==1.60.0

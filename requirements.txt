@@ -1,7 +1,7 @@
-requests
-beautifulsoup4
-fake-useragent
-streamlit
-cerebras-cloud-sdk
-vinted-scraper>=3.0.0
-playwright>=1.40.0
+requests==2.34.2
+beautifulsoup4==4.15.0
+fake-useragent==2.2.0
+streamlit==1.58.0
+cerebras-cloud-sdk==1.67.0
+vinted-scraper==3.1.1
+playwright==1.60.0
