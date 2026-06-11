@@ -1,0 +1,9 @@
+[project]
+name = "trova-prezzi-mio"
+version = "0.1.0"
+description = "Price-comparison tool per e-commerce italiani con UI Streamlit e chat AI Cerebras"
+requires-python = ">=3.11"
+readme = "README.md"
+
+# Le dipendenze sono gestite via requirements.txt / requirements-test.txt.
+# La configurazione pytest resta in pytest.ini.
