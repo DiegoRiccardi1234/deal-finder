@@ -1,0 +1,66 @@
+============================================================
+ TROVA PREZZI MIO  -  Guida rapida / Quick start
+============================================================
+
+Hai scaricato il progetto? Per avviarlo bastano 2 passi.
+Downloaded the project? Two steps to run it.
+
+------------------------------------------------------------
+ ITALIANO
+------------------------------------------------------------
+
+REQUISITI: Python 3.11+ installato (https://www.python.org/downloads).
+
+1) CHIAVI (opzionale, per le funzioni AI)
+   - Copia il file:   .streamlit/secrets.toml.example
+     rinominandolo:   .streamlit/secrets.toml
+   - Apri il nuovo file e incolla almeno una API key di un
+     provider AI (es. Cerebras gratis su https://cloud.cerebras.ai).
+   - Senza chiavi l'app funziona lo stesso: solo la chat AI resta spenta.
+
+2) AVVIO
+   - Windows: fai doppio clic su  run.bat
+   - Mac/Linux: nel terminale esegui  ./run.sh
+   Lo script installa tutto da solo e apre l'app nel browser su
+   http://localhost:8501
+
+   In alternativa, con Docker installato:
+       docker compose up --build
+
+AGGIORNAMENTI
+   Se hai clonato il repo con git, l'app ti avvisa quando esce una
+   versione nuova e la installa con un clic. Se hai scaricato lo ZIP,
+   scarica l'ultima release da:
+   https://github.com/DiegoRiccardi1234/trova-prezzi/releases/latest
+
+------------------------------------------------------------
+ ENGLISH
+------------------------------------------------------------
+
+REQUIREMENTS: Python 3.11+ (https://www.python.org/downloads).
+
+1) KEYS (optional, for AI features)
+   - Copy:    .streamlit/secrets.toml.example
+     to:      .streamlit/secrets.toml
+   - Open the new file and paste at least one AI provider API key
+     (e.g. Cerebras, free at https://cloud.cerebras.ai).
+   - Without keys the app still works; only the AI chat stays off.
+
+2) RUN
+   - Windows: double-click  run.bat
+   - Mac/Linux: run  ./run.sh
+   The script installs everything and opens the app at
+   http://localhost:8501
+
+   Or, with Docker:
+       docker compose up --build
+
+UPDATES
+   If you cloned the repo with git, the app notifies you of a new
+   release and updates in one click. If you downloaded the ZIP, get
+   the latest release from:
+   https://github.com/DiegoRiccardi1234/trova-prezzi/releases/latest
+
+============================================================
+ Full docs: README.md   -   License: MIT
+============================================================
