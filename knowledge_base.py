@@ -601,16 +601,20 @@ def _generate_report(old_kb: dict[str, Any], new_kb: dict[str, Any], errors: lis
 
 
 def _update_kb_worker(api_key: str) -> None:
-    """Worker background: aggiorna ogni categoria via Cerebras e salva."""
+    """Worker background: aggiorna ogni categoria via il provider AI attivo e salva."""
     global _update_in_progress
-    print("[KB] Inizio aggiornamento knowledge base via Cerebras...")
+    print("[KB] Inizio aggiornamento knowledge base via provider AI...")
 
     try:
-        from cerebras.cloud.sdk import Cerebras as _Cerebras
+        from offerte import providers
 
-        client = _Cerebras(api_key=api_key)
+        # La key (passata da chi avvia il worker) è già in env; build_client
+        # costruisce il client del provider attivo leggendola da lì.
+        client = providers.build_client(providers.active_provider())
+        if client is None:
+            raise RuntimeError("nessun provider AI configurato")
     except Exception as exc:
-        print(f"[KB] Impossibile inizializzare Cerebras: {exc}")
+        print(f"[KB] Impossibile inizializzare il provider AI: {exc}")
         _update_in_progress = False
         return
 

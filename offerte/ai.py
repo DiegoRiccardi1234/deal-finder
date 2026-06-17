@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import time
 
@@ -14,7 +13,6 @@ except Exception:
     Cerebras = None
 
 
-_CEREBRAS_MODEL_FALLBACK = "llama-3.3-70b"
 from offerte._constants import *  # noqa: F401,F403
 from offerte.models import Offerta
 from offerte.config import CEREBRAS_FALLBACK_MODELS, CEREBRAS_MODEL_BLACKLIST
@@ -50,27 +48,39 @@ def _cerebras_chat(
     )
 
 
-def _get_cerebras_api_key() -> str:
-    """Legge la key Cerebras da Streamlit secrets o variabile ambiente."""
+def _get_ai_api_key() -> str:
+    """Key del provider AI attivo (multi-provider via offerte.providers).
+
+    Carica prima gli eventuali secret Streamlit in env, poi legge la key del
+    provider attivo (`AI_PROVIDER`, default cerebras).
+    """
+    from offerte import providers
+
     if st is not None:
         try:
-            key = str(st.secrets.get("CEREBRAS_API_KEY", "") or "")
-            if key.strip():
-                return key.strip()
+            providers.load_keys_from(st.secrets)
         except Exception:
             pass
-    return os.environ.get("CEREBRAS_API_KEY", "").strip()
+    return providers.get_api_key(providers.active_provider())
 
 
-def _get_cerebras_client() -> object | None:
-    """Crea il client Cerebras se disponibile e configurato."""
-    api_key = _get_cerebras_api_key()
-    if not api_key or Cerebras is None:
-        return None
-    try:
-        return Cerebras(api_key=api_key)
-    except Exception:
-        return None
+def _get_ai_client() -> object | None:
+    """Client del provider AI attivo (Cerebras/Groq/OpenAI/OpenRouter/Anthropic/
+    Gemini via offerte.providers). None se non configurato o SDK mancante.
+    """
+    from offerte import providers
+
+    if st is not None:
+        try:
+            providers.load_keys_from(st.secrets)
+        except Exception:
+            pass
+    return providers.build_client(providers.active_provider())
+
+
+# Alias storici (retro-compatibilità con UI/test/call-site esistenti).
+_get_cerebras_api_key = _get_ai_api_key
+_get_cerebras_client = _get_ai_client
 
 
 def fetch_specs_ai(
