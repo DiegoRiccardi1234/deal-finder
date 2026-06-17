@@ -6,15 +6,15 @@ knowledge_base.py — Gestione knowledge base prodotti per Trova Prezzi Mio.
 - Traccia item sconosciuti incontrati nella chat → li elabora al prossimo update.
 - Genera kb_update_report.md dopo ogni aggiornamento.
 """
+
 from __future__ import annotations
 
 import json
-import os
 import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 _DATA_DIR = Path(__file__).parent / "data"
 _DATA_DIR.mkdir(exist_ok=True)
@@ -34,13 +34,26 @@ _BASE_KB: dict[str, Any] = {
         "smartphone": {
             "brands": ["Apple", "Samsung", "Xiaomi", "Google", "OnePlus", "Motorola", "Nothing"],
             "modelli": [
-                "iPhone 15", "iPhone 15 Pro", "iPhone 15 Pro Max",
-                "iPhone 16", "iPhone 16 Pro", "iPhone 16 Pro Max",
-                "Samsung Galaxy S24", "Samsung Galaxy S24+", "Samsung Galaxy S24 Ultra",
-                "Samsung Galaxy S25", "Samsung Galaxy S25+", "Samsung Galaxy S25 Ultra",
-                "Xiaomi 14", "Xiaomi 14 Ultra", "Xiaomi 15",
-                "Google Pixel 9", "Google Pixel 9 Pro", "Google Pixel 9 Pro XL",
-                "OnePlus 13", "Nothing Phone (3)",
+                "iPhone 15",
+                "iPhone 15 Pro",
+                "iPhone 15 Pro Max",
+                "iPhone 16",
+                "iPhone 16 Pro",
+                "iPhone 16 Pro Max",
+                "Samsung Galaxy S24",
+                "Samsung Galaxy S24+",
+                "Samsung Galaxy S24 Ultra",
+                "Samsung Galaxy S25",
+                "Samsung Galaxy S25+",
+                "Samsung Galaxy S25 Ultra",
+                "Xiaomi 14",
+                "Xiaomi 14 Ultra",
+                "Xiaomi 15",
+                "Google Pixel 9",
+                "Google Pixel 9 Pro",
+                "Google Pixel 9 Pro XL",
+                "OnePlus 13",
+                "Nothing Phone (3)",
             ],
             "specs_importanti": ["storage", "RAM", "display_size", "fotocamera", "batteria", "OS"],
             "domande_guida": [
@@ -54,22 +67,53 @@ _BASE_KB: dict[str, Any] = {
             "novita_2026": [],
         },
         "laptop": {
-            "brands": ["Apple", "Lenovo", "ASUS", "HP", "Dell", "Acer", "MSI", "Razer", "Microsoft"],
+            "brands": [
+                "Apple",
+                "Lenovo",
+                "ASUS",
+                "HP",
+                "Dell",
+                "Acer",
+                "MSI",
+                "Razer",
+                "Microsoft",
+            ],
             "modelli": [
-                "MacBook Air 13 M3", "MacBook Air 15 M3", "MacBook Pro 14 M4", "MacBook Pro 16 M4",
-                "Lenovo ThinkPad X1 Carbon Gen 12", "Lenovo IdeaPad 5 15", "Lenovo Legion 5i Gen 9",
-                "ASUS ZenBook 14 OLED", "ASUS ROG Zephyrus G14", "ASUS TUF Gaming A15",
-                "HP Spectre x360 14", "HP EliteBook 840 G11", "HP Pavilion 15",
-                "Dell XPS 13 Plus", "Dell XPS 15", "Dell Latitude 7450",
-                "Acer Aspire 5", "Acer Predator Helios 18", "MSI Stealth 16 Studio",
+                "MacBook Air 13 M3",
+                "MacBook Air 15 M3",
+                "MacBook Pro 14 M4",
+                "MacBook Pro 16 M4",
+                "Lenovo ThinkPad X1 Carbon Gen 12",
+                "Lenovo IdeaPad 5 15",
+                "Lenovo Legion 5i Gen 9",
+                "ASUS ZenBook 14 OLED",
+                "ASUS ROG Zephyrus G14",
+                "ASUS TUF Gaming A15",
+                "HP Spectre x360 14",
+                "HP EliteBook 840 G11",
+                "HP Pavilion 15",
+                "Dell XPS 13 Plus",
+                "Dell XPS 15",
+                "Dell Latitude 7450",
+                "Acer Aspire 5",
+                "Acer Predator Helios 18",
+                "MSI Stealth 16 Studio",
                 "Microsoft Surface Laptop 6",
             ],
-            "specs_importanti": ["RAM", "storage", "display_size", "GPU", "CPU", "peso", "autonomia"],
+            "specs_importanti": [
+                "RAM",
+                "storage",
+                "display_size",
+                "GPU",
+                "CPU",
+                "peso",
+                "autonomia",
+            ],
             "domande_guida": [
                 "Per che uso? (lavoro/studio, gaming, grafica, portabilità)",
                 "Windows, macOS, o Linux?",
                 "Quanta RAM? (8 / 16 / 32 GB)",
-                "Schermo: 13–14\" (leggero) o 15–16\" (potente)?",
+                'Schermo: 13–14" (leggero) o 15–16" (potente)?',
                 "GPU dedicata necessaria per gaming/grafica?",
             ],
             "fasce_prezzo": {"budget": "< 500€", "medio": "500–1200€", "top": "> 1200€"},
@@ -78,13 +122,24 @@ _BASE_KB: dict[str, Any] = {
         "tablet": {
             "brands": ["Apple", "Samsung", "Lenovo", "Xiaomi", "Microsoft"],
             "modelli": [
-                "iPad mini 7", "iPad 10a generazione", "iPad Air 13 M2",
-                "iPad Pro 11 M4", "iPad Pro 13 M4",
-                "Samsung Galaxy Tab S9 FE", "Samsung Galaxy Tab S9", "Samsung Galaxy Tab S9 Ultra",
-                "Lenovo Tab P12 Pro", "Xiaomi Pad 6S Pro",
+                "iPad mini 7",
+                "iPad 10a generazione",
+                "iPad Air 13 M2",
+                "iPad Pro 11 M4",
+                "iPad Pro 13 M4",
+                "Samsung Galaxy Tab S9 FE",
+                "Samsung Galaxy Tab S9",
+                "Samsung Galaxy Tab S9 Ultra",
+                "Lenovo Tab P12 Pro",
+                "Xiaomi Pad 6S Pro",
                 "Microsoft Surface Pro 11",
             ],
-            "specs_importanti": ["display_size", "storage", "connettività_LTE", "compatibilità_stilo"],
+            "specs_importanti": [
+                "display_size",
+                "storage",
+                "connettività_LTE",
+                "compatibilità_stilo",
+            ],
             "domande_guida": [
                 "Uso principale: lettura, studio, disegno, gaming, o lavoro?",
                 "Vuoi compatibilità con stilo (Pencil / S Pen)?",
@@ -95,14 +150,37 @@ _BASE_KB: dict[str, Any] = {
             "novita_2026": [],
         },
         "smartwatch": {
-            "brands": ["Apple", "Samsung", "Garmin", "Fitbit", "Xiaomi", "Amazfit", "Polar", "Suunto"],
-            "modelli": [
-                "Apple Watch Series 10", "Apple Watch Ultra 2", "Apple Watch SE 2",
-                "Samsung Galaxy Watch 7", "Samsung Galaxy Watch 7 Ultra",
-                "Garmin Fenix 8", "Garmin Venu 3", "Garmin Forerunner 965",
-                "Fitbit Charge 6", "Xiaomi Watch S3", "Amazfit GTR 4", "Polar Vantage V3",
+            "brands": [
+                "Apple",
+                "Samsung",
+                "Garmin",
+                "Fitbit",
+                "Xiaomi",
+                "Amazfit",
+                "Polar",
+                "Suunto",
             ],
-            "specs_importanti": ["compatibilità_telefono", "autonomia_gg", "GPS", "sport_tracking", "ECG"],
+            "modelli": [
+                "Apple Watch Series 10",
+                "Apple Watch Ultra 2",
+                "Apple Watch SE 2",
+                "Samsung Galaxy Watch 7",
+                "Samsung Galaxy Watch 7 Ultra",
+                "Garmin Fenix 8",
+                "Garmin Venu 3",
+                "Garmin Forerunner 965",
+                "Fitbit Charge 6",
+                "Xiaomi Watch S3",
+                "Amazfit GTR 4",
+                "Polar Vantage V3",
+            ],
+            "specs_importanti": [
+                "compatibilità_telefono",
+                "autonomia_gg",
+                "GPS",
+                "sport_tracking",
+                "ECG",
+            ],
             "domande_guida": [
                 "Hai iPhone (→ Apple Watch) o Android?",
                 "Uso principale: sport/running o notifiche/quotidiano?",
@@ -113,13 +191,28 @@ _BASE_KB: dict[str, Any] = {
             "novita_2026": [],
         },
         "cuffie": {
-            "brands": ["Sony", "Bose", "Apple", "Samsung", "Jabra", "Sennheiser", "JBL", "Bang & Olufsen"],
+            "brands": [
+                "Sony",
+                "Bose",
+                "Apple",
+                "Samsung",
+                "Jabra",
+                "Sennheiser",
+                "JBL",
+                "Bang & Olufsen",
+            ],
             "modelli": [
-                "Sony WH-1000XM5", "Sony WH-1000XM6", "Sony WF-1000XM5",
-                "Bose QuietComfort 45", "Bose QuietComfort Ultra Headphones",
-                "Apple AirPods Pro 2", "Apple AirPods Max", "Apple AirPods 4",
+                "Sony WH-1000XM5",
+                "Sony WH-1000XM6",
+                "Sony WF-1000XM5",
+                "Bose QuietComfort 45",
+                "Bose QuietComfort Ultra Headphones",
+                "Apple AirPods Pro 2",
+                "Apple AirPods Max",
+                "Apple AirPods 4",
                 "Samsung Galaxy Buds3 Pro",
-                "Jabra Evolve2 85", "Sennheiser Momentum 4 Wireless",
+                "Jabra Evolve2 85",
+                "Sennheiser Momentum 4 Wireless",
                 "JBL Tune 770NC",
             ],
             "specs_importanti": ["tipo_cuffia", "ANC", "autonomia_ore", "wireless", "codec"],
@@ -135,15 +228,27 @@ _BASE_KB: dict[str, Any] = {
         "televisore": {
             "brands": ["Samsung", "LG", "Sony", "Philips", "Hisense", "TCL", "Panasonic"],
             "modelli": [
-                "Samsung QE65S90D OLED", "Samsung QE65QN85D Neo QLED",
-                "LG OLED65C4", "LG OLED55B4", "LG QNED87",
-                "Sony XR-65X90L", "Sony XR-55A80L OLED",
-                "Hisense 65U7NQ MiniLED", "TCL 65C805 MiniLED",
+                "Samsung QE65S90D OLED",
+                "Samsung QE65QN85D Neo QLED",
+                "LG OLED65C4",
+                "LG OLED55B4",
+                "LG QNED87",
+                "Sony XR-65X90L",
+                "Sony XR-55A80L OLED",
+                "Hisense 65U7NQ MiniLED",
+                "TCL 65C805 MiniLED",
                 "Philips OLED909",
             ],
-            "specs_importanti": ["diagonale_pollici", "tecnologia_pannello", "risoluzione", "HDR", "HDMI_21", "smart_OS"],
+            "specs_importanti": [
+                "diagonale_pollici",
+                "tecnologia_pannello",
+                "risoluzione",
+                "HDR",
+                "HDMI_21",
+                "smart_OS",
+            ],
             "domande_guida": [
-                "Quanti pollici? (55\" / 65\" / 75\" / 85\")",
+                'Quanti pollici? (55" / 65" / 75" / 85")',
                 "OLED (nero perfetto) o QLED/MiniLED (luminoso)?",
                 "Lo usi per gaming? (HDMI 2.1 / VRR / 144Hz)",
                 "Sistema operativo preferito: Tizen, webOS, Google TV?",
@@ -154,9 +259,13 @@ _BASE_KB: dict[str, Any] = {
         "console": {
             "brands": ["Sony", "Microsoft", "Nintendo"],
             "modelli": [
-                "PlayStation 5", "PlayStation 5 Slim", "PlayStation 5 Pro",
-                "Xbox Series X", "Xbox Series S",
-                "Nintendo Switch 2", "Nintendo Switch OLED",
+                "PlayStation 5",
+                "PlayStation 5 Slim",
+                "PlayStation 5 Pro",
+                "Xbox Series X",
+                "Xbox Series S",
+                "Nintendo Switch 2",
+                "Nintendo Switch OLED",
             ],
             "specs_importanti": ["esclusivi_giochi", "servizio_online", "retrocompatibilità", "4K"],
             "domande_guida": [
@@ -171,13 +280,26 @@ _BASE_KB: dict[str, Any] = {
         "fotocamera": {
             "brands": ["Sony", "Canon", "Nikon", "Fujifilm", "Panasonic", "GoPro", "DJI"],
             "modelli": [
-                "Sony Alpha 7 IV", "Sony ZV-E10 II", "Sony FX30",
-                "Canon EOS R50", "Canon EOS R8", "Canon EOS R6 Mark II",
-                "Nikon Z50 II", "Nikon Z6 III",
-                "Fujifilm X-T50", "Fujifilm X100VI",
-                "GoPro Hero 13 Black", "DJI Osmo Action 5 Pro",
+                "Sony Alpha 7 IV",
+                "Sony ZV-E10 II",
+                "Sony FX30",
+                "Canon EOS R50",
+                "Canon EOS R8",
+                "Canon EOS R6 Mark II",
+                "Nikon Z50 II",
+                "Nikon Z6 III",
+                "Fujifilm X-T50",
+                "Fujifilm X100VI",
+                "GoPro Hero 13 Black",
+                "DJI Osmo Action 5 Pro",
             ],
-            "specs_importanti": ["tipo", "sensore", "video_4K", "stabilizzazione", "obiettivo_incluso"],
+            "specs_importanti": [
+                "tipo",
+                "sensore",
+                "video_4K",
+                "stabilizzazione",
+                "obiettivo_incluso",
+            ],
             "domande_guida": [
                 "Mirrorless, compatta, o action cam?",
                 "Livello: principiante, hobbista, semi-pro?",
@@ -188,10 +310,30 @@ _BASE_KB: dict[str, Any] = {
             "novita_2026": [],
         },
         "abbigliamento": {
-            "brands": ["Nike", "Adidas", "Zara", "H&M", "The North Face", "Levi's",
-                       "Stone Island", "Ralph Lauren", "Tommy Hilfiger", "Carhartt"],
-            "categorie_item": ["t-shirt", "felpa", "giacca", "cappotto", "pantaloni",
-                               "jeans", "maglione", "camicia", "tuta sportiva", "shorts"],
+            "brands": [
+                "Nike",
+                "Adidas",
+                "Zara",
+                "H&M",
+                "The North Face",
+                "Levi's",
+                "Stone Island",
+                "Ralph Lauren",
+                "Tommy Hilfiger",
+                "Carhartt",
+            ],
+            "categorie_item": [
+                "t-shirt",
+                "felpa",
+                "giacca",
+                "cappotto",
+                "pantaloni",
+                "jeans",
+                "maglione",
+                "camicia",
+                "tuta sportiva",
+                "shorts",
+            ],
             "specs_importanti": ["taglia", "genere", "stagione", "occasione", "materiale"],
             "domande_guida": [
                 "Che capo cerchi? (t-shirt, giacca, pantaloni, felpa...)",
@@ -203,10 +345,27 @@ _BASE_KB: dict[str, Any] = {
             "novita_2026": [],
         },
         "scarpe": {
-            "brands": ["Nike", "Adidas", "New Balance", "Converse", "Vans",
-                       "Timberland", "Hoka", "On Running", "Asics", "Saucony"],
-            "categorie_item": ["sneakers", "scarpe da corsa", "trail running",
-                               "stivali", "mocassini", "sandali", "scarpe eleganti"],
+            "brands": [
+                "Nike",
+                "Adidas",
+                "New Balance",
+                "Converse",
+                "Vans",
+                "Timberland",
+                "Hoka",
+                "On Running",
+                "Asics",
+                "Saucony",
+            ],
+            "categorie_item": [
+                "sneakers",
+                "scarpe da corsa",
+                "trail running",
+                "stivali",
+                "mocassini",
+                "sandali",
+                "scarpe eleganti",
+            ],
             "specs_importanti": ["numero_EU", "genere", "uso", "drop_mm"],
             "domande_guida": [
                 "Che tipo? (sneakers casual, running, trail, formale, stivali)",
@@ -218,11 +377,34 @@ _BASE_KB: dict[str, Any] = {
             "novita_2026": [],
         },
         "elettrodomestico": {
-            "brands": ["Bosch", "Samsung", "LG", "Whirlpool", "Electrolux",
-                       "Candy", "Beko", "Siemens", "Miele", "AEG"],
-            "categorie_item": ["lavatrice", "lavasciuga", "frigorifero", "lavastoviglie",
-                               "forno", "microonde", "aspirapolvere robot", "asciugatrice"],
-            "specs_importanti": ["capacità_kg_lt", "classe_energetica", "dimensioni_cm", "rumorosità_dB"],
+            "brands": [
+                "Bosch",
+                "Samsung",
+                "LG",
+                "Whirlpool",
+                "Electrolux",
+                "Candy",
+                "Beko",
+                "Siemens",
+                "Miele",
+                "AEG",
+            ],
+            "categorie_item": [
+                "lavatrice",
+                "lavasciuga",
+                "frigorifero",
+                "lavastoviglie",
+                "forno",
+                "microonde",
+                "aspirapolvere robot",
+                "asciugatrice",
+            ],
+            "specs_importanti": [
+                "capacità_kg_lt",
+                "classe_energetica",
+                "dimensioni_cm",
+                "rumorosità_dB",
+            ],
             "domande_guida": [
                 "Che elettrodomestico cerchi?",
                 "Dimensioni disponibili (larghezza / altezza)?",
@@ -249,6 +431,7 @@ _BASE_KB: dict[str, Any] = {
 
 
 # ── I/O ───────────────────────────────────────────────────────────────────────
+
 
 def load_kb() -> dict[str, Any]:
     """Carica KB da disco. Ritorna _BASE_KB se mancante o corrotto."""
@@ -283,22 +466,29 @@ def _save_kb(kb: dict[str, Any]) -> None:
 
 # ── Cerebras update ───────────────────────────────────────────────────────────
 
+
 def _get_model_name(client: Any) -> str:
     from offerte.config import DEFAULT_CEREBRAS_MODEL
+
     try:
         from offerte.ai import get_best_model
+
         return get_best_model(client) or DEFAULT_CEREBRAS_MODEL
     except Exception:
         return DEFAULT_CEREBRAS_MODEL
 
 
-def _call_cerebras_for_category(client: Any, categoria: str, base_info: dict[str, Any]) -> Optional[dict[str, Any]]:
+def _call_cerebras_for_category(
+    client: Any, categoria: str, base_info: dict[str, Any]
+) -> dict[str, Any] | None:
     """
     Chiama Cerebras per aggiornare i dati di una categoria.
     Ritorna il JSON parsato o None se fallisce.
     """
     brands_str = ", ".join(base_info.get("brands", [])[:8])
-    modelli_str = ", ".join((base_info.get("modelli") or base_info.get("categorie_item") or [])[:12])
+    modelli_str = ", ".join(
+        (base_info.get("modelli") or base_info.get("categorie_item") or [])[:12]
+    )
     anno = datetime.now().year
 
     prompt = (
@@ -417,6 +607,7 @@ def _update_kb_worker(api_key: str) -> None:
 
     try:
         from cerebras.cloud.sdk import Cerebras as _Cerebras
+
         client = _Cerebras(api_key=api_key)
     except Exception as exc:
         print(f"[KB] Impossibile inizializzare Cerebras: {exc}")
@@ -466,6 +657,7 @@ def _update_kb_worker(api_key: str) -> None:
 
 # ── API pubblica ──────────────────────────────────────────────────────────────
 
+
 def init_kb_on_startup(api_key: str) -> None:
     """
     Chiama all'avvio dell'app (una volta per sessione Streamlit).
@@ -478,7 +670,9 @@ def init_kb_on_startup(api_key: str) -> None:
     kb = load_kb()
     if needs_update(kb):
         _update_in_progress = True
-        t = threading.Thread(target=_update_kb_worker, args=(api_key,), daemon=True, name="kb-updater")
+        t = threading.Thread(
+            target=_update_kb_worker, args=(api_key,), daemon=True, name="kb-updater"
+        )
         t.start()
         print("[KB] Thread aggiornamento avviato in background.")
 
@@ -498,7 +692,9 @@ def track_unknown(categoria: str, item: str) -> None:
         if item not in bucket:
             bucket.append(item)
             with _lock:
-                _UNKNOWN_PATH.write_text(json.dumps(unknowns, ensure_ascii=False, indent=2), encoding="utf-8")
+                _UNKNOWN_PATH.write_text(
+                    json.dumps(unknowns, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
     except Exception:
         pass
 

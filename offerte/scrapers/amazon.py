@@ -1,18 +1,12 @@
 """offerte: offerte/scrapers/amazon.py"""
+
 from __future__ import annotations
 
-import base64
-import json
 import math
-import os
 import random
 import re
-import sys
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
-from typing import Callable, Optional
-from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
+from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -37,12 +31,12 @@ from offerte.models import Offerta
 from offerte.http import fetch_with_retry, get_headers, _random_delay
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import is_relevant
-from offerte.scrapers._base import _get_ebay_token
+
 
 def scrape_amazon(
     query: str,
     prezzo_min: float,
-    budget_max: Optional[float],
+    budget_max: float | None,
     query_tokens: list[str],
     condizione: str = "tutti",
 ) -> list[Offerta]:
@@ -60,7 +54,7 @@ def scrape_amazon(
     # Manteniamo una ricerca ampia e applichiamo il filtro condizione lato parser.
     url = f"https://www.amazon.it/s?k={quote_plus(query)}"
 
-    print(f"\n🔍 Cerco su Amazon.it: \"{query}\"")
+    print(f'\n🔍 Cerco su Amazon.it: "{query}"')
 
     risultati: list[Offerta] = []
 
@@ -73,7 +67,9 @@ def scrape_amazon(
         )
         base_headers = get_headers()
         base_headers["User-Agent"] = _AMAZON_UA
-        base_headers["sec-ch-ua"] = '"Chromium";v="133", "Not(A:Brand";v="24", "Google Chrome";v="133"'
+        base_headers["sec-ch-ua"] = (
+            '"Chromium";v="133", "Not(A:Brand";v="24", "Google Chrome";v="133"'
+        )
         base_headers["sec-ch-ua-mobile"] = "?0"
         base_headers["sec-ch-ua-platform"] = '"Windows"'
         base_headers["sec-fetch-dest"] = "document"
@@ -110,7 +106,9 @@ def scrape_amazon(
                 mobile_headers["sec-fetch-site"] = "same-origin"
                 mobile_headers["Referer"] = "https://www.amazon.it/"
                 try:
-                    resp_mobile = fetch_with_retry(mobile_url, mobile_headers, session=session, max_retries=1)
+                    resp_mobile = fetch_with_retry(
+                        mobile_url, mobile_headers, session=session, max_retries=1
+                    )
                     if resp_mobile.status_code == 200:
                         print("    ♻️  Amazon desktop bloccato (503): fallback mobile riuscito")
                         resp = resp_mobile
@@ -124,8 +122,18 @@ def scrape_amazon(
             # Controlla CAPTCHA / robot check
             page_title = (soup.title.string or "") if soup.title else ""
             body_snippet = soup.get_text(" ", strip=True).lower()[:2000]
-            if any(kw in page_title.lower() for kw in ("sorry", "robot", "captcha", "service unavailable")) or \
-               any(kw in body_snippet for kw in ("enter the characters", "tipo i caratteri", "not a robot", "unusual traffic")):
+            if any(
+                kw in page_title.lower()
+                for kw in ("sorry", "robot", "captcha", "service unavailable")
+            ) or any(
+                kw in body_snippet
+                for kw in (
+                    "enter the characters",
+                    "tipo i caratteri",
+                    "not a robot",
+                    "unusual traffic",
+                )
+            ):
                 print("    ❌ Amazon.it ha restituito una pagina anti-bot.")
                 return risultati
 
@@ -135,7 +143,7 @@ def scrape_amazon(
             cards = soup.select('div[data-component-type="s-search-result"]')
             if not cards:
                 # Fallback a selettori più permissivi in caso di layout variato.
-                cards = soup.select('div.s-result-item[data-asin]')
+                cards = soup.select("div.s-result-item[data-asin]")
 
             if not cards:
                 # Retry una volta dopo breve pausa (anti-bot soft block)
@@ -146,7 +154,7 @@ def scrape_amazon(
                     soup2 = BeautifulSoup(resp2.text, "html.parser")
                     cards = soup2.select('div[data-component-type="s-search-result"]')
                     if not cards:
-                        cards = soup2.select('div.s-result-item[data-asin]')
+                        cards = soup2.select("div.s-result-item[data-asin]")
                     if cards:
                         soup = soup2
                         print("    ♻️  Retry Amazon riuscito — trovate card al secondo tentativo")
@@ -160,8 +168,15 @@ def scrape_amazon(
         print(f"    ✅ Trovate {len(cards)} card grezze su Amazon.it")
 
         _KW_RICONDIZIONATO = {
-            "ricondizionato", "refurbished", "rigenerato", "reconditioned",
-            "second life", "open box", "ricondizionata", "usato", "used",
+            "ricondizionato",
+            "refurbished",
+            "rigenerato",
+            "reconditioned",
+            "second life",
+            "open box",
+            "ricondizionata",
+            "usato",
+            "used",
         }
 
         for card in cards:
@@ -190,8 +205,8 @@ def scrape_amazon(
                 if prezzo_tag:
                     prezzo_raw = prezzo_tag.get_text(strip=True)
                 else:
-                    intero_tag    = card.select_one(".a-price-whole")
-                    decimale_tag  = card.select_one(".a-price-fraction")
+                    intero_tag = card.select_one(".a-price-whole")
+                    decimale_tag = card.select_one(".a-price-fraction")
                     if intero_tag and decimale_tag:
                         intero = intero_tag.get_text(strip=True).replace(".", "").replace(",", "")
                         decimale = decimale_tag.get_text(strip=True)
@@ -256,8 +271,17 @@ def scrape_amazon(
                 except Exception:
                     _img_url = ""
 
-                risultati.append(Offerta(nome=nome, prezzo=prezzo, negozio=negozio,
-                                         link=link, fonte="amazon.it", spedizione=spedizione, immagine=_img_url))
+                risultati.append(
+                    Offerta(
+                        nome=nome,
+                        prezzo=prezzo,
+                        negozio=negozio,
+                        link=link,
+                        fonte="amazon.it",
+                        spedizione=spedizione,
+                        immagine=_img_url,
+                    )
+                )
 
             except (AttributeError, TypeError):
                 continue
@@ -286,5 +310,3 @@ def scrape_amazon(
 
     _random_delay()
     return risultati
-
-

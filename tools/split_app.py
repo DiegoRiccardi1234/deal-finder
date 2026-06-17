@@ -8,6 +8,7 @@ Estrae le 45+ funzioni helper di app.py in moduli ui/{auth,state,ai_client,
 sources,presearch,recommendation,test_mode,export,cards,comparison,search}.py
 e riscrive app.py mantenendo il top-level orchestration.
 """
+
 from __future__ import annotations
 
 import ast
@@ -231,7 +232,7 @@ Le funzioni helper sono nel package `ui/`. Questo file contiene:
     new_app.append(header)
 
     # Inietta gli import dai moduli ui prima del top-level body originale
-    ui_imports = '''\
+    ui_imports = """\
 # Helper modulari
 from ui.ai_client import (
     _MockCerebrasClient, _MockChat, _MockChatCompletions,
@@ -269,7 +270,7 @@ from ui.state import (
 )
 from ui.test_mode import _build_mock_results
 
-'''
+"""
 
     # Itera tutti i top-level: salta def/class che sono stati estratti
     for n, s, e in nodes:

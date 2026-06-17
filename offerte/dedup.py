@@ -1,21 +1,7 @@
 """offerte: offerte/dedup.py"""
+
 from __future__ import annotations
 
-import base64
-import json
-import math
-import os
-import random
-import re
-import sys
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
-from typing import Callable, Optional
-from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
-
-import requests
-from bs4 import BeautifulSoup
 
 try:
     from cerebras.cloud.sdk import Cerebras
@@ -34,6 +20,7 @@ except Exception:
 _CEREBRAS_MODEL_FALLBACK = "llama-3.3-70b"
 from offerte._constants import *  # noqa: F401,F403
 from offerte.models import Offerta
+
 
 def _deduplica(offerte: list[Offerta], soglia_pct: float = 0.05) -> list[Offerta]:
     """
@@ -57,5 +44,3 @@ def _deduplica(offerte: list[Offerta], soglia_pct: float = 0.05) -> list[Offerta
         if not duplicato:
             uniche.append(offerta)
     return uniche
-
-

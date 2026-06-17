@@ -1,21 +1,10 @@
 """offerte: offerte/scrapers/ebay.py"""
+
 from __future__ import annotations
 
-import base64
-import json
-import math
-import os
-import random
-import re
-import sys
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
-from typing import Callable, Optional
-from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 
 import requests
-from bs4 import BeautifulSoup
 
 try:
     from cerebras.cloud.sdk import Cerebras
@@ -34,22 +23,23 @@ except Exception:
 _CEREBRAS_MODEL_FALLBACK = "llama-3.3-70b"
 from offerte._constants import *  # noqa: F401,F403
 from offerte.models import Offerta
-from offerte.http import fetch_with_retry, get_headers, _random_delay
+from offerte.http import _random_delay
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import is_relevant
 from offerte.scrapers._base import _get_ebay_token
 
+
 def scrape_ebay(
     query: str,
     prezzo_min: float,
-    budget_max: Optional[float],
+    budget_max: float | None,
     condizione: str,
     query_tokens: list[str],
     app_id: str,
     cert_id: str,
 ) -> list[Offerta]:
     """Scraper eBay.it tramite eBay Browse API ufficiale."""
-    print(f"\n🔍 Cerco su eBay.it API: \"{query}\"")
+    print(f'\n🔍 Cerco su eBay.it API: "{query}"')
     risultati: list[Offerta] = []
 
     if not app_id or not cert_id:
@@ -113,10 +103,18 @@ def scrape_ebay(
 
                     try:
                         _img_obj = item.get("image") or {}
-                        _img_url = str(_img_obj.get("imageUrl", "") or "") if isinstance(_img_obj, dict) else ""
+                        _img_url = (
+                            str(_img_obj.get("imageUrl", "") or "")
+                            if isinstance(_img_obj, dict)
+                            else ""
+                        )
                         if not _img_url:
                             _thumbs = item.get("thumbnailImages") or []
-                            if _thumbs and isinstance(_thumbs, list) and isinstance(_thumbs[0], dict):
+                            if (
+                                _thumbs
+                                and isinstance(_thumbs, list)
+                                and isinstance(_thumbs[0], dict)
+                            ):
                                 _img_url = str(_thumbs[0].get("imageUrl", "") or "")
                     except Exception:
                         _img_url = ""
@@ -154,5 +152,3 @@ def scrape_ebay(
 
     _random_delay()
     return []
-
-

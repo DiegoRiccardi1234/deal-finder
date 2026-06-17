@@ -1,17 +1,10 @@
 """ui: ui/presearch.py"""
+
 from __future__ import annotations
 
-import contextlib
-import csv
-import hashlib
-import io
 import json
-import os
-import random
 import re
-import time
-from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import streamlit as st
 
@@ -36,30 +29,53 @@ try:
 except Exception:
     kb_manager = None  # type: ignore[assignment]
 
-from offerte_tech import Offerta, cerca_offerte, parse_search_intent, parse_comparison_query
+from offerte_tech import parse_search_intent, parse_comparison_query
 
 try:
     from search_history import load_history, save_search as _save_search
 except ImportError:
+
     def load_history() -> list[dict[str, Any]]:
         return []
+
     def _save_search(**kw: Any) -> None:
         return None
+
+
 from ui.ai_client import (
-    _cerebras_chat_with_retry, _extract_json_object,
-    _get_cerebras_client, _is_test_mode,
+    _cerebras_chat_with_retry,
+    _extract_json_object,
+    _get_cerebras_client,
 )
 from ui.state import _queue_price_sync
 
 
 def _infer_categoria_from_query(query: str) -> str:
     lower = str(query or "").lower()
-    if any(token in lower for token in (
-        "notebook", "laptop", "smartphone", "telefono", "cellulare", "iphone", "monitor",
-        "ssd", "gpu", "tablet", "pc", "cuffie", "smartwatch", "fotocamera", "console"
-    )):
+    if any(
+        token in lower
+        for token in (
+            "notebook",
+            "laptop",
+            "smartphone",
+            "telefono",
+            "cellulare",
+            "iphone",
+            "monitor",
+            "ssd",
+            "gpu",
+            "tablet",
+            "pc",
+            "cuffie",
+            "smartwatch",
+            "fotocamera",
+            "console",
+        )
+    ):
         return "tech"
-    if any(token in lower for token in ("giacca", "maglia", "vestito", "felpa", "pantaloni", "camicia")):
+    if any(
+        token in lower for token in ("giacca", "maglia", "vestito", "felpa", "pantaloni", "camicia")
+    ):
         return "abbigliamento"
     if any(t in lower for t in ("scarpe", "sneaker", "stivali", "sandali")):
         return "scarpe"
@@ -201,14 +217,41 @@ def _presearch_fallback() -> dict[str, Any]:
             budget_max = int(m_max.group(1))
 
     has_budget = m_range or m_min or m_max
-    has_product = any(kw in transcript for kw in (
-        "notebook", "laptop", "smartphone", "telefono", "iphone", "monitor",
-        "tablet", "cuffie", "auricolari", "scarpe", "felpa", "giacca", "mouse", "tastiera",
-        "ssd", "pc", "console", "smartwatch",
-        "frigorifero", "lavatrice", "forno", "tv", "televisore",
-        "libro", "romanzo", "sneaker", "bici", "divano",
-        "crema", "profumo",
-    ))
+    has_product = any(
+        kw in transcript
+        for kw in (
+            "notebook",
+            "laptop",
+            "smartphone",
+            "telefono",
+            "iphone",
+            "monitor",
+            "tablet",
+            "cuffie",
+            "auricolari",
+            "scarpe",
+            "felpa",
+            "giacca",
+            "mouse",
+            "tastiera",
+            "ssd",
+            "pc",
+            "console",
+            "smartwatch",
+            "frigorifero",
+            "lavatrice",
+            "forno",
+            "tv",
+            "televisore",
+            "libro",
+            "romanzo",
+            "sneaker",
+            "bici",
+            "divano",
+            "crema",
+            "profumo",
+        )
+    )
 
     # Stima prezzo_min ragionevole in base al tipo prodotto rilevato nel transcript
     if prezzo_min == 0 and has_product:
@@ -235,7 +278,9 @@ def _presearch_fallback() -> dict[str, Any]:
     ram_match = re.search(r"(\d{1,3})\s*gb\s*(?:di\s*)?ram", transcript)
     if ram_match:
         filtri_ai["ram"] = f"{ram_match.group(1)}gb"
-    storage_match = re.search(r"(\d{2,4})\s*gb\s*(?:di\s*)?(?:ssd|storage|disco|memoria)", transcript)
+    storage_match = re.search(
+        r"(\d{2,4})\s*gb\s*(?:di\s*)?(?:ssd|storage|disco|memoria)", transcript
+    )
     if storage_match:
         filtri_ai["storage"] = f"{storage_match.group(1)}gb"
     tb_match = re.search(r"(\d)\s*tb", transcript)
@@ -243,8 +288,10 @@ def _presearch_fallback() -> dict[str, Any]:
         filtri_ai["storage"] = f"{tb_match.group(1)}tb"
     display_match = re.search(r"(\d{2})\s*(?:pollici|inch|\")", transcript)
     if display_match:
-        filtri_ai["display"] = f"{display_match.group(1)}\""
-    proc_match = re.search(r"\b(i[357]|i9|ryzen\s*[357]|m[123]|snapdragon|celeron|pentium)\b", transcript)
+        filtri_ai["display"] = f'{display_match.group(1)}"'
+    proc_match = re.search(
+        r"\b(i[357]|i9|ryzen\s*[357]|m[123]|snapdragon|celeron|pentium)\b", transcript
+    )
     if proc_match:
         filtri_ai["processore"] = proc_match.group(1)
     # Estrai condizione
@@ -263,11 +310,38 @@ def _presearch_fallback() -> dict[str, Any]:
 
     # Costruisci query pulita dal transcript
     product_tokens = []
-    for kw in ("notebook", "laptop", "smartphone", "iphone", "samsung", "xiaomi",
-               "monitor", "tablet", "cuffie", "mouse", "tastiera", "ssd", "pc",
-               "console", "smartwatch", "scarpe", "felpa", "giacca",
-               "frigorifero", "lavatrice", "forno", "tv", "televisore",
-               "libro", "romanzo", "sneaker", "bici", "divano", "crema", "profumo"):
+    for kw in (
+        "notebook",
+        "laptop",
+        "smartphone",
+        "iphone",
+        "samsung",
+        "xiaomi",
+        "monitor",
+        "tablet",
+        "cuffie",
+        "mouse",
+        "tastiera",
+        "ssd",
+        "pc",
+        "console",
+        "smartwatch",
+        "scarpe",
+        "felpa",
+        "giacca",
+        "frigorifero",
+        "lavatrice",
+        "forno",
+        "tv",
+        "televisore",
+        "libro",
+        "romanzo",
+        "sneaker",
+        "bici",
+        "divano",
+        "crema",
+        "profumo",
+    ):
         if kw in transcript:
             product_tokens.append(kw)
             break
@@ -313,25 +387,27 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
     comp_queries = parse_comparison_query(cleaned)
     if comp_queries:
         # Estrai budget dal messaggio utente
-        _budget_m = re.search(r'(?:massimo|max|budget|sotto|meno di|fino a)\s*(\d+)\s*(?:euro|€)?', cleaned.lower())
+        _budget_m = re.search(
+            r"(?:massimo|max|budget|sotto|meno di|fino a)\s*(\d+)\s*(?:euro|€)?", cleaned.lower()
+        )
         _budget = min(int(_budget_m.group(1)), 5000) if _budget_m else 2000
         # Estrai condizione
         _cond = "tutti"
-        if re.search(r'\bnuov[oai]\b', cleaned.lower()):
+        if re.search(r"\bnuov[oai]\b", cleaned.lower()):
             _cond = "nuovo"
-        elif re.search(r'\busat[oai]\b', cleaned.lower()):
+        elif re.search(r"\busat[oai]\b", cleaned.lower()):
             _cond = "usato"
         # Stima prezzo_min in base al tipo prodotto
         _pmin = 0
-        _combined_lower = ' '.join(comp_queries).lower()
-        if 'iphone' in _combined_lower:
-            _pmin = 500 if _cond != 'usato' else 200
-        elif any(kw in _combined_lower for kw in ('macbook', 'laptop', 'notebook')):
-            _pmin = 400 if _cond != 'usato' else 200
-        elif any(kw in _combined_lower for kw in ('samsung', 'galaxy', 'pixel')):
-            _pmin = 300 if _cond != 'usato' else 150
-        elif any(kw in _combined_lower for kw in ('ipad', 'tablet')):
-            _pmin = 200 if _cond != 'usato' else 100
+        _combined_lower = " ".join(comp_queries).lower()
+        if "iphone" in _combined_lower:
+            _pmin = 500 if _cond != "usato" else 200
+        elif any(kw in _combined_lower for kw in ("macbook", "laptop", "notebook")):
+            _pmin = 400 if _cond != "usato" else 200
+        elif any(kw in _combined_lower for kw in ("samsung", "galaxy", "pixel")):
+            _pmin = 300 if _cond != "usato" else 150
+        elif any(kw in _combined_lower for kw in ("ipad", "tablet")):
+            _pmin = 200 if _cond != "usato" else 100
 
         _cq_label = " · ".join(comp_queries)
         _comp_display = " vs ".join(comp_queries)
@@ -344,16 +420,18 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
         st.session_state["ultima_query"] = _comp_display
         _queue_price_sync(_pmin, _budget)
         st.session_state["condizione"] = _cond
-        st.session_state["presearch_messages"].append({
-            "role": "assistant",
-            "content": (
-                f"Ho rilevato una ricerca confronto fra **{len(comp_queries)} prodotti**!\n\n"
-                f"Cercherò in parallelo: **{_cq_label}**\n\n"
-                f"Range prezzo: {_pmin}€ – {_budget}€ · Condizione: {_cond}\n\n"
-                "Puoi modificare il range prezzo, poi clicca **Cerca offerte** "
-                "per vedere i risultati fianco a fianco."
-            ),
-        })
+        st.session_state["presearch_messages"].append(
+            {
+                "role": "assistant",
+                "content": (
+                    f"Ho rilevato una ricerca confronto fra **{len(comp_queries)} prodotti**!\n\n"
+                    f"Cercherò in parallelo: **{_cq_label}**\n\n"
+                    f"Range prezzo: {_pmin}€ – {_budget}€ · Condizione: {_cond}\n\n"
+                    "Puoi modificare il range prezzo, poi clicca **Cerca offerte** "
+                    "per vedere i risultati fianco a fianco."
+                ),
+            }
+        )
         return
 
     history_text = "\n".join(
@@ -373,7 +451,9 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
         _kb_context_str = ""
         if kb_manager is not None:
             _kb = kb_manager.load_kb()
-            _kb_inferred_cat = _infer_categoria_from_query(transcript.split("\n")[0]) if transcript else "altro"
+            _kb_inferred_cat = (
+                _infer_categoria_from_query(transcript.split("\n")[0]) if transcript else "altro"
+            )
             _kb_context_str = kb_manager.get_category_context(_kb, _kb_inferred_cat)
             # Traccia modelli sconosciuti menzionati dall'utente
             if transcript:
@@ -382,7 +462,9 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
                     for cat_data in _kb.get("categorie", {}).values()
                     for m in (cat_data.get("modelli") or cat_data.get("categorie_item") or [])
                 )
-                for word in re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z0-9][a-zA-Z0-9]*){1,3}', transcript):
+                for word in re.findall(
+                    r"\b[A-Z][a-z]+(?:\s+[A-Z0-9][a-zA-Z0-9]*){1,3}", transcript
+                ):
                     if word.lower() not in _known and len(word) > 5:
                         kb_manager.track_unknown(_kb_inferred_cat, word)
 
@@ -402,7 +484,7 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
             "- Il campo 'prezzo_min' DEVE essere REALISTICO in base a tipo prodotto + condizione:\n"
             "  iPhone nuovo→700, usato→300 | MacBook/laptop gaming nuovo→900, usato→400\n"
             "  Smartphone Android top→400, fascia media→150 | Laptop base/office→250\n"
-            "  Smartwatch→80 | Tablet→100 | TV 50+\"→300 | Cuffie→30 | Console→200\n"
+            '  Smartwatch→80 | Tablet→100 | TV 50+"→300 | Cuffie→30 | Console→200\n'
             "  NON usare MAI 0 come prezzo_min — stima sempre un minimo ragionevole\n"
             "- Il campo 'query' deve essere BREVE: tipo/dimensione/marca, MAX 5 parole, NO frasi, NO budget\n"
             "- Se l'utente menziona due modelli alternativi (es 'iphone 16 o 17', 'notebook 14 o 15'): usa la query PIU' GENERICA\n"
@@ -411,10 +493,10 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
             "- Le specifiche tecniche (RAM, storage...) vanno in 'filtri_ai', NON nella query\n"
             "- Le preferenze utente (uso, materiale, marca...) vanno in 'contesto_extra' (stringa)\n"
             "Rispondi SOLO in JSON valido:\n"
-            "- Se servono ancora info: {\"domanda\": \"...\", \"pronto\": false}\n"
-            "- Se hai abbastanza info: {\"pronto\": true, \"query\": \"...\", \"prezzo_min\": N, \"budget_max\": N, "
-            "\"categoria\": \"tech|abbigliamento|televisore|elettrodomestico|scarpe|sport|libri|beauty|casa|altro\", \"condizione\": \"nuovo|usato|tutti\", "
-            "\"filtri_ai\": {}, \"contesto_extra\": \"...\"}\n"
+            '- Se servono ancora info: {"domanda": "...", "pronto": false}\n'
+            '- Se hai abbastanza info: {"pronto": true, "query": "...", "prezzo_min": N, "budget_max": N, '
+            '"categoria": "tech|abbigliamento|televisore|elettrodomestico|scarpe|sport|libri|beauty|casa|altro", "condizione": "nuovo|usato|tutti", '
+            '"filtri_ai": {}, "contesto_extra": "..."}\n'
             f"Cronologia conversazione finora:\n{history_text}\n\nNuovo messaggio utente: {cleaned}"
         )
         user_payload = {
@@ -483,7 +565,8 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
         )
         return
 
-    domanda = sanitized.get("domanda") or "Qual e il dettaglio piu importante che vuoi fissare prima di cercare?"
+    domanda = (
+        sanitized.get("domanda")
+        or "Qual e il dettaglio piu importante che vuoi fissare prima di cercare?"
+    )
     st.session_state["presearch_messages"].append({"role": "assistant", "content": str(domanda)})
-
-

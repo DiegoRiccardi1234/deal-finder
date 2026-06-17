@@ -1,21 +1,7 @@
 """offerte: offerte/cli.py"""
+
 from __future__ import annotations
 
-import base64
-import json
-import math
-import os
-import random
-import re
-import sys
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
-from typing import Callable, Optional
-from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
-
-import requests
-from bs4 import BeautifulSoup
 
 try:
     from cerebras.cloud.sdk import Cerebras
@@ -33,8 +19,8 @@ except Exception:
 
 _CEREBRAS_MODEL_FALLBACK = "llama-3.3-70b"
 import argparse
-from offerte.export import export_to_csv, print_results
 from offerte.orchestrator import cerca_offerte
+
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -43,25 +29,28 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawTextHelpFormatter,
         epilog=(
             "Esempi:\n"
-            "  python offerte_tech.py -q \"notebook 14 pollici 16gb\" -b 800 -n 10\n"
-            "  python offerte_tech.py -q \"ssd 1tb\" --export csv\n"
+            '  python offerte_tech.py -q "notebook 14 pollici 16gb" -b 800 -n 10\n'
+            '  python offerte_tech.py -q "ssd 1tb" --export csv\n'
         ),
     )
     parser.add_argument(
-        "-q", "--query",
+        "-q",
+        "--query",
         required=True,
         metavar="TESTO",
-        help="Query di ricerca (es. \"notebook 14 pollici 16gb\")",
+        help='Query di ricerca (es. "notebook 14 pollici 16gb")',
     )
     parser.add_argument(
-        "-b", "--budget",
+        "-b",
+        "--budget",
         type=float,
         default=None,
         metavar="EUR",
         help="Budget massimo in euro (opzionale)",
     )
     parser.add_argument(
-        "-n", "--top",
+        "-n",
+        "--top",
         type=int,
         default=10,
         metavar="N",
@@ -77,7 +66,17 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--fonti",
         nargs="+",
-        choices=["amazon", "ebay", "vinted", "euronics", "unieuro", "mediaworld", "wallapop", "comet", "expert"],
+        choices=[
+            "amazon",
+            "ebay",
+            "vinted",
+            "euronics",
+            "unieuro",
+            "mediaworld",
+            "wallapop",
+            "comet",
+            "expert",
+        ],
         default=None,
         metavar="FONTE",
         help="Seleziona le fonti da consultare (default: tutte)",
@@ -96,8 +95,6 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Nome file di output per l'export (default: offerte.csv)",
     )
     return parser
-
-
 
 
 def main() -> None:

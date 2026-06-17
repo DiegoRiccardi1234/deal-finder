@@ -48,8 +48,16 @@ SITES: list[SiteConfig] = [
         query="notebook",
         url="https://www.trovaprezzi.it/cerca.aspx?nome=notebook",
         selectors=[
-            {"name": "a.product-name", "price": ".price, .prezzo, .shop-price", "link": "a.product-name"},
-            {"name": ".listing_title a, .listing-title a", "price": ".price, .prezzo", "link": ".listing_title a, .listing-title a"},
+            {
+                "name": "a.product-name",
+                "price": ".price, .prezzo, .shop-price",
+                "link": "a.product-name",
+            },
+            {
+                "name": ".listing_title a, .listing-title a",
+                "price": ".price, .prezzo",
+                "link": ".listing_title a, .listing-title a",
+            },
             {"name": "h2 a", "price": ".price, .prezzo", "link": "h2 a"},
         ],
     ),
@@ -58,8 +66,16 @@ SITES: list[SiteConfig] = [
         query="iphone 14",
         url="https://www.subito.it/annunci-italia/vendita/usato/?q=iphone+14",
         selectors=[
-            {"name": '[data-testid="listing-card-title"], [class*="SmallCard_title"]', "price": '[data-testid="listing-price"], [class*="price"]', "link": 'a[href*="/annunci-"]'},
-            {"name": "article h2, article h3", "price": "article [class*='price']", "link": "article a[href]"},
+            {
+                "name": '[data-testid="listing-card-title"], [class*="SmallCard_title"]',
+                "price": '[data-testid="listing-price"], [class*="price"]',
+                "link": 'a[href*="/annunci-"]',
+            },
+            {
+                "name": "article h2, article h3",
+                "price": "article [class*='price']",
+                "link": "article a[href]",
+            },
         ],
     ),
     SiteConfig(
@@ -67,7 +83,11 @@ SITES: list[SiteConfig] = [
         query="notebook",
         url="https://www.eprice.it/s/cerca/notebook",
         selectors=[
-            {"name": "[data-testid*='product'] h2, [data-testid*='product'] h3", "price": "[data-testid*='price'], [class*='price']", "link": "a[href*='/product/'], a[href*='notebook']"},
+            {
+                "name": "[data-testid*='product'] h2, [data-testid*='product'] h3",
+                "price": "[data-testid*='price'], [class*='price']",
+                "link": "a[href*='/product/'], a[href*='notebook']",
+            },
             {"name": "h2 a, h3 a", "price": ".price, [class*='price']", "link": "a[href]"},
         ],
     ),
@@ -76,7 +96,11 @@ SITES: list[SiteConfig] = [
         query="notebook",
         url="https://www.trony.it/catalogsearch/result/?q=notebook",
         selectors=[
-            {"name": "[class*='product-item-name'] a, [class*='product-name'] a", "price": "[class*='price']", "link": "a[href*='product'], a[href*='catalog']"},
+            {
+                "name": "[class*='product-item-name'] a, [class*='product-name'] a",
+                "price": "[class*='price']",
+                "link": "a[href*='product'], a[href*='catalog']",
+            },
             {"name": "h2 a, h3 a", "price": ".price, [class*='price']", "link": "a[href]"},
         ],
     ),
@@ -85,7 +109,11 @@ SITES: list[SiteConfig] = [
         query="notebook",
         url="https://www.mediamarkt.it/it/search.html?query=notebook",
         selectors=[
-            {"name": "[data-test='mms-product-name'], [class*='productTitle']", "price": "[data-test='mms-price'], [class*='price']", "link": "a[href*='/product/']"},
+            {
+                "name": "[data-test='mms-product-name'], [class*='productTitle']",
+                "price": "[data-test='mms-price'], [class*='price']",
+                "link": "a[href*='/product/']",
+            },
             {"name": "h2 a, h3 a", "price": ".price, [class*='price']", "link": "a[href]"},
         ],
     ),
@@ -94,7 +122,11 @@ SITES: list[SiteConfig] = [
         query="notebook",
         url="https://www.unieuro.it/online/search?text=notebook",
         selectors=[
-            {"name": "[data-testid*='product'] h2, [data-testid*='product'] h3", "price": "[data-testid*='price'], [class*='price']", "link": "a[href*='/online/']"},
+            {
+                "name": "[data-testid*='product'] h2, [data-testid*='product'] h3",
+                "price": "[data-testid*='price'], [class*='price']",
+                "link": "a[href*='/online/']",
+            },
             {"name": "h2 a, h3 a", "price": ".price, [class*='price']", "link": "a[href]"},
         ],
     ),
@@ -103,8 +135,16 @@ SITES: list[SiteConfig] = [
         query="scarpe nike",
         url="https://www.zalando.it/catalogo/?q=scarpe+nike",
         selectors=[
-            {"name": "[data-testid='product-card'] [data-testid='product-card-name'], article h3", "price": "[data-testid='product-card-price'], [class*='price']", "link": "a[href*='-']"},
-            {"name": "article h3, article h2", "price": "article [class*='price']", "link": "article a[href]"},
+            {
+                "name": "[data-testid='product-card'] [data-testid='product-card-name'], article h3",
+                "price": "[data-testid='product-card-price'], [class*='price']",
+                "link": "a[href*='-']",
+            },
+            {
+                "name": "article h3, article h2",
+                "price": "article [class*='price']",
+                "link": "article a[href]",
+            },
         ],
     ),
     SiteConfig(
@@ -112,7 +152,11 @@ SITES: list[SiteConfig] = [
         query="t-shirt",
         url="https://www.asos.com/it/search/?q=t-shirt",
         selectors=[
-            {"name": "[data-auto-id='productTileTitle'], article h2, article h3", "price": "[data-auto-id='productTilePrice'], [class*='price']", "link": "a[href*='/prd/'], a[href*='/product/']"},
+            {
+                "name": "[data-auto-id='productTileTitle'], article h2, article h3",
+                "price": "[data-auto-id='productTilePrice'], [class*='price']",
+                "link": "a[href*='/prd/'], a[href*='/product/']",
+            },
             {"name": "h2 a, h3 a", "price": ".price, [class*='price']", "link": "a[href]"},
         ],
     ),
@@ -121,7 +165,11 @@ SITES: list[SiteConfig] = [
         query="notebook",
         url="https://it.aliexpress.com/wholesale?SearchText=notebook",
         selectors=[
-            {"name": "a[href*='/item/'] h3, a[href*='/item/'] [class*='title']", "price": "a[href*='/item/'] [class*='price'], [class*='price-current']", "link": "a[href*='/item/']"},
+            {
+                "name": "a[href*='/item/'] h3, a[href*='/item/'] [class*='title']",
+                "price": "a[href*='/item/'] [class*='price'], [class*='price-current']",
+                "link": "a[href*='/item/']",
+            },
             {"name": "h3", "price": ".price, [class*='price']", "link": "a[href*='/item/']"},
         ],
     ),
@@ -130,7 +178,11 @@ SITES: list[SiteConfig] = [
         query="vestito",
         url="https://it.shein.com/pdsearch/vestito/",
         selectors=[
-            {"name": "[class*='S-product-item__name'], [class*='product-item__title']", "price": "[class*='from-price'], [class*='normal-price']", "link": "a[href*='-cat-'], a[href*='-p-']"},
+            {
+                "name": "[class*='S-product-item__name'], [class*='product-item__title']",
+                "price": "[class*='from-price'], [class*='normal-price']",
+                "link": "a[href*='-cat-'], a[href*='-p-']",
+            },
             {"name": "h2 a, h3 a", "price": ".price, [class*='price']", "link": "a[href]"},
         ],
     ),
@@ -139,7 +191,11 @@ SITES: list[SiteConfig] = [
         query="notebook",
         url="https://www.temu.com/it/search_result.html?search_key=notebook",
         selectors=[
-            {"name": "[class*='goods-title'], [class*='product-title']", "price": "[class*='price'], [data-testid*='price']", "link": "a[href*='/g-']"},
+            {
+                "name": "[class*='goods-title'], [class*='product-title']",
+                "price": "[class*='price'], [data-testid*='price']",
+                "link": "a[href*='/g-']",
+            },
             {"name": "h2 a, h3 a", "price": ".price, [class*='price']", "link": "a[href]"},
         ],
     ),
@@ -148,7 +204,11 @@ SITES: list[SiteConfig] = [
         query="notebook",
         url="https://www.alibaba.com/trade/search?SearchText=notebook",
         selectors=[
-            {"name": "[class*='search-card-e-title'], [class*='organic-gallery-title']", "price": "[class*='search-card-e-price-main'], [class*='price']", "link": "a[href*='/product-detail/'], a[href*='/product/']"},
+            {
+                "name": "[class*='search-card-e-title'], [class*='organic-gallery-title']",
+                "price": "[class*='search-card-e-price-main'], [class*='price']",
+                "link": "a[href*='/product-detail/'], a[href*='/product/']",
+            },
             {"name": "h2 a, h3 a", "price": ".price, [class*='price']", "link": "a[href]"},
         ],
     ),
@@ -173,7 +233,9 @@ def discover_api_hints_from_html(soup: BeautifulSoup, base_url: str) -> list[str
         for token in tokens:
             if token in low:
                 if token in ("/api/", "graphql"):
-                    for m in re.findall(r"https?://[^\"'\s]+|/api/[^\"'\s]+|/graphql[^\"'\s]*", txt):
+                    for m in re.findall(
+                        r"https?://[^\"'\s]+|/api/[^\"'\s]+|/graphql[^\"'\s]*", txt
+                    ):
                         hints.add(urljoin(base_url, m))
                 else:
                     hints.add(f"inline:{token}")
@@ -181,7 +243,9 @@ def discover_api_hints_from_html(soup: BeautifulSoup, base_url: str) -> list[str
     return sorted(hints)[:10]
 
 
-def extract_selector_match(soup: BeautifulSoup, candidates: list[dict[str, str]]) -> dict[str, Any] | None:
+def extract_selector_match(
+    soup: BeautifulSoup, candidates: list[dict[str, str]]
+) -> dict[str, Any] | None:
     best: dict[str, Any] | None = None
     best_score = -1
 
@@ -269,7 +333,9 @@ def probe_playwright(site: SiteConfig, context) -> dict[str, Any]:
     def on_request(req) -> None:
         u = req.url
         low = u.lower()
-        if req.resource_type in ("xhr", "fetch") or any(t in low for t in ["algolia", "graphql", "/api/", "elasticsearch", "search", "query"]):
+        if req.resource_type in ("xhr", "fetch") or any(
+            t in low for t in ["algolia", "graphql", "/api/", "elasticsearch", "search", "query"]
+        ):
             req_hints.add(u)
 
     page.on("request", on_request)
@@ -416,7 +482,8 @@ def analyze_trovaprezzi(requests_result: dict[str, Any]) -> dict[str, Any]:
 
         api_hints = requests_result.get("api_hints") or []
         analysis["api_rest_found"] = any(
-            ("/api/" in h.lower() or "graphql" in h.lower() or "algolia" in h.lower()) for h in api_hints
+            ("/api/" in h.lower() or "graphql" in h.lower() or "algolia" in h.lower())
+            for h in api_hints
         )
     except Exception:
         pass
@@ -424,10 +491,16 @@ def analyze_trovaprezzi(requests_result: dict[str, Any]) -> dict[str, Any]:
     return analysis
 
 
-def choose_method(site_name: str, req: dict[str, Any], pw: dict[str, Any], unieuro_api: dict[str, Any] | None) -> str:
+def choose_method(
+    site_name: str, req: dict[str, Any], pw: dict[str, Any], unieuro_api: dict[str, Any] | None
+) -> str:
     if site_name == "unieuro.it" and unieuro_api and unieuro_api.get("ok"):
         return "API diretta"
-    if req.get("selector_match") and not req.get("antibot") and (req.get("status") in (200, 201, 202)):
+    if (
+        req.get("selector_match")
+        and not req.get("antibot")
+        and (req.get("status") in (200, 201, 202))
+    ):
         return "requests"
     if pw.get("selector_match") and not pw.get("antibot") and (pw.get("status") in (200, 201, 202)):
         return "Playwright"
@@ -441,7 +514,12 @@ def choose_method(site_name: str, req: dict[str, Any], pw: dict[str, Any], unieu
 def classify_feasibility(method: str, req: dict[str, Any], pw: dict[str, Any]) -> str:
     req_status = req.get("status")
     pw_status = pw.get("status")
-    blocked = req.get("antibot") or pw.get("antibot") or req_status in (403, 429) or pw_status in (403, 429)
+    blocked = (
+        req.get("antibot")
+        or pw.get("antibot")
+        or req_status in (403, 429)
+        or pw_status in (403, 429)
+    )
 
     if method in ("requests", "API diretta"):
         return "FACILE"
@@ -454,7 +532,9 @@ def classify_feasibility(method: str, req: dict[str, Any], pw: dict[str, Any]) -
     return "DIFFICILE"
 
 
-def format_api_line(req: dict[str, Any], pw: dict[str, Any], unieuro_api: dict[str, Any] | None, max_items: int = 4) -> tuple[str, str]:
+def format_api_line(
+    req: dict[str, Any], pw: dict[str, Any], unieuro_api: dict[str, Any] | None, max_items: int = 4
+) -> tuple[str, str]:
     hints: list[str] = []
     if unieuro_api and unieuro_api.get("ok"):
         hints.append(str(unieuro_api.get("endpoint")))
@@ -472,58 +552,66 @@ def format_api_line(req: dict[str, Any], pw: dict[str, Any], unieuro_api: dict[s
     return ("si", "; ".join(cleaned[:max_items]))
 
 
-def code_snippet(method: str, url: str, selectors: dict[str, Any] | None, api_endpoint: str | None = None) -> str:
+def code_snippet(
+    method: str, url: str, selectors: dict[str, Any] | None, api_endpoint: str | None = None
+) -> str:
     if method == "API diretta":
         ep = api_endpoint or "https://example.algolia.net/1/indexes/*/queries"
-        return "\n".join([
-            "import requests, json",
-            f"url = \"{ep}\"",
-            "payload = {\"requests\": [{\"indexName\": \"sgmproducts_prod\", \"query\": \"notebook\"}]}",
-            "headers = {",
-            "    \"x-algolia-application-id\": \"MNBCENYFII\",",
-            "    \"x-algolia-api-key\": \"977ed8d06b718d4929ca789c78c4107a\",",
-            "    \"content-type\": \"application/x-www-form-urlencoded\",",
-            "}",
-            "r = requests.post(url, data=json.dumps(payload), headers=headers, timeout=20)",
-            "hits = r.json()[\"results\"][0][\"hits\"]",
-            "for h in hits[:3]:",
-            "    print(h.get(\"name\"), h.get(\"pFinale\"), h.get(\"url\"))",
-        ])
+        return "\n".join(
+            [
+                "import requests, json",
+                f'url = "{ep}"',
+                'payload = {"requests": [{"indexName": "sgmproducts_prod", "query": "notebook"}]}',
+                "headers = {",
+                '    "x-algolia-application-id": "MNBCENYFII",',
+                '    "x-algolia-api-key": "977ed8d06b718d4929ca789c78c4107a",',
+                '    "content-type": "application/x-www-form-urlencoded",',
+                "}",
+                "r = requests.post(url, data=json.dumps(payload), headers=headers, timeout=20)",
+                'hits = r.json()["results"][0]["hits"]',
+                "for h in hits[:3]:",
+                '    print(h.get("name"), h.get("pFinale"), h.get("url"))',
+            ]
+        )
 
     if method == "Playwright":
         n = selectors["name"] if selectors else "h2, h3"
         p = selectors["price"] if selectors else ".price"
         l = selectors["link"] if selectors else "a[href]"
-        return "\n".join([
-            "from playwright.sync_api import sync_playwright",
-            "from bs4 import BeautifulSoup",
-            f"url = \"{url}\"",
-            "with sync_playwright() as pw:",
-            "    browser = pw.chromium.launch(headless=True, args=[\"--no-sandbox\"])",
-            "    page = browser.new_page(locale=\"it-IT\")",
-            "    page.goto(url, wait_until=\"domcontentloaded\", timeout=20000)",
-            "    page.wait_for_timeout(5000)",
-            "    soup = BeautifulSoup(page.content(), \"html.parser\")",
-            f"    print(len(soup.select(\"{n}\")), len(soup.select(\"{p}\")), len(soup.select(\"{l}\")))",
-            "    browser.close()",
-        ])
+        return "\n".join(
+            [
+                "from playwright.sync_api import sync_playwright",
+                "from bs4 import BeautifulSoup",
+                f'url = "{url}"',
+                "with sync_playwright() as pw:",
+                '    browser = pw.chromium.launch(headless=True, args=["--no-sandbox"])',
+                '    page = browser.new_page(locale="it-IT")',
+                '    page.goto(url, wait_until="domcontentloaded", timeout=20000)',
+                "    page.wait_for_timeout(5000)",
+                '    soup = BeautifulSoup(page.content(), "html.parser")',
+                f'    print(len(soup.select("{n}")), len(soup.select("{p}")), len(soup.select("{l}")))',
+                "    browser.close()",
+            ]
+        )
 
     n = selectors["name"] if selectors else "h2 a, h3 a"
     p = selectors["price"] if selectors else ".price"
     l = selectors["link"] if selectors else "a[href]"
-    return "\n".join([
-        "import requests",
-        "from bs4 import BeautifulSoup",
-        f"url = \"{url}\"",
-        "headers = {\"User-Agent\": \"Mozilla/5.0\"}",
-        "r = requests.get(url, headers=headers, timeout=20)",
-        "soup = BeautifulSoup(r.text, \"html.parser\")",
-        f"names = soup.select(\"{n}\")",
-        f"prices = soup.select(\"{p}\")",
-        f"links = soup.select(\"{l}\")",
-        "for n, p, a in zip(names[:5], prices[:5], links[:5]):",
-        "    print(n.get_text(strip=True), p.get_text(strip=True), a.get('href'))",
-    ])
+    return "\n".join(
+        [
+            "import requests",
+            "from bs4 import BeautifulSoup",
+            f'url = "{url}"',
+            'headers = {"User-Agent": "Mozilla/5.0"}',
+            "r = requests.get(url, headers=headers, timeout=20)",
+            'soup = BeautifulSoup(r.text, "html.parser")',
+            f'names = soup.select("{n}")',
+            f'prices = soup.select("{p}")',
+            f'links = soup.select("{l}")',
+            "for n, p, a in zip(names[:5], prices[:5], links[:5]):",
+            "    print(n.get_text(strip=True), p.get_text(strip=True), a.get('href'))",
+        ]
+    )
 
 
 def build_markdown(results: list[dict[str, Any]]) -> str:

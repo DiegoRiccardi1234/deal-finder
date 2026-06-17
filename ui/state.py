@@ -1,17 +1,8 @@
 """ui: ui/state.py"""
+
 from __future__ import annotations
 
-import contextlib
-import csv
-import hashlib
-import io
-import json
-import os
-import random
-import re
-import time
-from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import streamlit as st
 
@@ -36,13 +27,14 @@ try:
 except Exception:
     kb_manager = None  # type: ignore[assignment]
 
-from offerte_tech import Offerta, cerca_offerte, parse_search_intent, parse_comparison_query
 
 try:
     from search_history import load_history, save_search as _save_search
 except ImportError:
+
     def load_history() -> list[dict[str, Any]]:
         return []
+
     def _save_search(**kw: Any) -> None:
         return None
 
@@ -59,7 +51,17 @@ def _init_state() -> None:
         "ultimo_prezzo_min": 0,
         "ultimo_prezzo_max": 800,
         "ultimo_top_n": 20,
-        "fonti_selezionate": ["Amazon", "eBay", "Vinted", "Euronics", "MediaWorld", "Unieuro", "Wallapop", "Comet", "Expert"],
+        "fonti_selezionate": [
+            "Amazon",
+            "eBay",
+            "Vinted",
+            "Euronics",
+            "MediaWorld",
+            "Unieuro",
+            "Wallapop",
+            "Comet",
+            "Expert",
+        ],
         "price_min_input": 0,
         "budget_max_input": 800,
         "price_range_slider": (0, 800),
@@ -144,5 +146,3 @@ def _sync_from_slider() -> None:
     min_value, max_value = st.session_state.get("price_range_slider", (0, 800))
     st.session_state["price_min_input"] = int(min_value)
     st.session_state["budget_max_input"] = int(max_value)
-
-

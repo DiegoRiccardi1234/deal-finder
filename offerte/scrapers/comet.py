@@ -1,21 +1,11 @@
 """offerte: offerte/scrapers/comet.py"""
+
 from __future__ import annotations
 
-import base64
 import json
 import math
-import os
-import random
-import re
-import sys
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
-from typing import Callable, Optional
-from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 
 import requests
-from bs4 import BeautifulSoup
 
 try:
     from cerebras.cloud.sdk import Cerebras
@@ -34,10 +24,8 @@ except Exception:
 _CEREBRAS_MODEL_FALLBACK = "llama-3.3-70b"
 from offerte._constants import *  # noqa: F401,F403
 from offerte.models import Offerta
-from offerte.http import fetch_with_retry, get_headers, _random_delay
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import is_relevant
-from offerte.scrapers._base import _get_ebay_token
 
 # SCRAPER — comet.it  (Algolia API)
 # ===========================================================================
@@ -45,10 +33,11 @@ _COMET_ALGOLIA_URL = "https://mvk2s77iyi-dsn.algolia.net/1/indexes/*/queries"
 _COMET_ALGOLIA_APP_ID = "MVK2S77IYI"
 _COMET_ALGOLIA_API_KEY = "f7f4f516742fcb4597c1e71641f7d0ed"
 
+
 def scrape_comet(
     query: str,
     prezzo_min: float,
-    budget_max: Optional[float],
+    budget_max: float | None,
     query_tokens: list[str],
 ) -> list[Offerta]:
     """
@@ -58,16 +47,22 @@ def scrape_comet(
         App ID: MVK2S77IYI  |  Index: products  |  Filter: visible=1
         Hit fields: name, pFinale (prezzo finale), url (assoluto), image (assoluto)
     """
-    print(f"\n🔍 Cerco su Comet.it: \"{query}\"")
+    print(f'\n🔍 Cerco su Comet.it: "{query}"')
     risultati: list[Offerta] = []
     try:
-        payload = json.dumps({"requests": [{
-            "indexName": "products",
-            "query": query,
-            "hitsPerPage": 40,
-            "page": 0,
-            "filters": "visible=1",
-        }]})
+        payload = json.dumps(
+            {
+                "requests": [
+                    {
+                        "indexName": "products",
+                        "query": query,
+                        "hitsPerPage": 40,
+                        "page": 0,
+                        "filters": "visible=1",
+                    }
+                ]
+            }
+        )
         headers = {
             "Content-Type": "application/json",
             "x-algolia-api-key": _COMET_ALGOLIA_API_KEY,
@@ -100,10 +95,17 @@ def scrape_comet(
                 if not link:
                     continue
                 img_url = str(hit.get("image") or "").strip()
-                risultati.append(Offerta(
-                    nome=nome, prezzo=prezzo, negozio="Comet",
-                    link=link, fonte="comet.it", spedizione="n.d.", immagine=img_url,
-                ))
+                risultati.append(
+                    Offerta(
+                        nome=nome,
+                        prezzo=prezzo,
+                        negozio="Comet",
+                        link=link,
+                        fonte="comet.it",
+                        spedizione="n.d.",
+                        immagine=img_url,
+                    )
+                )
             except (AttributeError, TypeError, ValueError, KeyError):
                 continue
     except requests.HTTPError as exc:
@@ -112,5 +114,3 @@ def scrape_comet(
     except Exception as exc:
         print(f"    ❌ Comet.it: errore inatteso → {exc}")
     return risultati
-
-

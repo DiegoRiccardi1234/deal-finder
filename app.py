@@ -5,26 +5,24 @@ Le funzioni helper sono nel package `ui/`. Questo file contiene:
 - gate auth
 - orchestrazione top-level del rendering (presearch, search, comparison)
 """
+
 """Pagina Tool Streamlit per Trova Prezzi."""
-import contextlib
-import csv
-import hashlib
-import io
-import json
 import os
-import random
 import re
 import time
-from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 import streamlit as st
 from _shared import load_css, render_nav
+
 try:
     from cerebras.cloud.sdk import Cerebras
 except Exception:
     Cerebras = None
 try:
-    from offerte.ai import get_best_model as _get_best_model, cerebras_chat_with_retry as _cerebras_chat_lib
+    from offerte.ai import (
+        get_best_model as _get_best_model,
+        cerebras_chat_with_retry as _cerebras_chat_lib,
+    )
 except Exception:
     _get_best_model = None  # type: ignore[assignment]
     _cerebras_chat_lib = None  # type: ignore[assignment]
@@ -34,7 +32,7 @@ try:
 except Exception:
     kb_manager = None  # type: ignore[assignment]
 try:
-    from offerte_tech import Offerta, cerca_offerte, parse_search_intent, parse_comparison_query
+    from offerte_tech import Offerta  # import-availability guard per offerte_tech
 except ImportError as _e:
     st.error(
         f"❌ Impossibile importare offerte_tech.py: {_e}\n\n"
@@ -45,23 +43,26 @@ except ImportError as _e:
 try:
     from search_history import load_history, save_search as _save_search
 except ImportError:
+
     def load_history() -> list[dict[str, Any]]:
         return []
 
     def _save_search(**kw: Any) -> None:
         return None
+
+
 # Helper modulari
 from ui.ai_client import (
-    _MockCerebrasClient, _MockChat, _MockChatCompletions,
-    _MockCompletionChoice, _MockCompletionMessage, _MockCompletionResponse,
-    _cerebras_chat_with_retry, _extract_json_object,
-    _get_cerebras_api_key, _get_cerebras_client, _is_test_mode,
+    _get_cerebras_api_key,
+    _get_cerebras_client,
 )
 from ui.auth import (
-    _get_client_fingerprint, _is_client_authenticated,
-    _load_auth_sessions, _persist_client_auth, _save_auth_sessions,
+    _get_client_fingerprint,
+    _is_client_authenticated,
+    _persist_client_auth,
 )
-from ui.cards import _render_offerta_card, _render_results_grid, _render_specs_grid
+from ui.cards import _render_results_grid, _render_specs_grid
+
 try:
     import watchlist
     import price_history
@@ -69,29 +70,30 @@ except Exception:
     watchlist = None  # type: ignore[assignment]
     price_history = None  # type: ignore[assignment]
 from ui.comparison import (
-    _extract_comparison_spec_keys, _render_comparison_board,
-    _render_manual_comparison_matrix, _run_comparison_search,
-    _spec_value_for_key,
+    _render_comparison_board,
+    _render_manual_comparison_matrix,
+    _run_comparison_search,
 )
 from ui.export import (
-    _offerte_to_copy_text, _offerte_to_csv_bytes, _offerte_to_records,
-    _specs_from_name, _summarize_specs,
+    _offerte_to_copy_text,
 )
 from ui.presearch import (
-    _apply_presearch_result, _infer_categoria_from_query,
-    _presearch_fallback, _reset_presearch_chat, _run_presearch_step,
-    _sanitize_presearch_payload,
+    _reset_presearch_chat,
+    _run_presearch_step,
 )
 from ui.recommendation import (
-    _build_comparison_payload, _build_products_payload, _call_final_recommendation,
+    _call_final_recommendation,
 )
 from ui.search import _run_search
-from ui.sources import _render_source_status_monitor, _status_rows_for_sources
+from ui.sources import _render_source_status_monitor
 from ui.state import (
-    _flush_pending_price_sync, _format_price, _init_state,
-    _queue_price_sync, _sync_from_numbers, _sync_from_slider,
+    _flush_pending_price_sync,
+    _format_price,
+    _init_state,
+    _queue_price_sync,
+    _sync_from_numbers,
+    _sync_from_slider,
 )
-from ui.test_mode import _build_mock_results
 
 
 st.set_page_config(
@@ -112,7 +114,10 @@ _APP_TEST_MODE = os.environ.get("APP_TEST_MODE", "0").strip() == "1"
 if _APP_PASSWORD and not _APP_TEST_MODE:
     _now = time.time()
     _fingerprint = _get_client_fingerprint()
-    _session_ok = bool(st.session_state.get("_authenticated") and (_now - float(st.session_state.get("_auth_time", 0))) < 3600)
+    _session_ok = bool(
+        st.session_state.get("_authenticated")
+        and (_now - float(st.session_state.get("_auth_time", 0))) < 3600
+    )
     _persistent_ok = _is_client_authenticated(_fingerprint, _now)
     _is_valid = _session_ok or _persistent_ok
 
@@ -131,7 +136,9 @@ if _APP_PASSWORD and not _APP_TEST_MODE:
                 "<p class='auth-sub'>Inserisci la password per aprire la dashboard.</p>",
                 unsafe_allow_html=True,
             )
-            _pwd = st.text_input("Password", type="password", placeholder="Password...", label_visibility="collapsed")
+            _pwd = st.text_input(
+                "Password", type="password", placeholder="Password...", label_visibility="collapsed"
+            )
             if st.button("Accedi", use_container_width=True, type="primary"):
                 if _pwd == _APP_PASSWORD:
                     st.session_state["_authenticated"] = True
@@ -147,6 +154,7 @@ _init_state()
 _get_cerebras_api_key()  # bootstrap secret provider → env var
 # Selettore provider AI: solo tra quelli con API key configurata
 from offerte import providers as _providers
+
 _configured_ai = _providers.configured_providers()
 if _configured_ai:
     _cur_ai = _providers.active_provider()
@@ -162,6 +170,7 @@ if _configured_ai:
     if _sel_ai != _providers.active_provider():
         os.environ["AI_PROVIDER"] = _sel_ai
         from offerte.ai import invalidate_model
+
         invalidate_model()
 api_key = _get_cerebras_api_key()
 cerebras_client = _get_cerebras_client(api_key)
@@ -179,13 +188,40 @@ _presearch_done = st.session_state.get("presearch_ready", False)
 query_input: str = ""
 top_n_input: int = int(st.session_state.get("ultimo_top_n", 10))
 condizione: str = st.session_state.get("condizione", "tutti")
-_fonti_options = ["Amazon", "eBay", "Vinted", "Euronics", "MediaWorld", "Unieuro", "Wallapop", "Comet", "Expert", "AliExpress"]
-_fonti_def = ["Amazon", "eBay", "Vinted", "Euronics", "MediaWorld", "Unieuro", "Wallapop", "Comet", "Expert"]
+_fonti_options = [
+    "Amazon",
+    "eBay",
+    "Vinted",
+    "Euronics",
+    "MediaWorld",
+    "Unieuro",
+    "Wallapop",
+    "Comet",
+    "Expert",
+    "AliExpress",
+]
+_fonti_def = [
+    "Amazon",
+    "eBay",
+    "Vinted",
+    "Euronics",
+    "MediaWorld",
+    "Unieuro",
+    "Wallapop",
+    "Comet",
+    "Expert",
+]
 fonti_selezionate: list[str] = list(st.session_state.get("fonti_selezionate", _fonti_def))
 _fonti_map = {
-    "Amazon": "amazon", "eBay": "ebay", "Vinted": "vinted",
-    "Euronics": "euronics", "Unieuro": "unieuro", "MediaWorld": "mediaworld",
-    "Wallapop": "wallapop", "Comet": "comet", "Expert": "expert",
+    "Amazon": "amazon",
+    "eBay": "ebay",
+    "Vinted": "vinted",
+    "Euronics": "euronics",
+    "Unieuro": "unieuro",
+    "MediaWorld": "mediaworld",
+    "Wallapop": "wallapop",
+    "Comet": "comet",
+    "Expert": "expert",
     "AliExpress": "aliexpress",
 }
 fonti_backend: list[str] = [_fonti_map[f] for f in fonti_selezionate if f in _fonti_map]
@@ -216,7 +252,17 @@ if _history:
                 _queue_price_sync(int(entry.get("budget_min", 0)), int(bmax or 800))
                 st.rerun()
 if not _presearch_done:
-    sources = ["Amazon", "eBay", "Vinted", "Euronics", "Unieuro", "MediaWorld", "Wallapop", "Comet", "Expert"]
+    sources = [
+        "Amazon",
+        "eBay",
+        "Vinted",
+        "Euronics",
+        "Unieuro",
+        "MediaWorld",
+        "Wallapop",
+        "Comet",
+        "Expert",
+    ]
     st.markdown(
         "<div class='source-strip'><span class='source-strip-label'>Monitoraggio in tempo reale su</span>"
         + "".join(f"<span>{s}</span>" for s in sources)
@@ -241,7 +287,9 @@ if not _presearch_done:
         st.markdown("</div>", unsafe_allow_html=True)
 
     if cerebras_client is None:
-        st.info("💡 Per la chat assistita imposta CEREBRAS_API_KEY in secrets o variabile ambiente.")
+        st.info(
+            "💡 Per la chat assistita imposta CEREBRAS_API_KEY in secrets o variabile ambiente."
+        )
 
     c_left, c_mid, c_right = st.columns([1, 6, 1])
     with c_mid:
@@ -253,7 +301,9 @@ if not _presearch_done:
     st.divider()
 
     with st.expander("🔧 Cerca senza chat (inserimento manuale)", expanded=False):
-        st.caption("Per risultati migliori usa la chat sopra. Qui puoi fare una ricerca diretta con query breve (3–6 parole).")
+        st.caption(
+            "Per risultati migliori usa la chat sopra. Qui puoi fare una ricerca diretta con query breve (3–6 parole)."
+        )
         query_input = st.text_input(
             "Query prodotto",
             placeholder="es. notebook 14 pollici",
@@ -264,29 +314,61 @@ if not _presearch_done:
         if query_input:
             _pc = st.columns(2, gap="medium")
             with _pc[0]:
-                st.number_input("Prezzo minimo (€)", min_value=0, max_value=5000, step=10,
-                                key="price_min_input", on_change=_sync_from_numbers)
+                st.number_input(
+                    "Prezzo minimo (€)",
+                    min_value=0,
+                    max_value=5000,
+                    step=10,
+                    key="price_min_input",
+                    on_change=_sync_from_numbers,
+                )
             with _pc[1]:
-                st.number_input("Budget massimo (€)", min_value=0, max_value=5000, step=10,
-                                key="budget_max_input", on_change=_sync_from_numbers)
-            st.slider("Range prezzo", min_value=0, max_value=5000, step=10,
-                      key="price_range_slider", on_change=_sync_from_slider)
+                st.number_input(
+                    "Budget massimo (€)",
+                    min_value=0,
+                    max_value=5000,
+                    step=10,
+                    key="budget_max_input",
+                    on_change=_sync_from_numbers,
+                )
+            st.slider(
+                "Range prezzo",
+                min_value=0,
+                max_value=5000,
+                step=10,
+                key="price_range_slider",
+                on_change=_sync_from_slider,
+            )
             _lc = st.columns([1, 1.15], gap="medium")
             with _lc[0]:
-                top_n_input = st.number_input("Risultati", min_value=1, max_value=50,
-                                              value=int(st.session_state.get("ultimo_top_n", 10)), step=1)
+                top_n_input = st.number_input(
+                    "Risultati",
+                    min_value=1,
+                    max_value=50,
+                    value=int(st.session_state.get("ultimo_top_n", 10)),
+                    step=1,
+                )
             with _lc[1]:
-                _cond_m = st.radio("Condizione", ["Tutti", "Nuovo", "Usato"], horizontal=True,
-                                   index={"tutti": 0, "nuovo": 1, "usato": 2}.get(
-                                       st.session_state.get("condizione", "tutti"), 0))
+                _cond_m = st.radio(
+                    "Condizione",
+                    ["Tutti", "Nuovo", "Usato"],
+                    horizontal=True,
+                    index={"tutti": 0, "nuovo": 1, "usato": 2}.get(
+                        st.session_state.get("condizione", "tutti"), 0
+                    ),
+                )
                 condizione = _cond_m.lower()
-            fonti_selezionate = st.multiselect("Fonti", _fonti_options,
-                                               default=st.session_state.get("fonti_selezionate", _fonti_def),
-                                               key="fonti_ms_manual")
+            fonti_selezionate = st.multiselect(
+                "Fonti",
+                _fonti_options,
+                default=st.session_state.get("fonti_selezionate", _fonti_def),
+                key="fonti_ms_manual",
+            )
             st.session_state["fonti_selezionate"] = fonti_selezionate
             fonti_backend = [_fonti_map[f] for f in fonti_selezionate if f in _fonti_map]
-            avvia_ricerca = st.button("🔍 Cerca offerte", type="primary", width="stretch",
-                                      key="btn_manual_cerca")
+            avvia_ricerca = st.button(
+                "🔍 Cerca offerte", type="primary", width="stretch", key="btn_manual_cerca"
+            )
 
 else:
     # ══════════════════════════ STATO 2: Presearch completata ════════════
@@ -315,44 +397,77 @@ else:
         )
     with _hcol2:
         st.write("")
-        st.button("✏️ Modifica", on_click=_reset_presearch_chat,
-                  help="Torna alla chat per cambiare le preferenze")
+        st.button(
+            "✏️ Modifica",
+            on_click=_reset_presearch_chat,
+            help="Torna alla chat per cambiare le preferenze",
+        )
 
     query_input = _q_opt
 
     price_cols = st.columns(2, gap="medium")
     with price_cols[0]:
-        st.number_input("Prezzo minimo (€)", min_value=0, max_value=5000, step=10,
-                        key="price_min_input", on_change=_sync_from_numbers)
+        st.number_input(
+            "Prezzo minimo (€)",
+            min_value=0,
+            max_value=5000,
+            step=10,
+            key="price_min_input",
+            on_change=_sync_from_numbers,
+        )
     with price_cols[1]:
-        st.number_input("Budget massimo (€)", min_value=0, max_value=5000, step=10,
-                        key="budget_max_input", on_change=_sync_from_numbers)
+        st.number_input(
+            "Budget massimo (€)",
+            min_value=0,
+            max_value=5000,
+            step=10,
+            key="budget_max_input",
+            on_change=_sync_from_numbers,
+        )
 
-    st.slider("Range prezzo sincronizzato", min_value=0, max_value=5000, step=10,
-              key="price_range_slider", on_change=_sync_from_slider)
+    st.slider(
+        "Range prezzo sincronizzato",
+        min_value=0,
+        max_value=5000,
+        step=10,
+        key="price_range_slider",
+        on_change=_sync_from_slider,
+    )
 
     lower_cols = st.columns([1, 1.15], gap="medium")
     with lower_cols[0]:
-        top_n_input = st.number_input("Numero risultati", min_value=1, max_value=50,
-                                      value=int(st.session_state.get("ultimo_top_n", 10)), step=1)
+        top_n_input = st.number_input(
+            "Numero risultati",
+            min_value=1,
+            max_value=50,
+            value=int(st.session_state.get("ultimo_top_n", 10)),
+            step=1,
+        )
     with lower_cols[1]:
         condizione_ui = st.radio(
-            "Condizione", ["Tutti", "Nuovo", "Usato"], horizontal=True,
+            "Condizione",
+            ["Tutti", "Nuovo", "Usato"],
+            horizontal=True,
             index={"tutti": 0, "nuovo": 1, "usato": 2}.get(
-                st.session_state.get("condizione", "tutti"), 0),
+                st.session_state.get("condizione", "tutti"), 0
+            ),
         )
         condizione = condizione_ui.lower()
 
     fonti_selezionate = st.multiselect(
-        "Fonti da consultare", _fonti_options,
+        "Fonti da consultare",
+        _fonti_options,
         default=st.session_state.get("fonti_selezionate", _fonti_def),
     )
     st.session_state["fonti_selezionate"] = fonti_selezionate
     fonti_backend = [_fonti_map[f] for f in fonti_selezionate if f in _fonti_map]
 
-    avvia_ricerca = st.button("🔍 Cerca offerte", type="primary", width="stretch",
-                              disabled=not query_input)
-    st.caption("💬 Puoi affinare la query o il budget scrivendo nell'input in basso prima di cercare.")
+    avvia_ricerca = st.button(
+        "🔍 Cerca offerte", type="primary", width="stretch", disabled=not query_input
+    )
+    st.caption(
+        "💬 Puoi affinare la query o il budget scrivendo nell'input in basso prima di cercare."
+    )
     if kb_manager is not None:
         st.caption(f"🧠 {kb_manager.get_status()}")
 if not st.session_state.get("ricerca_effettuata", False):
@@ -440,14 +555,17 @@ if st.session_state.get("ricerca_effettuata", False):
             _fc1, _fc2, _fc3 = st.columns([2, 1, 1])
             _fonti_disp = sorted({o.fonte for o in offerte})
             _filtro_fonti = _fc1.multiselect(
-                "Fonte", options=_fonti_disp, key="filtro_fonti_tabella",
+                "Fonte",
+                options=_fonti_disp,
+                key="filtro_fonti_tabella",
                 placeholder="Tutte le fonti...",
             )
             _p_min_r = float(min(o.prezzo for o in offerte))
             _p_max_r = float(max(o.prezzo for o in offerte))
             _saved_range = st.session_state.get("filtro_prezzo_range_tabella")
             if (
-                isinstance(_saved_range, (list, tuple)) and len(_saved_range) == 2
+                isinstance(_saved_range, (list, tuple))
+                and len(_saved_range) == 2
                 and _p_min_r <= float(_saved_range[0]) <= _p_max_r
                 and float(_saved_range[0]) <= float(_saved_range[1]) <= _p_max_r
             ):
@@ -457,26 +575,34 @@ if st.session_state.get("ricerca_effettuata", False):
             if _p_min_r < _p_max_r:
                 st.session_state["filtro_prezzo_range_tabella"] = _init_range
                 _filtro_prezzo: tuple[float, float] = _fc2.slider(
-                    "Prezzo €", min_value=_p_min_r, max_value=_p_max_r,
-                    key="filtro_prezzo_range_tabella", format="€%.0f",
+                    "Prezzo €",
+                    min_value=_p_min_r,
+                    max_value=_p_max_r,
+                    key="filtro_prezzo_range_tabella",
+                    format="€%.0f",
                 )
             else:
                 _filtro_prezzo = (_p_min_r, _p_max_r)
             _filtro_cond = _fc3.radio(
-                "Condizione", ["tutti", "nuovo", "usato"],
-                key="filtro_condizione_tabella", horizontal=True,
+                "Condizione",
+                ["tutti", "nuovo", "usato"],
+                key="filtro_condizione_tabella",
+                horizontal=True,
             )
 
         def _infer_cond_offerta(o: Offerta) -> str:
             if o.fonte in ("vinted.it",):
                 return "usato"
             _nl = o.nome.lower()
-            if any(_k in _nl for _k in ("usato", "ricondizionato", "refurbished", "rigenerato", "used")):
+            if any(
+                _k in _nl for _k in ("usato", "ricondizionato", "refurbished", "rigenerato", "used")
+            ):
                 return "usato"
             return "nuovo"
 
         offerte_vis = [
-            o for o in offerte
+            o
+            for o in offerte
             if (not _filtro_fonti or o.fonte in _filtro_fonti)
             and _filtro_prezzo[0] <= o.prezzo <= _filtro_prezzo[1]
             and (_filtro_cond == "tutti" or _infer_cond_offerta(o) == _filtro_cond)
@@ -489,7 +615,9 @@ if st.session_state.get("ricerca_effettuata", False):
         _n_vis, _n_tot = len(offerte_vis), len(offerte)
         _label_count = f"{_n_vis}/{_n_tot}" if _n_vis < _n_tot else str(_n_vis)
 
-        st.subheader(f"{_label_count} offerte trovate per \u201c{st.session_state.get('ultima_query', '')}\u201d")
+        st.subheader(
+            f"{_label_count} offerte trovate per \u201c{st.session_state.get('ultima_query', '')}\u201d"
+        )
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Risultati", _label_count)
         m2.metric("Prezzo piu basso", _format_price(prezzo_min_ris))
@@ -518,7 +646,9 @@ if st.session_state.get("ricerca_effettuata", False):
         with _ins_r:
             _fonti_selected_ui = list(st.session_state.get("fonti_selezionate", _fonti_def))
             _fonti_selected_backend = [_fonti_map[f] for f in _fonti_selected_ui if f in _fonti_map]
-            _render_source_status_monitor(offerte, _fonti_selected_backend, st.session_state.get("log_ricerca", ""))
+            _render_source_status_monitor(
+                offerte, _fonti_selected_backend, st.session_state.get("log_ricerca", "")
+            )
 
         if not offerte_vis:
             st.info("ℹ️ Nessun risultato con i filtri correnti. Modifica o rimuovi i filtri.")
@@ -565,8 +695,10 @@ if st.session_state.get("ricerca_effettuata", False):
                 )
                 if _wl_add and st.button("⭐ Aggiungi ai preferiti", key="watchlist_save_btn"):
                     _added = sum(
-                        1 for _o in offerte_vis
-                        if _o.link in _wl_add and watchlist.add_item(_o.nome, _o.prezzo, _o.link, _o.fonte)
+                        1
+                        for _o in offerte_vis
+                        if _o.link in _wl_add
+                        and watchlist.add_item(_o.nome, _o.prezzo, _o.link, _o.fonte)
                     )
                     st.toast(f"⭐ {_added} prodotto/i salvato/i nei preferiti")
                 _wl_items = watchlist.load()
@@ -574,7 +706,11 @@ if st.session_state.get("ricerca_effettuata", False):
                     with st.expander(f"⭐ Preferiti salvati ({len(_wl_items)})", expanded=False):
                         for _wi in _wl_items:
                             _wc1, _wc2 = st.columns([6, 1])
-                            _wprezzo = _format_price(_wi["prezzo"]) if _wi.get("prezzo") is not None else "n.d."
+                            _wprezzo = (
+                                _format_price(_wi["prezzo"])
+                                if _wi.get("prezzo") is not None
+                                else "n.d."
+                            )
                             _wc1.markdown(
                                 f"[{_wi.get('nome', '')[:70]}]({_wi.get('link', '')}) — "
                                 f"{_wprezzo} · {_wi.get('fonte', '')}"
@@ -585,6 +721,7 @@ if st.session_state.get("ricerca_effettuata", False):
 
             # ── Storico prezzi Amazon (CamelCamelCamel) ────────────────────
             import re as _re
+
             _amazon_asin_pairs: list = []
             for _ao in offerte_vis:
                 if "amazon.it" in _ao.link.lower():
@@ -617,18 +754,26 @@ if st.session_state.get("ricerca_effettuata", False):
         _offerte_export = offerte_vis if offerte_vis else offerte
         _copy_query = st.session_state.get("ultima_query", "")
         _copy_text = _offerte_to_copy_text(_offerte_export, _copy_query)
-        with st.expander(f"📋 Copia risultati per AI ({len(_offerte_export)} prodotti)", expanded=False):
-            st.caption("Copia il testo qui sotto e incollalo in Claude, ChatGPT o altra AI per un'analisi approfondita.")
+        with st.expander(
+            f"📋 Copia risultati per AI ({len(_offerte_export)} prodotti)", expanded=False
+        ):
+            st.caption(
+                "Copia il testo qui sotto e incollalo in Claude, ChatGPT o altra AI per un'analisi approfondita."
+            )
             st.code(_copy_text, language=None)
 
         st.write("")
         with st.expander("💬 Consiglio AI", expanded=True):
-            st.caption("Chiedi quale prodotto ti conviene tra quelli trovati, in base al tuo uso e budget.")
+            st.caption(
+                "Chiedi quale prodotto ti conviene tra quelli trovati, in base al tuo uso e budget."
+            )
             if cerebras_client is None:
                 st.info("💡 Aggiungi CEREBRAS_API_KEY per ottenere la raccomandazione finale AI.")
             else:
                 # Auto top-3 al primo caricamento (al massimo 1 tentativo per ricerca)
-                if not st.session_state.get("final_chat_messages") and not st.session_state.get("auto_recommend_tried"):
+                if not st.session_state.get("final_chat_messages") and not st.session_state.get(
+                    "auto_recommend_tried"
+                ):
                     st.session_state["auto_recommend_tried"] = True
                     with st.spinner("🤖 Analizzo i risultati per la top 3…"):
                         try:
@@ -638,8 +783,10 @@ if st.session_state.get("ricerca_effettuata", False):
                             )
                             auto_messages = [{"role": "user", "content": auto_query}]
                             risposta_auto = _call_final_recommendation(
-                                cerebras_client, offerte,
-                                st.session_state.get("preferenze_utente", {}), auto_messages,
+                                cerebras_client,
+                                offerte,
+                                st.session_state.get("preferenze_utente", {}),
+                                auto_messages,
                             )
                             if risposta_auto:
                                 st.session_state["final_chat_messages"] = [
@@ -660,9 +807,13 @@ if st.session_state.get("ricerca_effettuata", False):
                     with st.chat_message(role):
                         st.write(message.get("content", ""))
 
-                final_prompt = st.chat_input("Esempio: quale mi consigli per uso quotidiano?", key="final_advice_input")
+                final_prompt = st.chat_input(
+                    "Esempio: quale mi consigli per uso quotidiano?", key="final_advice_input"
+                )
                 if final_prompt:
-                    st.session_state["final_chat_messages"].append({"role": "user", "content": final_prompt})
+                    st.session_state["final_chat_messages"].append(
+                        {"role": "user", "content": final_prompt}
+                    )
                     with st.chat_message("user"):
                         st.write(final_prompt)
                     with st.spinner("🤖 Sto confrontando i prodotti..."):
@@ -675,12 +826,16 @@ if st.session_state.get("ricerca_effettuata", False):
                             )
                             if not risposta:
                                 raise RuntimeError("Risposta vuota dal modello")
-                            st.session_state["final_chat_messages"].append({"role": "assistant", "content": risposta})
+                            st.session_state["final_chat_messages"].append(
+                                {"role": "assistant", "content": risposta}
+                            )
                             st.rerun()
                         except Exception as exc:
                             _exc_s = str(exc).lower()
                             if "429" in _exc_s or "too_many" in _exc_s or "queue" in _exc_s:
-                                st.warning("⚠️ Servizio AI momentaneamente sovraccarico, riprova tra qualche secondo.")
+                                st.warning(
+                                    "⚠️ Servizio AI momentaneamente sovraccarico, riprova tra qualche secondo."
+                                )
                             else:
                                 st.error(f"❌ Errore AI: {exc}")
 

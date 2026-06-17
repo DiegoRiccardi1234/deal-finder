@@ -1,21 +1,9 @@
 """offerte: offerte/scrapers/vinted.py"""
+
 from __future__ import annotations
 
-import base64
-import json
 import math
-import os
-import random
-import re
-import sys
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
-from typing import Callable, Optional
-from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 
-import requests
-from bs4 import BeautifulSoup
 
 try:
     from cerebras.cloud.sdk import Cerebras
@@ -34,15 +22,14 @@ except Exception:
 _CEREBRAS_MODEL_FALLBACK = "llama-3.3-70b"
 from offerte._constants import *  # noqa: F401,F403
 from offerte.models import Offerta
-from offerte.http import fetch_with_retry, get_headers, _random_delay
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import is_relevant
-from offerte.scrapers._base import _get_ebay_token
+
 
 def scrape_vinted(
     query: str,
     prezzo_min: float,
-    budget_max: Optional[float],
+    budget_max: float | None,
     query_tokens: list[str],
     condizione: str = "tutti",
 ) -> list[Offerta]:
@@ -50,7 +37,7 @@ def scrape_vinted(
     if condizione == "nuovo":
         print("\nℹ️ Vinted mostra solo articoli usati — salto per condizione=nuovo")
         return []
-    print(f"\n🔍 Cerco su Vinted.it: \"{query}\"")
+    print(f'\n🔍 Cerco su Vinted.it: "{query}"')
     risultati: list[Offerta] = []
     if VintedScraper is None:
         print("    ⚠️  Vinted.it: libreria vinted-scraper non installata.")
@@ -74,14 +61,19 @@ def scrape_vinted(
                 link = str(item.url)
                 foto = item.photo
                 img_url = foto.get("url", "") if isinstance(foto, dict) else ""
-                risultati.append(Offerta(
-                    nome=nome, prezzo=prezzo, negozio="Vinted",
-                    link=link, fonte="vinted.it", spedizione="n.d.", immagine=img_url,
-                ))
+                risultati.append(
+                    Offerta(
+                        nome=nome,
+                        prezzo=prezzo,
+                        negozio="Vinted",
+                        link=link,
+                        fonte="vinted.it",
+                        spedizione="n.d.",
+                        immagine=img_url,
+                    )
+                )
             except (AttributeError, TypeError, ValueError):
                 continue
     except Exception as exc:
         print(f"    ❌ Vinted.it: errore → {exc}")
     return risultati
-
-

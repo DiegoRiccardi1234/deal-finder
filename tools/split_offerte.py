@@ -24,6 +24,7 @@ Crea:
 
 Sostituisce offerte_tech.py con uno shim sottile.
 """
+
 from __future__ import annotations
 
 import ast
@@ -175,10 +176,7 @@ LOCAL_IMPORTS: dict[str, str] = {
         + "from offerte.models import Offerta\n"
         + "from offerte.parsing import *  # noqa: F401,F403\n"
     ),
-    "offerte/dedup.py": (
-        _STAR_FROM_CONSTANTS
-        + "from offerte.models import Offerta\n"
-    ),
+    "offerte/dedup.py": (_STAR_FROM_CONSTANTS + "from offerte.models import Offerta\n"),
     "offerte/export.py": "from offerte.models import Offerta\n",
     "offerte/orchestrator.py": (
         _STAR_FROM_CONSTANTS
@@ -208,8 +206,7 @@ LOCAL_IMPORTS: dict[str, str] = {
         + "from offerte.orchestrator import cerca_offerte\n"
     ),
     "offerte/scrapers/_base.py": (
-        _STAR_FROM_CONSTANTS
-        + "from offerte.http import fetch_with_retry\n"
+        _STAR_FROM_CONSTANTS + "from offerte.http import fetch_with_retry\n"
     ),
 }
 
@@ -222,6 +219,7 @@ SCRAPER_LOCAL_IMPORTS = (
     + "from offerte.filters import is_relevant\n"
     + "from offerte.scrapers._base import _get_ebay_token\n"
 )
+
 
 # --------------------------------------------------------------------------- #
 def parse_source() -> tuple[list[str], dict[str, tuple[int, int]]]:
@@ -243,7 +241,7 @@ def extract_block(lines: list[str], start: int, end: int) -> str:
     return "".join(lines[start - 1 : end - 1])
 
 
-CLI_MAIN_TAIL = '''
+CLI_MAIN_TAIL = """
 
 def main() -> None:
     parser = _build_parser()
@@ -267,7 +265,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-'''
+"""
 
 
 def build_module(target: str, items: list[tuple], lines: list[str], defs: dict) -> str:
@@ -277,12 +275,7 @@ def build_module(target: str, items: list[tuple], lines: list[str], defs: dict) 
     # try-blocks che noi vogliamo solo lì. Invece, _constants HA bisogno solo di
     # import standard.
     if target == "offerte/_constants.py":
-        parts.append(
-            "from __future__ import annotations\n"
-            "import os\n"
-            "import random\n"
-            "import re\n"
-        )
+        parts.append("from __future__ import annotations\nimport os\nimport random\nimport re\n")
     else:
         parts.append(COMMON_IMPORTS)
     if target.startswith("offerte/scrapers/") and target != "offerte/scrapers/_base.py":

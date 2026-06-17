@@ -4,6 +4,7 @@ Sorgente unica per le costanti tunabili condivise. Volutamente senza import
 interni (solo stdlib) per poter essere importato da qualsiasi modulo di
 `offerte/` e `ui/` senza rischio di import circolari.
 """
+
 from __future__ import annotations
 
 import os
@@ -19,13 +20,17 @@ VERSION: str = "1.1.0"
 # l'API non è raggiungibile (client assente, niente API key, errore di rete) e
 # quindi non si può interrogare la lista. Override del primo via env
 # CEREBRAS_FALLBACK_MODEL. NB: llama-3.3-70b è stato dismesso da Cerebras (2026-06).
-CEREBRAS_FALLBACK_MODELS: tuple[str, ...] = tuple(dict.fromkeys(
-    m for m in (
-        os.environ.get("CEREBRAS_FALLBACK_MODEL", "").strip(),
-        "zai-glm-4.7",
-        "gpt-oss-120b",
-    ) if m
-))
+CEREBRAS_FALLBACK_MODELS: tuple[str, ...] = tuple(
+    dict.fromkeys(
+        m
+        for m in (
+            os.environ.get("CEREBRAS_FALLBACK_MODEL", "").strip(),
+            "zai-glm-4.7",
+            "gpt-oss-120b",
+        )
+        if m
+    )
+)
 
 # Compat: primo candidato come singolo default per i consumatori legacy.
 DEFAULT_CEREBRAS_MODEL: str = CEREBRAS_FALLBACK_MODELS[0]

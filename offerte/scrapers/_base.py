@@ -1,21 +1,11 @@
 """offerte: offerte/scrapers/_base.py"""
+
 from __future__ import annotations
 
 import base64
-import json
-import math
-import os
-import random
-import re
-import sys
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
-from typing import Callable, Optional
-from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 
 import requests
-from bs4 import BeautifulSoup
 
 try:
     from cerebras.cloud.sdk import Cerebras
@@ -33,7 +23,7 @@ except Exception:
 
 _CEREBRAS_MODEL_FALLBACK = "llama-3.3-70b"
 from offerte._constants import *  # noqa: F401,F403
-from offerte.http import fetch_with_retry
+
 
 def _get_ebay_token(app_id: str, cert_id: str) -> str:
     """Ottiene e cachea un access token eBay OAuth2 tramite client credentials."""
@@ -43,7 +33,7 @@ def _get_ebay_token(app_id: str, cert_id: str) -> str:
     if cached_token and now < cached_expiry - 60:
         return cached_token
 
-    credentials = f"{app_id}:{cert_id}".encode("utf-8")
+    credentials = f"{app_id}:{cert_id}".encode()
     headers = {
         "Authorization": f"Basic {base64.b64encode(credentials).decode('ascii')}",
         "Content-Type": "application/x-www-form-urlencoded",
@@ -83,4 +73,3 @@ _WALLAPOP_SECTION_URL = "https://api.wallapop.com/api/v3/search/section"
 _COMET_ALGOLIA_URL = "https://mvk2s77iyi-dsn.algolia.net/1/indexes/*/queries"
 _COMET_ALGOLIA_APP_ID = "MVK2S77IYI"
 _COMET_ALGOLIA_API_KEY = "f7f4f516742fcb4597c1e71641f7d0ed"
-

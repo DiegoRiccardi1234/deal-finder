@@ -6,6 +6,7 @@ Esclude file di sviluppo/runtime e mette tutto sotto una cartella radice
 
 Uso: python tools/build_release_zip.py <versione>   (es. v1.1.0)
 """
+
 from __future__ import annotations
 
 import os
@@ -16,13 +17,24 @@ VERSION = sys.argv[1] if len(sys.argv) > 1 else "dev"
 NAME = f"trova-prezzi-{VERSION}"
 
 EXCLUDE_DIRS = {
-    ".git", ".github", "tests", "tools", "docs", ".venv", "__pycache__",
-    "dist", ".playwright-mcp", ".pytest_cache", ".agents", ".claude", "node_modules",
+    ".git",
+    ".github",
+    "tests",
+    "tools",
+    "docs",
+    ".venv",
+    "__pycache__",
+    "dist",
+    ".playwright-mcp",
+    ".pytest_cache",
+    ".agents",
+    ".claude",
+    "node_modules",
 }
 
 
 def _skip(rel: str, fname: str) -> bool:
-    if rel == ".streamlit/secrets.toml":          # mai includere i secret reali
+    if rel == ".streamlit/secrets.toml":  # mai includere i secret reali
         return True
     if rel.startswith("data/") and rel.endswith(".json"):  # dati runtime
         return True

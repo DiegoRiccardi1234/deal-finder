@@ -1,18 +1,10 @@
 """offerte: offerte/scrapers/expert.py"""
+
 from __future__ import annotations
 
-import base64
 import json
 import math
-import os
-import random
-import re
-import sys
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
-from typing import Callable, Optional
-from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
+from urllib.parse import quote_plus
 
 import requests
 from bs4 import BeautifulSoup
@@ -34,15 +26,15 @@ except Exception:
 _CEREBRAS_MODEL_FALLBACK = "llama-3.3-70b"
 from offerte._constants import *  # noqa: F401,F403
 from offerte.models import Offerta
-from offerte.http import fetch_with_retry, get_headers, _random_delay
+from offerte.http import fetch_with_retry, get_headers
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import is_relevant
-from offerte.scrapers._base import _get_ebay_token
+
 
 def scrape_expert(
     query: str,
     prezzo_min: float,
-    budget_max: Optional[float],
+    budget_max: float | None,
     query_tokens: list[str],
 ) -> list[Offerta]:
     """
@@ -54,7 +46,7 @@ def scrape_expert(
         Campi item: name, offers.price (str→float), url (assoluto), image (assoluto)
     """
     url = f"https://www.expert.it/it/it/exp/shop/search?terms={quote_plus(query)}"
-    print(f"\n🔍 Cerco su Expert.it: \"{query}\"")
+    print(f'\n🔍 Cerco su Expert.it: "{query}"')
     risultati: list[Offerta] = []
     try:
         headers = get_headers()
@@ -99,10 +91,17 @@ def scrape_expert(
                 if not link:
                     continue
                 img_url = str(item.get("image") or "").strip()
-                risultati.append(Offerta(
-                    nome=nome, prezzo=prezzo, negozio="Expert",
-                    link=link, fonte="expert.it", spedizione="n.d.", immagine=img_url,
-                ))
+                risultati.append(
+                    Offerta(
+                        nome=nome,
+                        prezzo=prezzo,
+                        negozio="Expert",
+                        link=link,
+                        fonte="expert.it",
+                        spedizione="n.d.",
+                        immagine=img_url,
+                    )
+                )
             except (AttributeError, TypeError, ValueError, KeyError):
                 continue
     except requests.HTTPError as exc:
@@ -111,5 +110,3 @@ def scrape_expert(
     except Exception as exc:
         print(f"    ❌ Expert.it: errore inatteso → {exc}")
     return risultati
-
-

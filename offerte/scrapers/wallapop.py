@@ -1,21 +1,10 @@
 """offerte: offerte/scrapers/wallapop.py"""
+
 from __future__ import annotations
 
-import base64
-import json
 import math
-import os
-import random
-import re
-import sys
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
-from typing import Callable, Optional
-from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 
 import requests
-from bs4 import BeautifulSoup
 
 try:
     from cerebras.cloud.sdk import Cerebras
@@ -34,20 +23,20 @@ except Exception:
 _CEREBRAS_MODEL_FALLBACK = "llama-3.3-70b"
 from offerte._constants import *  # noqa: F401,F403
 from offerte.models import Offerta
-from offerte.http import fetch_with_retry, get_headers, _random_delay
+from offerte.http import get_headers
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import is_relevant
-from offerte.scrapers._base import _get_ebay_token
 
 # SCRAPER — wallapop.com
 # ===========================================================================
 _WALLAPOP_COMPONENTS_URL = "https://api.wallapop.com/api/v3/search/components"
 _WALLAPOP_SECTION_URL = "https://api.wallapop.com/api/v3/search/section"
 
+
 def scrape_wallapop(
     query: str,
     prezzo_min: float,
-    budget_max: Optional[float],
+    budget_max: float | None,
     query_tokens: list[str],
     condizione: str = "tutti",
 ) -> list[Offerta]:
@@ -62,7 +51,8 @@ def scrape_wallapop(
         Richiede header x-deviceid (UUID random), x-appversion, mpid.
     """
     import uuid as _uuid
-    print(f"\n🔍 Cerco su Wallapop: \"{query}\"")
+
+    print(f'\n🔍 Cerco su Wallapop: "{query}"')
     risultati: list[Offerta] = []
     _headers = {
         "Accept": "application/json, text/plain, */*",
@@ -77,9 +67,17 @@ def scrape_wallapop(
         "trackinguserid": "-3421950124112390907",
     }
     try:
-        r1 = requests.get(_WALLAPOP_COMPONENTS_URL, params={
-            "keywords": query, "latitude": 41.9028, "longitude": 12.4964, "source": "search_box",
-        }, headers=_headers, timeout=TIMEOUT)
+        r1 = requests.get(
+            _WALLAPOP_COMPONENTS_URL,
+            params={
+                "keywords": query,
+                "latitude": 41.9028,
+                "longitude": 12.4964,
+                "source": "search_box",
+            },
+            headers=_headers,
+            timeout=TIMEOUT,
+        )
         r1.raise_for_status()
 
         search_id = category_id = None
@@ -94,9 +92,13 @@ def scrape_wallapop(
             return risultati
 
         params2: dict = {
-            "keywords": query, "source": "search_box", "search_id": search_id,
-            "latitude": 41.9028, "longitude": 12.4964,
-            "order_by": "most_relevance", "section_type": "organic_search_results",
+            "keywords": query,
+            "source": "search_box",
+            "search_id": search_id,
+            "latitude": 41.9028,
+            "longitude": 12.4964,
+            "order_by": "most_relevance",
+            "section_type": "organic_search_results",
         }
         if category_id:
             params2["category_id"] = category_id
@@ -126,13 +128,22 @@ def scrape_wallapop(
                 imgs = item.get("images") or []
                 img_url = imgs[0].get("urls", {}).get("small", "") if imgs else ""
                 ship = item.get("shipping") or {}
-                spedizione = "Spedizione disponibile" if ship.get("user_allows_shipping") else "Solo ritiro"
+                spedizione = (
+                    "Spedizione disponibile" if ship.get("user_allows_shipping") else "Solo ritiro"
+                )
                 if condizione == "nuovo" and item.get("is_refurbished"):
                     continue
-                risultati.append(Offerta(
-                    nome=nome, prezzo=prezzo, negozio="Wallapop",
-                    link=link, fonte="wallapop.com", spedizione=spedizione, immagine=img_url,
-                ))
+                risultati.append(
+                    Offerta(
+                        nome=nome,
+                        prezzo=prezzo,
+                        negozio="Wallapop",
+                        link=link,
+                        fonte="wallapop.com",
+                        spedizione=spedizione,
+                        immagine=img_url,
+                    )
+                )
             except (AttributeError, TypeError, ValueError, KeyError):
                 continue
     except requests.HTTPError as exc:
@@ -141,5 +152,3 @@ def scrape_wallapop(
     except Exception as exc:
         print(f"    ❌ Wallapop: errore inatteso → {exc}")
     return risultati
-
-

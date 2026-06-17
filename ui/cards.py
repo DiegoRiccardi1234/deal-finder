@@ -1,17 +1,8 @@
 """ui: ui/cards.py"""
+
 from __future__ import annotations
 
-import contextlib
-import csv
-import hashlib
-import io
-import json
-import os
-import random
-import re
-import time
-from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import streamlit as st
 
@@ -36,25 +27,36 @@ try:
 except Exception:
     kb_manager = None  # type: ignore[assignment]
 
-from offerte_tech import Offerta, cerca_offerte, parse_search_intent, parse_comparison_query
+from offerte_tech import Offerta
 
 try:
     from search_history import load_history, save_search as _save_search
 except ImportError:
+
     def load_history() -> list[dict[str, Any]]:
         return []
+
     def _save_search(**kw: Any) -> None:
         return None
-from ui.export import _specs_from_name, _summarize_specs
+
+
+from ui.export import _summarize_specs
 from ui.state import _format_price
 
 
 def _render_offerta_card(offerta: Offerta, idx: int, best_price: float = 0) -> str:
     import html as _html
+
     source_label = offerta.fonte.replace(".it", "").replace(".com", "").upper()
     price_str = _format_price(offerta.prezzo)
-    spedizione_raw = offerta.spedizione if offerta.spedizione and offerta.spedizione != "n.d." else ""
-    spedizione_html = f"<span class='card-shipping'>{_html.escape(spedizione_raw)}</span>" if spedizione_raw else ""
+    spedizione_raw = (
+        offerta.spedizione if offerta.spedizione and offerta.spedizione != "n.d." else ""
+    )
+    spedizione_html = (
+        f"<span class='card-shipping'>{_html.escape(spedizione_raw)}</span>"
+        if spedizione_raw
+        else ""
+    )
     title = _html.escape(offerta.nome[:90] + ("\u2026" if len(offerta.nome) > 90 else ""))
     specs_line = _summarize_specs(offerta.specs, offerta.nome)
     specs_html = f"<p class='card-specs'>{_html.escape(specs_line)}</p>" if specs_line else ""
@@ -70,7 +72,9 @@ def _render_offerta_card(offerta: Offerta, idx: int, best_price: float = 0) -> s
             f"</div>"
         )
     else:
-        img_html = f"<div class='card-img-wrap card-img-placeholder'><span>{source_label[0]}</span></div>"
+        img_html = (
+            f"<div class='card-img-wrap card-img-placeholder'><span>{source_label[0]}</span></div>"
+        )
     negozio_escaped = _html.escape(offerta.negozio)
     link_escaped = _html.escape(offerta.link, quote=True)
     return (
@@ -95,8 +99,7 @@ def _render_results_grid(offerte: list[Offerta]) -> None:
         return
     best_price = min(o.prezzo for o in offerte) if offerte else 0
     cards_html = "".join(
-        _render_offerta_card(o, i, best_price=best_price)
-        for i, o in enumerate(offerte)
+        _render_offerta_card(o, i, best_price=best_price) for i, o in enumerate(offerte)
     )
     st.markdown(f"<div class='results-grid'>{cards_html}</div>", unsafe_allow_html=True)
 
@@ -104,7 +107,13 @@ def _render_results_grid(offerte: list[Offerta]) -> None:
 def _render_specs_grid(offerte: list[Offerta]) -> None:
     """Renders una griglia delle specifiche per le offerte con dati specs."""
     # Filtra solo le offerte che hanno specifiche valide
-    offerte_con_specs = [o for o in offerte if o.specs and isinstance(o.specs, dict) and any(v not in (None, "", [], {}) for v in o.specs.values())]
+    offerte_con_specs = [
+        o
+        for o in offerte
+        if o.specs
+        and isinstance(o.specs, dict)
+        and any(v not in (None, "", [], {}) for v in o.specs.values())
+    ]
     if not offerte_con_specs:
         st.info("\U0001f4cb Nessun dato di specifiche rilevato per i prodotti.")
         return
@@ -117,7 +126,5 @@ def _render_specs_grid(offerte: list[Offerta]) -> None:
     preview = offerte_con_specs[:6]
     for start in range(0, len(preview), 2):
         cols = st.columns(2, gap="medium")
-        for idx, offerta in enumerate(preview[start:start + 2]):
+        for idx, offerta in enumerate(preview[start : start + 2]):
             cols[idx].markdown(_render_offerta_card(offerta, start + idx), unsafe_allow_html=True)
-
-

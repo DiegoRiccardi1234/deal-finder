@@ -9,6 +9,7 @@ Uso:
     python tests/probe_playwright.py
     python tests/probe_playwright.py --query "samsung galaxy s24"
 """
+
 from __future__ import annotations
 
 import argparse
@@ -24,15 +25,20 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 try:
     from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 except ImportError:
-    print("❌ Playwright non installato. Esegui: pip install playwright && playwright install chromium")
+    print(
+        "❌ Playwright non installato. Esegui: pip install playwright && playwright install chromium"
+    )
     sys.exit(1)
 
 DEFAULT_QUERY = "iphone 256gb"
 
 # ---------------------------------------------------------------------------
 
+
 def probe_subito(query: str, page) -> dict:
-    url = f"https://www.subito.it/annunci-italia/vendita/usato/?q={quote_plus(query)}&sort=price_asc"
+    url = (
+        f"https://www.subito.it/annunci-italia/vendita/usato/?q={quote_plus(query)}&sort=price_asc"
+    )
     result = {"site": "subito.it", "url": url, "status": "?", "n_products": 0, "sample": []}
     try:
         resp = page.goto(url, wait_until="domcontentloaded", timeout=20000)
@@ -40,8 +46,13 @@ def probe_subito(query: str, page) -> dict:
         page.wait_for_timeout(3000)
 
         # Subito usa React — cerca card annunci
-        for sel in ['[class*="item-card"]', '[class*="SmallCard"]', 'article',
-                    '[data-testid*="item"]', '[class*="listing-item"]']:
+        for sel in [
+            '[class*="item-card"]',
+            '[class*="SmallCard"]',
+            "article",
+            '[data-testid*="item"]',
+            '[class*="listing-item"]',
+        ]:
             cards = page.query_selector_all(sel)
             if len(cards) > 3:
                 result["selector"] = sel
@@ -59,7 +70,8 @@ def probe_subito(query: str, page) -> dict:
         # Fallback: cerca prezzi nel testo
         if not result["sample"]:
             prices = page.eval_on_selector_all(
-                '*', 'els => els.filter(e => /€\\s*\\d/.test(e.innerText) && e.children.length == 0).slice(0,5).map(e => e.innerText)'
+                "*",
+                "els => els.filter(e => /€\\s*\\d/.test(e.innerText) && e.children.length == 0).slice(0,5).map(e => e.innerText)",
             )
             result["prices_found"] = prices[:5]
 
@@ -86,9 +98,13 @@ def probe_aliexpress(query: str, page) -> dict:
         result["page_len"] = len(page.content())
 
         # Cerca card prodotto
-        for sel in ['[class*="product-snippet"]', '[class*="manhattan--"]',
-                    '[class*="list--gallery--"]', '[data-widget-cid*="product"]',
-                    'a[href*="/item/"]']:
+        for sel in [
+            '[class*="product-snippet"]',
+            '[class*="manhattan--"]',
+            '[class*="list--gallery--"]',
+            '[data-widget-cid*="product"]',
+            'a[href*="/item/"]',
+        ]:
             cards = page.query_selector_all(sel)
             if len(cards) > 3:
                 result["selector"] = sel
@@ -103,7 +119,8 @@ def probe_aliexpress(query: str, page) -> dict:
         # Prova a estrarre prezzi
         if not result["n_products"]:
             prices = page.eval_on_selector_all(
-                '*', 'els => els.filter(e => /\\d+[.,]\\d{2}/.test(e.innerText) && e.children.length == 0 && e.innerText.length < 20).slice(0,5).map(e => e.innerText)'
+                "*",
+                "els => els.filter(e => /\\d+[.,]\\d{2}/.test(e.innerText) && e.children.length == 0 && e.innerText.length < 20).slice(0,5).map(e => e.innerText)",
             )
             result["prices_found"] = prices[:5]
             result["n_products"] = len(prices)
@@ -125,8 +142,13 @@ def probe_temu(query: str, page) -> dict:
         result["page_title"] = page.title()
         result["page_len"] = len(page.content())
 
-        for sel in ['[class*="goods-item"]', '[class*="product-item"]',
-                    '[data-testid*="product"]', 'a[href*="/g-"]', '[class*="_goods"]']:
+        for sel in [
+            '[class*="goods-item"]',
+            '[class*="product-item"]',
+            '[data-testid*="product"]',
+            'a[href*="/g-"]',
+            '[class*="_goods"]',
+        ]:
             cards = page.query_selector_all(sel)
             if len(cards) > 3:
                 result["selector"] = sel
@@ -140,7 +162,8 @@ def probe_temu(query: str, page) -> dict:
 
         if not result["n_products"]:
             prices = page.eval_on_selector_all(
-                '*', 'els => els.filter(e => /€\\s*\\d/.test(e.innerText) && e.children.length == 0).slice(0,5).map(e => e.innerText)'
+                "*",
+                "els => els.filter(e => /€\\s*\\d/.test(e.innerText) && e.children.length == 0).slice(0,5).map(e => e.innerText)",
             )
             result["prices_found"] = prices[:5]
             result["n_products"] = len(prices)
@@ -162,8 +185,13 @@ def probe_alibaba(query: str, page) -> dict:
         result["page_title"] = page.title()
         result["page_len"] = len(page.content())
 
-        for sel in ['.organic-list-offer', '.offer-list-row', '.J-offer-wrapper',
-                    '[class*="offer"]', 'a[href*="/product/"]']:
+        for sel in [
+            ".organic-list-offer",
+            ".offer-list-row",
+            ".J-offer-wrapper",
+            '[class*="offer"]',
+            'a[href*="/product/"]',
+        ]:
             cards = page.query_selector_all(sel)
             if len(cards) > 2:
                 result["selector"] = sel
@@ -177,7 +205,8 @@ def probe_alibaba(query: str, page) -> dict:
 
         if not result["n_products"]:
             prices = page.eval_on_selector_all(
-                '*', 'els => els.filter(e => /USD|\\$\\d/.test(e.innerText) && e.children.length == 0).slice(0,5).map(e => e.innerText)'
+                "*",
+                "els => els.filter(e => /USD|\\$\\d/.test(e.innerText) && e.children.length == 0).slice(0,5).map(e => e.innerText)",
             )
             result["prices_found"] = prices[:5]
             result["n_products"] = len(prices)
@@ -199,10 +228,10 @@ PROBES = {
 
 
 def run(query: str, sites: list[str]) -> None:
-    print(f"\n{'='*65}")
+    print(f"\n{'=' * 65}")
     print(f"  PLAYWRIGHT HEADLESS PROBE — query: '{query}'")
     print(f"  Siti: {', '.join(sites)}")
-    print(f"{'='*65}\n")
+    print(f"{'=' * 65}\n")
 
     summary = []
 
@@ -230,9 +259,9 @@ def run(query: str, sites: list[str]) -> None:
                 print(f"  ⚠️  Sito sconosciuto: {site}")
                 continue
 
-            print(f"{'─'*55}")
+            print(f"{'─' * 55}")
             print(f"  {site.upper()}")
-            print(f"{'─'*55}")
+            print(f"{'─' * 55}")
 
             page = context.new_page()
             # Blocca risorse non necessarie per velocità
@@ -261,18 +290,18 @@ def run(query: str, sites: list[str]) -> None:
             if result.get("prices_found"):
                 print(f"  Prezzi trovati nel DOM: {result['prices_found']}")
             if result["sample"]:
-                print(f"  Campione prodotti:")
+                print("  Campione prodotti:")
                 for s in result["sample"][:2]:
                     print(f"    → {str(s)[:120]}")
             print()
 
         browser.close()
 
-    print(f"{'='*65}")
+    print(f"{'=' * 65}")
     print("  VERDETTO FINALE")
-    print(f"{'='*65}")
+    print(f"{'=' * 65}")
     print(f"  {'Sito':<15} {'Prodotti':>9} {'Tempo':>7}  Verdict")
-    print(f"  {'─'*15} {'─'*9} {'─'*7}  {'─'*30}")
+    print(f"  {'─' * 15} {'─' * 9} {'─' * 7}  {'─' * 30}")
     for site, n, elapsed, status in summary:
         if n > 0:
             verdict = "✅ FUNZIONA — integrabile"
@@ -289,9 +318,9 @@ def run(query: str, sites: list[str]) -> None:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--query", default=DEFAULT_QUERY)
-    parser.add_argument("--sites", nargs="+",
-                        default=list(PROBES.keys()),
-                        choices=list(PROBES.keys()))
+    parser.add_argument(
+        "--sites", nargs="+", default=list(PROBES.keys()), choices=list(PROBES.keys())
+    )
     args = parser.parse_args()
     run(args.query, args.sites)
 

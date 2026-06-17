@@ -1,21 +1,9 @@
 """offerte: offerte/filters.py"""
+
 from __future__ import annotations
 
-import base64
-import json
-import math
-import os
-import random
 import re
-import sys
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
-from typing import Callable, Optional
-from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 
-import requests
-from bs4 import BeautifulSoup
 
 try:
     from cerebras.cloud.sdk import Cerebras
@@ -35,6 +23,7 @@ _CEREBRAS_MODEL_FALLBACK = "llama-3.3-70b"
 from offerte._constants import *  # noqa: F401,F403
 from offerte.models import Offerta
 from offerte.parsing import *  # noqa: F401,F403
+
 
 def _passes_hard_spec_filters(offerta: Offerta, filtri: dict[str, str]) -> bool:
     """Applica vincoli tecnici hard per ridurre falsi positivi su notebook/smartphone."""
@@ -82,8 +71,8 @@ def _hard_spec_mismatch_reasons(offerta: Offerta, filtri: dict[str, str]) -> lis
             low, high = parsed_range
             inches_vals = _extract_inches_values(search_lower)
             if not inches_vals or not any(low <= v <= high for v in inches_vals):
-                found = ",".join(f"{v:.1f}\"" for v in inches_vals) if inches_vals else "assente"
-                reasons.append(f"display fuori range {low:.1f}-{high:.1f}\" (trovato={found})")
+                found = ",".join(f'{v:.1f}"' for v in inches_vals) if inches_vals else "assente"
+                reasons.append(f'display fuori range {low:.1f}-{high:.1f}" (trovato={found})')
 
     return reasons
 
@@ -116,7 +105,10 @@ def is_relevant(nome: str, query_tokens: list[str], strict_specs: bool = True) -
         if not strict_specs and _is_spec_token(token):
             continue
         if token.isdigit() and len(token) <= 2 and brand_tokens:
-            if not any(re.search(rf"\b{re.escape(brand)}\s*{re.escape(token)}\b", nome_lower) for brand in brand_tokens):
+            if not any(
+                re.search(rf"\b{re.escape(brand)}\s*{re.escape(token)}\b", nome_lower)
+                for brand in brand_tokens
+            ):
                 return False
             continue
 
@@ -126,5 +118,3 @@ def is_relevant(nome: str, query_tokens: list[str], strict_specs: bool = True) -
         if not any(v in nome_lower for v in varianti):
             return False
     return True
-
-

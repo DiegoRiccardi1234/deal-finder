@@ -4,12 +4,13 @@ Registra il prezzo minimo trovato per ogni query a ogni ricerca, così da
 mostrare il trend nel tempo e segnalare quando un prezzo scende sotto soglia
 o tocca un nuovo minimo storico.
 """
+
 from __future__ import annotations
 
 import json
 import os
 import time
-from typing import Any, Optional
+from typing import Any
 
 _DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 PRICE_HISTORY_FILE = os.path.join(_DATA_DIR, "price_history.json")
@@ -17,7 +18,7 @@ PRICE_HISTORY_FILE = os.path.join(_DATA_DIR, "price_history.json")
 
 def _load(path: str) -> list[dict[str, Any]]:
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
         return data if isinstance(data, list) else []
     except (FileNotFoundError, json.JSONDecodeError, OSError):
@@ -28,7 +29,9 @@ def _norm(query: str) -> str:
     return str(query or "").strip().lower()
 
 
-def record(query: str, min_price: Optional[float], *, now: Optional[float] = None, path: str = PRICE_HISTORY_FILE) -> None:
+def record(
+    query: str, min_price: float | None, *, now: float | None = None, path: str = PRICE_HISTORY_FILE
+) -> None:
     """Registra il prezzo minimo per `query` al tempo `now`."""
     q = _norm(query)
     if not q or min_price is None:
@@ -52,13 +55,17 @@ def history_for(query: str, *, path: str = PRICE_HISTORY_FILE) -> list[dict[str,
     return entries
 
 
-def lowest_ever(query: str, *, path: str = PRICE_HISTORY_FILE) -> Optional[float]:
+def lowest_ever(query: str, *, path: str = PRICE_HISTORY_FILE) -> float | None:
     """Prezzo minimo mai registrato per `query`, o None se non c'è storico."""
-    prices = [float(e["min_price"]) for e in history_for(query, path=path) if e.get("min_price") is not None]
+    prices = [
+        float(e["min_price"])
+        for e in history_for(query, path=path)
+        if e.get("min_price") is not None
+    ]
     return min(prices) if prices else None
 
 
-def is_new_low(query: str, current_min: Optional[float], *, path: str = PRICE_HISTORY_FILE) -> bool:
+def is_new_low(query: str, current_min: float | None, *, path: str = PRICE_HISTORY_FILE) -> bool:
     """True se `current_min` è sotto il minimo storico (o non c'è ancora storico)."""
     if current_min is None:
         return False
@@ -66,7 +73,7 @@ def is_new_low(query: str, current_min: Optional[float], *, path: str = PRICE_HI
     return True if low is None else float(current_min) < low
 
 
-def below_threshold(price: Optional[float], threshold: Optional[float]) -> bool:
+def below_threshold(price: float | None, threshold: float | None) -> bool:
     """True se `price` è <= soglia (alert 'sotto soglia')."""
     if price is None or threshold is None:
         return False

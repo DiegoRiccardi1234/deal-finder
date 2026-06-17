@@ -1,21 +1,12 @@
 """offerte: offerte/ai.py"""
+
 from __future__ import annotations
 
-import base64
 import json
-import math
 import os
-import random
 import re
-import sys
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
-from typing import Callable, Optional
-from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 
-import requests
-from bs4 import BeautifulSoup
 
 try:
     from cerebras.cloud.sdk import Cerebras
@@ -26,18 +17,21 @@ except Exception:
 _CEREBRAS_MODEL_FALLBACK = "llama-3.3-70b"
 from offerte._constants import *  # noqa: F401,F403
 from offerte.models import Offerta
-from offerte.config import DEFAULT_CEREBRAS_MODEL, CEREBRAS_FALLBACK_MODELS, CEREBRAS_MODEL_BLACKLIST
-from offerte.http import fetch_with_retry, get_headers
+from offerte.config import CEREBRAS_FALLBACK_MODELS, CEREBRAS_MODEL_BLACKLIST
 from offerte.parsing import *  # noqa: F401,F403
-from offerte.filters import _hard_spec_mismatch_reasons, _passes_hard_spec_filters, is_relevant
+from offerte.filters import _hard_spec_mismatch_reasons
+
 
 def _cerebras_model(client=None) -> str:
     """Restituisce il miglior modello disponibile per il provider AI attivo."""
     from offerte import providers
+
     return providers.best_model(client=client)
 
 
-def _cerebras_chat(client, messages: list, temperature: float = 0.1, max_retries: int = 4) -> object:
+def _cerebras_chat(
+    client, messages: list, temperature: float = 0.1, max_retries: int = 4
+) -> object:
     """Wrapper con retry automatico (404 modello + 429 rate limit)."""
     if _cerebras_chat_lib is not None:
         return _cerebras_chat_lib(
@@ -68,7 +62,7 @@ def _get_cerebras_api_key() -> str:
     return os.environ.get("CEREBRAS_API_KEY", "").strip()
 
 
-def _get_cerebras_client() -> Optional[object]:
+def _get_cerebras_client() -> object | None:
     """Crea il client Cerebras se disponibile e configurato."""
     api_key = _get_cerebras_api_key()
     if not api_key or Cerebras is None:
@@ -82,7 +76,7 @@ def _get_cerebras_client() -> Optional[object]:
 def fetch_specs_ai(
     offerte: list[Offerta],
     categoria: str,
-    cerebras_client: Optional[object],
+    cerebras_client: object | None,
 ) -> list[Offerta]:
     """Arricchisce le offerte con specs tramite una singola chiamata AI batch."""
     if not offerte:
@@ -102,7 +96,7 @@ def fetch_specs_ai(
 
     # Singola chiamata batch universale: invia tutti i nomi prodotto in un'unica richiesta AI
     nomi = [o.nome for o in offerte]
-    elenco = "\n".join(f"{i+1}. {n}" for i, n in enumerate(nomi))
+    elenco = "\n".join(f"{i + 1}. {n}" for i, n in enumerate(nomi))
     batch_prompt = (
         "Sei un database prodotti. Per ciascun prodotto nell'elenco numerato "
         "restituisci SOLO un oggetto JSON valido con indici 1,2,3…\n"
@@ -120,7 +114,11 @@ def fetch_specs_ai(
             messages=[{"role": "user", "content": batch_prompt}],
             temperature=0,
         )
-        content = str(completion.choices[0].message.content or "") if completion and completion.choices else ""
+        content = (
+            str(completion.choices[0].message.content or "")
+            if completion and completion.choices
+            else ""
+        )
         # Il JSON ritornato è tipo {"1": {...}, "2": {...}}
         outer = _extract_json_object(content)
         for i, offerta in enumerate(offerte):
@@ -153,54 +151,92 @@ def parse_comparison_query(query: str) -> list[str]:
     lower = stripped.lower()
 
     _STOPWORDS_IT = {
-        'un', 'una', 'il', 'la', 'lo', 'i', 'le', 'gli', 'e', 'o',
-        'di', 'da', 'in', 'a', 'su', 'per', 'con', 'tra', 'fra',
-        'del', 'della', 'dei', 'delle', 'agli', 'allo', 'alle',
-        'come', 'se', 'ma', 'che', 'chi', 'cui', 'ne', 'ci', 'non',
-        'mi', 'ti', 'si', 'vi', 'li', 'me', 'te', 'loro',
+        "un",
+        "una",
+        "il",
+        "la",
+        "lo",
+        "i",
+        "le",
+        "gli",
+        "e",
+        "o",
+        "di",
+        "da",
+        "in",
+        "a",
+        "su",
+        "per",
+        "con",
+        "tra",
+        "fra",
+        "del",
+        "della",
+        "dei",
+        "delle",
+        "agli",
+        "allo",
+        "alle",
+        "come",
+        "se",
+        "ma",
+        "che",
+        "chi",
+        "cui",
+        "ne",
+        "ci",
+        "non",
+        "mi",
+        "ti",
+        "si",
+        "vi",
+        "li",
+        "me",
+        "te",
+        "loro",
     }
 
     # ── Pattern 1: esplicito "vs", "versus", "contro" ─────────────────────
-    parts = re.split(r'\s+vs\.?\s+|\s+versus\s+|\s+contro\s+', lower)
+    parts = re.split(r"\s+vs\.?\s+|\s+versus\s+|\s+contro\s+", lower)
 
     # ── Pattern 2: "confronta/compare X e Y" all'inizio ──────────────────
     if len(parts) == 1:
-        m = re.match(r'^(?:confronta|compare|compara)\s+(.+)', lower)
+        m = re.match(r"^(?:confronta|compare|compara)\s+(.+)", lower)
         if m:
             body = m.group(1)
             # rimuovi "tra" iniziale: "confronta tra X e Y" → "X e Y"
-            body = re.sub(r'^tra\s+|^fra\s+', '', body)
-            parts = re.split(r'\s+e\s+|\s+ed\s+|\s*,\s*', body)
+            body = re.sub(r"^tra\s+|^fra\s+", "", body)
+            parts = re.split(r"\s+e\s+|\s+ed\s+|\s*,\s*", body)
 
     # ── Pattern 3: "confronto"/"confrontare" in testo + "PROD V1 o V2" ───
     # Gestisce: "iphone 16 o 17 fammi un confronto"
     #            "fammi un confronto tra iphone 16 e 17"
-    if len(parts) == 1 and re.search(r'\bconfronto\b|\bconfrontare\b|\bconfrontami\b', lower):
+    if len(parts) == 1 and re.search(r"\bconfronto\b|\bconfrontare\b|\bconfrontami\b", lower):
         # Cerca "NOME VERSIONE1 o VERSIONE2" oppure "NOME VERSIONE1 e VERSIONE2"
         # dove almeno una versione contiene cifre (numero di modello)
-        m = re.search(r'\b(\w+)\s+(\w+)\s+(?:o|e)\s+(\w+)\b', lower)
+        m = re.search(r"\b(\w+)\s+(\w+)\s+(?:o|e)\s+(\w+)\b", lower)
         if m:
             base, v1, v2 = m.group(1), m.group(2), m.group(3)
             # Salta se la base è una stopword
             if base not in _STOPWORDS_IT and v1 not in _STOPWORDS_IT and v2 not in _STOPWORDS_IT:
                 # Almeno una versione deve contenere cifre (modello) o essere un prodotto reale
-                if re.search(r'\d', v1 + v2):
+                if re.search(r"\d", v1 + v2):
                     parts = [f"{base} {v1}", f"{base} {v2}"]
 
         # Fallback: "confronto tra X e Y" con "tra/fra" nel testo
         if len(parts) == 1:
-            m2 = re.search(r'\btra\s+(.+?)\s+(?:e|ed)\s+(.+?)(?:\s*[,?!]|$)', lower)
+            m2 = re.search(r"\btra\s+(.+?)\s+(?:e|ed)\s+(.+?)(?:\s*[,?!]|$)", lower)
             if m2:
                 p1 = m2.group(1).strip()
                 p2 = m2.group(2).strip().split()[0]  # prendi solo la prima parola se è un numero
                 if p1 and p2 and p1 not in _STOPWORDS_IT:
                     # Controlla se p2 potrebbe essere continuazione di p1 (es. "iphone 16 tra ... e 17")
-                    parts = [p1, f"{p1.split()[0]} {p2}" if re.search(r'^\d+', p2) else p2]
+                    parts = [p1, f"{p1.split()[0]} {p2}" if re.search(r"^\d+", p2) else p2]
 
     # ── Pattern 4: confronto implicito senza keyword (es. "iphone 16 o 17") ──
     if len(parts) == 1:
         m3 = re.search(
-            r'\b(iphone|galaxy|pixel|xiaomi|redmi|poco)\s+(\d{1,2}[a-z]?)\s+(?:o|oppure)\s+(\d{1,2}[a-z]?)\b',
+            r"\b(iphone|galaxy|pixel|xiaomi|redmi|poco)\s+(\d{1,2}[a-z]?)\s+(?:o|oppure)\s+(\d{1,2}[a-z]?)\b",
             lower,
         )
         if m3:
@@ -209,14 +245,16 @@ def parse_comparison_query(query: str) -> list[str]:
 
     # Pulizia: tronca al primo segno di punteggiatura e rimuovi frasi discorsive
     def _clean_cmp(p: str) -> str:
-        p = re.split(r'[,?!;]', p)[0].strip()
+        p = re.split(r"[,?!;]", p)[0].strip()
         p = re.sub(
-            r'\s+(?:quale|qual|come|cosa|dove|quando|fammi|dimmi|voglio|vorrei|'
-            r'consiglio|conviene|scegliere|prendere|meglio|migliore|secondo|dei|due).*$',
-            '', p, flags=re.IGNORECASE,
+            r"\s+(?:quale|qual|come|cosa|dove|quando|fammi|dimmi|voglio|vorrei|"
+            r"consiglio|conviene|scegliere|prendere|meglio|migliore|secondo|dei|due).*$",
+            "",
+            p,
+            flags=re.IGNORECASE,
         )
         words = p.split()
-        return ' '.join(words[:6]) if len(words) > 6 else p.strip()
+        return " ".join(words[:6]) if len(words) > 6 else p.strip()
 
     parts = [_clean_cmp(p.strip()) for p in parts]
     parts = [p for p in parts if p and len(p) >= 2]
@@ -286,13 +324,21 @@ def detect_category_and_questions(testo_utente: str) -> dict[str, object]:
     intent_pre = parse_search_intent(testo)
 
     def _infer_category(lower_text: str) -> str:
-        if any(k in lower_text for k in ("iphone", "smartphone", "telefono", "android", "galaxy", "pixel")):
+        if any(
+            k in lower_text
+            for k in ("iphone", "smartphone", "telefono", "android", "galaxy", "pixel")
+        ):
             return "smartphone"
         if any(k in lower_text for k in ("laptop", "notebook", "pc", "macbook", "thinkpad")):
             return "laptop"
-        if any(k in lower_text for k in ("scarpe", "sneaker", "stivali", "sandali", "nike", "adidas")):
+        if any(
+            k in lower_text for k in ("scarpe", "sneaker", "stivali", "sandali", "nike", "adidas")
+        ):
             return "scarpe"
-        if any(k in lower_text for k in ("maglia", "giacca", "pantaloni", "vestito", "abbigliamento", "felpa")):
+        if any(
+            k in lower_text
+            for k in ("maglia", "giacca", "pantaloni", "vestito", "abbigliamento", "felpa")
+        ):
             return "abbigliamento"
         if any(k in lower_text for k in ("frigorifero", "lavatrice", "forno", "aspirapolvere")):
             return "elettrodomestico"
@@ -309,12 +355,53 @@ def detect_category_and_questions(testo_utente: str) -> dict[str, object]:
         return "altro"
 
     def _questions_for_missing(categoria: str, lower_text: str) -> tuple[list[str], bool]:
-        has_color = any(c in lower_text for c in ("nero", "black", "bianco", "white", "rosa", "pink", "blu", "blue", "rosso", "red", "verde", "green", "lavanda", "silver", "graphite"))
-        has_storage = re.search(r"\b(64|128|256|512|1024)\s*gb\b|\b1\s*tb\b", lower_text) is not None
-        has_variant = any(v in lower_text for v in ("pro max", "pro", "plus", "standard", "base", "ultra", "mini"))
-        has_size = re.search(r"\b(?:xxs|xs|s|m|l|xl|xxl|\d{2}(?:[\.,]\d)?)\b", lower_text) is not None
-        has_use = any(v in lower_text for v in ("studio", "ufficio", "lavoro", "gaming", "editing", "sportivo", "casual", "running", "trail"))
-        has_portability = any(v in lower_text for v in ("leggero", "leggera", "portatile", "ultraleggero", "peso", "sottile"))
+        has_color = any(
+            c in lower_text
+            for c in (
+                "nero",
+                "black",
+                "bianco",
+                "white",
+                "rosa",
+                "pink",
+                "blu",
+                "blue",
+                "rosso",
+                "red",
+                "verde",
+                "green",
+                "lavanda",
+                "silver",
+                "graphite",
+            )
+        )
+        has_storage = (
+            re.search(r"\b(64|128|256|512|1024)\s*gb\b|\b1\s*tb\b", lower_text) is not None
+        )
+        has_variant = any(
+            v in lower_text for v in ("pro max", "pro", "plus", "standard", "base", "ultra", "mini")
+        )
+        has_size = (
+            re.search(r"\b(?:xxs|xs|s|m|l|xl|xxl|\d{2}(?:[\.,]\d)?)\b", lower_text) is not None
+        )
+        has_use = any(
+            v in lower_text
+            for v in (
+                "studio",
+                "ufficio",
+                "lavoro",
+                "gaming",
+                "editing",
+                "sportivo",
+                "casual",
+                "running",
+                "trail",
+            )
+        )
+        has_portability = any(
+            v in lower_text
+            for v in ("leggero", "leggera", "portatile", "ultraleggero", "peso", "sottile")
+        )
         is_apple_phone = any(v in lower_text for v in ("iphone", "apple"))
 
         questions: list[str] = []
@@ -327,7 +414,9 @@ def detect_category_and_questions(testo_utente: str) -> dict[str, object]:
                 questions.append("Hai preferenze di colore?")
             if not is_apple_phone and not has_storage:
                 questions.append("Quanti GB di storage preferisci?")
-            preferenze_ok = (has_storage and has_variant) if is_apple_phone else (has_storage or has_color)
+            preferenze_ok = (
+                (has_storage and has_variant) if is_apple_phone else (has_storage or has_color)
+            )
             return questions[:2], preferenze_ok
 
         if categoria == "scarpe":
@@ -352,7 +441,9 @@ def detect_category_and_questions(testo_utente: str) -> dict[str, object]:
             return questions[:2], has_use and has_portability
 
         if categoria == "elettrodomestico":
-            if not any(v in lower_text for v in ("marca", "bosch", "samsung", "lg", "miele", "whirlpool")):
+            if not any(
+                v in lower_text for v in ("marca", "bosch", "samsung", "lg", "miele", "whirlpool")
+            ):
                 questions.append("Hai preferenze di marca o variante?")
             if not has_use:
                 questions.append("Qual e l'uso principale?")
@@ -373,7 +464,9 @@ def detect_category_and_questions(testo_utente: str) -> dict[str, object]:
         categoria = categoria_base
         return {
             "categoria": categoria,
-            "domande": [] if preferenze_chiare_base else (domande_base or fallback_questions[categoria])[:2],
+            "domande": []
+            if preferenze_chiare_base
+            else (domande_base or fallback_questions[categoria])[:2],
             "preferenze_chiare": preferenze_chiare_base,
             "intent_precompilato": intent_pre if preferenze_chiare_base else {},
         }
@@ -430,7 +523,9 @@ def detect_category_and_questions(testo_utente: str) -> dict[str, object]:
     except Exception:
         return {
             "categoria": "altro",
-            "domande": [] if preferenze_chiare_base else (domande_base or fallback_questions["altro"])[:2],
+            "domande": []
+            if preferenze_chiare_base
+            else (domande_base or fallback_questions["altro"])[:2],
             "preferenze_chiare": preferenze_chiare_base,
             "intent_precompilato": intent_pre if preferenze_chiare_base else {},
         }
@@ -607,11 +702,11 @@ def filtra_risultati_con_ai(risultati: list[Offerta], filtri: dict[str, str]) ->
     client = _get_cerebras_client()
     if client is not None:
         try:
-            titoli = [f"{i+1}. {o.nome}" for i, o in enumerate(risultati)]
+            titoli = [f"{i + 1}. {o.nome}" for i, o in enumerate(risultati)]
             prompt = (
                 "Valuta la rilevanza 0-10 dei titoli rispetto ai filtri dati. "
                 "Considera sinonimi e varianti (es rosa ~ pink ~ lavanda quando plausibile). "
-                "Rispondi SOLO JSON: {\"scores\": [{\"idx\":1,\"score\":7}, ...]}"
+                'Rispondi SOLO JSON: {"scores": [{"idx":1,"score":7}, ...]}'
             )
             completion = _cerebras_chat(
                 client,
@@ -619,12 +714,15 @@ def filtra_risultati_con_ai(risultati: list[Offerta], filtri: dict[str, str]) ->
                     {"role": "system", "content": prompt},
                     {
                         "role": "user",
-                        "content": f"Filtri: {json.dumps(filtri, ensure_ascii=False)}\nTitoli:\n" + "\n".join(titoli),
+                        "content": f"Filtri: {json.dumps(filtri, ensure_ascii=False)}\nTitoli:\n"
+                        + "\n".join(titoli),
                     },
                 ],
                 temperature=0,
             )
-            content = completion.choices[0].message.content if completion and completion.choices else ""
+            content = (
+                completion.choices[0].message.content if completion and completion.choices else ""
+            )
             raw = str(content or "").strip()
             json_match = re.search(r"\{.*\}", raw, flags=re.DOTALL)
             payload = json.loads(json_match.group(0) if json_match else raw)
@@ -656,7 +754,8 @@ def filtra_risultati_con_ai(risultati: list[Offerta], filtri: dict[str, str]) ->
                 expanded_values.add(f"{num_match.group(1)}{num_match.group(2)}")
             # Sinonimi colore
             color_syn: dict[str, set[str]] = {
-                "rosa": {"pink", "lavanda"}, "nero": {"black", "graphite"},
+                "rosa": {"pink", "lavanda"},
+                "nero": {"black", "graphite"},
                 "bianco": {"white", "silver"},
             }
             if val in color_syn:
@@ -707,7 +806,7 @@ def filtra_risultati_con_ai(risultati: list[Offerta], filtri: dict[str, str]) ->
                 continue
 
             titolo_ref = offerta.nome.lower()
-            best_alt: Optional[Offerta] = None
+            best_alt: Offerta | None = None
             best_diff = 0.0
             best_label = ""
 
@@ -745,11 +844,12 @@ def filtra_risultati_con_ai(risultati: list[Offerta], filtri: dict[str, str]) ->
                     best_label = variante_label
 
             if best_alt and best_diff > 0:
-                delta_txt = f"€{best_diff:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                delta_txt = (
+                    f"€{best_diff:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                )
                 offerta.alternativa = f"💡 {best_label} costa {delta_txt} in meno"
 
     return [o for _, o in filtered]
-
 
 
 # === Cerebras model resolver + chat-with-retry (ex cerebras_model.py) ======== #
@@ -773,6 +873,7 @@ def get_best_model(client=None, force_refresh: bool = False) -> str:
     if _cached_model and not force_refresh:
         return _cached_model
     from offerte import providers
+
     _cached_model = providers.best_model(client=client)
     return _cached_model
 
@@ -798,7 +899,9 @@ def cerebras_chat_with_retry(
     for attempt in range(max_retries):
         try:
             return client.chat.completions.create(
-                model=model, messages=messages, **kwargs,
+                model=model,
+                messages=messages,
+                **kwargs,
             )
         except Exception as exc:
             last_exc = exc
@@ -809,10 +912,12 @@ def cerebras_chat_with_retry(
                 time.sleep(1.0)
                 continue
             if "429" in exc_str or "rate_limit" in exc_str or "too many" in exc_str.lower():
-                wait = base_delay * (2 ** attempt)
+                wait = base_delay * (2**attempt)
                 time.sleep(wait)
                 continue
             if attempt < max_retries - 1:
                 time.sleep(base_delay)
     raise last_exc  # type: ignore[misc]
+
+
 # =============================================================================

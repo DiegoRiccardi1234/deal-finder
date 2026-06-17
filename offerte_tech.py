@@ -3,6 +3,7 @@
 Tutto il codice è stato spostato nel package `offerte/`. Questo file
 preserva gli import legacy (`from offerte_tech import ...`).
 """
+
 from offerte import *  # noqa: F401,F403
 from offerte.scrapers import *  # noqa: F401,F403
 
@@ -37,9 +38,11 @@ from offerte.scrapers._base import _get_ebay_token  # noqa: F401
 
 def _build_parser():
     from offerte.cli import _build_parser as _bp
+
     return _bp()
 
 
 if __name__ == "__main__":
     from offerte.cli import main as _cli_main
+
     _cli_main()

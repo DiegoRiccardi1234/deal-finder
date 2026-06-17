@@ -1,21 +1,11 @@
 """offerte: offerte/scrapers/unieuro.py"""
+
 from __future__ import annotations
 
-import base64
 import json
 import math
-import os
-import random
-import re
-import sys
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
-from typing import Callable, Optional
-from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 
 import requests
-from bs4 import BeautifulSoup
 
 try:
     from cerebras.cloud.sdk import Cerebras
@@ -34,10 +24,9 @@ except Exception:
 _CEREBRAS_MODEL_FALLBACK = "llama-3.3-70b"
 from offerte._constants import *  # noqa: F401,F403
 from offerte.models import Offerta
-from offerte.http import fetch_with_retry, get_headers, _random_delay
+from offerte.http import _random_delay
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import is_relevant
-from offerte.scrapers._base import _get_ebay_token
 
 # Unieuro usa Algolia come motore di ricerca prodotti (chiave pubblica esposta
 # nel bundle JS del sito). Non serve Playwright né OAuth token.
@@ -47,26 +36,31 @@ _UNIEURO_ALGOLIA_URL = (
     "&x-algolia-application-id=MNBCENYFII"
 )
 
+
 def scrape_unieuro(
     query: str,
     prezzo_min: float,
-    budget_max: Optional[float],
+    budget_max: float | None,
     query_tokens: list[str],
 ) -> list[Offerta]:
     """Scraper per Unieuro.it tramite Algolia (API pubblica embedded nel frontend)."""
-    print(f"\n🔍 Cerco su Unieuro.it: \"{query}\"")
+    print(f'\n🔍 Cerco su Unieuro.it: "{query}"')
     risultati: list[Offerta] = []
     try:
-        payload = json.dumps({
-            "requests": [{
-                "indexName": "sgmproducts_prod",
-                "query": query,
-                "hitsPerPage": 48,
-                "page": 0,
-                "facetFilters": [],
-                "numericFilters": [],
-            }]
-        })
+        payload = json.dumps(
+            {
+                "requests": [
+                    {
+                        "indexName": "sgmproducts_prod",
+                        "query": query,
+                        "hitsPerPage": 48,
+                        "page": 0,
+                        "facetFilters": [],
+                        "numericFilters": [],
+                    }
+                ]
+            }
+        )
         headers = {
             "Content-Type": "text/plain",
             "Origin": "https://www.unieuro.it",
@@ -86,7 +80,9 @@ def scrape_unieuro(
                 nome = str(hit.get("title_it") or hit.get("name") or "").strip()
                 if not nome:
                     continue
-                prezzo_raw = hit.get("discountedPrice") or hit.get("facetPrice") or hit.get("originalPrice")
+                prezzo_raw = (
+                    hit.get("discountedPrice") or hit.get("facetPrice") or hit.get("originalPrice")
+                )
                 if prezzo_raw is None:
                     continue
                 prezzo = parse_price(str(prezzo_raw))
@@ -95,18 +91,31 @@ def scrape_unieuro(
                 url_path = str(hit.get("productUrl_it") or hit.get("url") or "").strip()
                 if not url_path:
                     continue
-                link = url_path if url_path.startswith("http") else f"https://www.unieuro.it{url_path}"
+                link = (
+                    url_path if url_path.startswith("http") else f"https://www.unieuro.it{url_path}"
+                )
                 if not is_relevant(nome, query_tokens, strict_specs=False):
                     continue
                 if not _within_price_range(prezzo, prezzo_min, budget_max):
                     continue
                 spedizione = "Spedizione gratuita" if hit.get("hasFreeDelivery") else "n.d."
                 img_path = str(hit.get("imageUrl") or "")
-                img_url = f"https://www.unieuro.it{img_path}" if img_path and not img_path.startswith("http") else img_path
-                risultati.append(Offerta(
-                    nome=nome, prezzo=prezzo, negozio="Unieuro",
-                    link=link, fonte="unieuro.it", spedizione=spedizione, immagine=img_url,
-                ))
+                img_url = (
+                    f"https://www.unieuro.it{img_path}"
+                    if img_path and not img_path.startswith("http")
+                    else img_path
+                )
+                risultati.append(
+                    Offerta(
+                        nome=nome,
+                        prezzo=prezzo,
+                        negozio="Unieuro",
+                        link=link,
+                        fonte="unieuro.it",
+                        spedizione=spedizione,
+                        immagine=img_url,
+                    )
+                )
             except (AttributeError, TypeError, KeyError):
                 continue
     except requests.HTTPError as exc:
@@ -117,5 +126,3 @@ def scrape_unieuro(
 
     _random_delay()
     return risultati
-
-

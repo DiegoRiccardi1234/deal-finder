@@ -6,13 +6,14 @@ lo ZIP del release (niente `.git`) viene mostrato il link al nuovo release.
 
 Su Streamlit Cloud l'update è disabilitato (la piattaforma si aggiorna da sola).
 """
+
 from __future__ import annotations
 
 import os
 import re
 import subprocess
 import sys
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from offerte.config import VERSION
 
@@ -40,12 +41,13 @@ def is_newer(latest: str, current: str) -> bool:
 
 def _default_fetch(url: str, headers: dict):
     from offerte.http import fetch_with_retry, get_headers
+
     h = get_headers()
     h.update(headers)
     return fetch_with_retry(url, h)
 
 
-def latest_release(*, fetch: Optional[Callable] = None) -> Optional[str]:
+def latest_release(*, fetch: Callable | None = None) -> str | None:
     """Tag dell'ultima release GitHub (es. 'v1.2.0'), o None su errore."""
     fetch = fetch or _default_fetch
     try:
@@ -56,7 +58,7 @@ def latest_release(*, fetch: Optional[Callable] = None) -> Optional[str]:
         return None
 
 
-def update_available(*, fetch: Optional[Callable] = None, current: Optional[str] = None) -> Optional[str]:
+def update_available(*, fetch: Callable | None = None, current: str | None = None) -> str | None:
     """Ritorna il tag remoto se più recente della versione locale, altrimenti None."""
     current = current or current_version()
     latest = latest_release(fetch=fetch)
@@ -65,7 +67,7 @@ def update_available(*, fetch: Optional[Callable] = None, current: Optional[str]
     return None
 
 
-def is_git_clone(root: Optional[str] = None) -> bool:
+def is_git_clone(root: str | None = None) -> bool:
     return os.path.isdir(os.path.join(root or _project_root(), ".git"))
 
 
@@ -80,7 +82,7 @@ def _default_runner(cmd: list[str]) -> str:
     return subprocess.run(cmd, capture_output=True, text=True, check=True).stdout
 
 
-def do_update(*, root: Optional[str] = None, runner: Optional[Callable] = None) -> dict:
+def do_update(*, root: str | None = None, runner: Callable | None = None) -> dict:
     """Aggiorna l'installazione. Git clone → git pull + reinstall; ZIP → link release."""
     root = root or _project_root()
     if not is_git_clone(root):
@@ -93,7 +95,9 @@ def do_update(*, root: Optional[str] = None, runner: Optional[Callable] = None) 
     runner = runner or _default_runner
     try:
         out1 = runner(["git", "-C", root, "pull", "--ff-only"])
-        out2 = runner([sys.executable, "-m", "pip", "install", "-r", os.path.join(root, "requirements.txt")])
+        out2 = runner(
+            [sys.executable, "-m", "pip", "install", "-r", os.path.join(root, "requirements.txt")]
+        )
         return {"ok": True, "mode": "git", "log": f"{out1}\n{out2}".strip()}
     except Exception as e:
         return {"ok": False, "mode": "git", "error": str(e)}

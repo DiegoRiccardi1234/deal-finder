@@ -1,17 +1,9 @@
 """ui: ui/recommendation.py"""
+
 from __future__ import annotations
 
-import contextlib
-import csv
-import hashlib
-import io
 import json
-import os
-import random
-import re
-import time
-from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import streamlit as st
 
@@ -36,16 +28,20 @@ try:
 except Exception:
     kb_manager = None  # type: ignore[assignment]
 
-from offerte_tech import Offerta, cerca_offerte, parse_search_intent, parse_comparison_query
+from offerte_tech import Offerta
 
 try:
     from search_history import load_history, save_search as _save_search
 except ImportError:
+
     def load_history() -> list[dict[str, Any]]:
         return []
+
     def _save_search(**kw: Any) -> None:
         return None
-from ui.ai_client import _cerebras_chat_with_retry, _extract_json_object, _get_cerebras_client
+
+
+from ui.ai_client import _cerebras_chat_with_retry
 
 
 def _build_products_payload(offerte: list[Offerta]) -> list[dict[str, Any]]:
@@ -112,14 +108,16 @@ def _call_final_recommendation(
 ) -> str:
     # Includi la trascrizione chat pre-ricerca nel contesto per personalizzare meglio il consiglio
     trascrizione = str(preferenze_utente.get("trascrizione", "") or "").strip()
-    contesto_utente = json.dumps({
-        k: v for k, v in preferenze_utente.items() if k != "messaggi"
-    }, ensure_ascii=False)
+    contesto_utente = json.dumps(
+        {k: v for k, v in preferenze_utente.items() if k != "messaggi"}, ensure_ascii=False
+    )
     context_block = f"PREFERENZE UTENTE: {contesto_utente}\n"
     if trascrizione:
         context_block += f"CONVERSAZIONE PRE-RICERCA (usa per capire tono e priorita dell'utente):\n{trascrizione}\n"
     comparison_products, comparison_summary = _build_comparison_payload()
-    products_payload = comparison_products if comparison_products else _build_products_payload(offerte)
+    products_payload = (
+        comparison_products if comparison_products else _build_products_payload(offerte)
+    )
 
     comparison_block = ""
     if comparison_summary:
@@ -141,5 +139,3 @@ def _call_final_recommendation(
     )
     payload = [{"role": "system", "content": system_prompt}] + messages
     return _cerebras_chat_with_retry(cerebras_client, payload, temperature=0.2)
-
-

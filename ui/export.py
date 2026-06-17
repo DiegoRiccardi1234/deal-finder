@@ -1,19 +1,12 @@
 """ui: ui/export.py"""
+
 from __future__ import annotations
 
-import contextlib
 import csv
-import hashlib
 import io
-import json
-import os
-import random
 import re
-import time
-from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
-import streamlit as st
 
 try:
     from cerebras.cloud.sdk import Cerebras
@@ -36,13 +29,15 @@ try:
 except Exception:
     kb_manager = None  # type: ignore[assignment]
 
-from offerte_tech import Offerta, cerca_offerte, parse_search_intent, parse_comparison_query
+from offerte_tech import Offerta
 
 try:
     from search_history import load_history, save_search as _save_search
 except ImportError:
+
     def load_history() -> list[dict[str, Any]]:
         return []
+
     def _save_search(**kw: Any) -> None:
         return None
 
@@ -65,7 +60,9 @@ def _offerte_to_copy_text(offerte: list[Offerta], query: str = "") -> str:
         lines.append(f"   Fonte: {o.fonte}")
         lines.append(f"   Link: {o.link}")
         lines.append("")
-    lines.append("Analizza questi risultati: sono buoni per la mia ricerca? Quali consiglieresti e perché?")
+    lines.append(
+        "Analizza questi risultati: sono buoni per la mia ricerca? Quali consiglieresti e perché?"
+    )
     return "\n".join(lines)
 
 
@@ -98,15 +95,18 @@ def _specs_from_name(nome: str) -> str:
     text = nome.lower()
     m = re.search(r'(\d{1,2}[,.]?\d*)\s*(?:"|\'\'{2}|pollici?\b)', text)
     if m:
-        parts.append(f"Display: {m.group(1)}\"")
-    m = re.search(r'(\d{1,3})\s*gb\s*(?:di\s*)?(?:ram|lpddr|ddr)', text)
+        parts.append(f'Display: {m.group(1)}"')
+    m = re.search(r"(\d{1,3})\s*gb\s*(?:di\s*)?(?:ram|lpddr|ddr)", text)
     if m:
         parts.append(f"Ram: {m.group(1)}GB")
-    m = re.search(r'(\d{1,4})\s*(tb|gb)\s*(?:ssd|nvme|m\.2|emmc)', text)
+    m = re.search(r"(\d{1,4})\s*(tb|gb)\s*(?:ssd|nvme|m\.2|emmc)", text)
     if m:
         unit = m.group(2).upper()
         parts.append(f"SSD: {m.group(1)}{unit}")
-    m = re.search(r'\b(i[357]-\d{4,5}[a-z]*|i[357]\s+\d{4,5}[a-z]*|ryzen\s*[357]\s*\d{4}[a-z]*|core\s*ultra\s*[57]\s*\d{3}|celeron\s*n\d+)\b', text)
+    m = re.search(
+        r"\b(i[357]-\d{4,5}[a-z]*|i[357]\s+\d{4,5}[a-z]*|ryzen\s*[357]\s*\d{4}[a-z]*|core\s*ultra\s*[57]\s*\d{3}|celeron\s*n\d+)\b",
+        text,
+    )
     if m:
         parts.append(f"CPU: {m.group(1).title()}")
     return " · ".join(parts)
@@ -140,5 +140,3 @@ def _offerte_to_records(offerte: list[Offerta]) -> list[dict[str, Any]]:
         }
         for i, offerta in enumerate(offerte, start=1)
     ]
-
-

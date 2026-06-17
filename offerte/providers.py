@@ -13,6 +13,7 @@ Modulo dipendente solo da stdlib + offerte.config; gli SDK dei provider sono
 importati in modo lazy in `build_client`, così l'assenza di un pacchetto degrada
 con grazia (provider non disponibile) invece di rompere l'import.
 """
+
 from __future__ import annotations
 
 import os
@@ -25,24 +26,44 @@ from offerte.config import CEREBRAS_MODEL_BLACKLIST, DEFAULT_CEREBRAS_MODEL
 class Provider:
     label: str
     key_env: str
-    kind: str                      # "openai" | "anthropic" | "gemini"
+    kind: str  # "openai" | "anthropic" | "gemini"
     base_url: str | None
     default_models: tuple[str, ...]
 
 
 PROVIDERS: dict[str, Provider] = {
-    "cerebras": Provider("Cerebras", "CEREBRAS_API_KEY", "openai",
-                         "https://api.cerebras.ai/v1", ("zai-glm-4.7", "gpt-oss-120b")),
-    "groq": Provider("Groq", "GROQ_API_KEY", "openai",
-                     "https://api.groq.com/openai/v1", ("llama-3.3-70b-versatile", "openai/gpt-oss-120b")),
-    "openai": Provider("OpenAI", "OPENAI_API_KEY", "openai",
-                       None, ("gpt-4o-mini", "gpt-4o")),
-    "openrouter": Provider("OpenRouter", "OPENROUTER_API_KEY", "openai",
-                           "https://openrouter.ai/api/v1", ("anthropic/claude-3.5-sonnet", "google/gemini-flash-1.5")),
-    "anthropic": Provider("Anthropic", "ANTHROPIC_API_KEY", "anthropic",
-                          None, ("claude-sonnet-4-5", "claude-3-5-haiku-latest")),
-    "gemini": Provider("Google Gemini", "GEMINI_API_KEY", "gemini",
-                       None, ("gemini-2.0-flash", "gemini-2.5-pro")),
+    "cerebras": Provider(
+        "Cerebras",
+        "CEREBRAS_API_KEY",
+        "openai",
+        "https://api.cerebras.ai/v1",
+        ("zai-glm-4.7", "gpt-oss-120b"),
+    ),
+    "groq": Provider(
+        "Groq",
+        "GROQ_API_KEY",
+        "openai",
+        "https://api.groq.com/openai/v1",
+        ("llama-3.3-70b-versatile", "openai/gpt-oss-120b"),
+    ),
+    "openai": Provider("OpenAI", "OPENAI_API_KEY", "openai", None, ("gpt-4o-mini", "gpt-4o")),
+    "openrouter": Provider(
+        "OpenRouter",
+        "OPENROUTER_API_KEY",
+        "openai",
+        "https://openrouter.ai/api/v1",
+        ("anthropic/claude-3.5-sonnet", "google/gemini-flash-1.5"),
+    ),
+    "anthropic": Provider(
+        "Anthropic",
+        "ANTHROPIC_API_KEY",
+        "anthropic",
+        None,
+        ("claude-sonnet-4-5", "claude-3-5-haiku-latest"),
+    ),
+    "gemini": Provider(
+        "Google Gemini", "GEMINI_API_KEY", "gemini", None, ("gemini-2.0-flash", "gemini-2.5-pro")
+    ),
 }
 
 DEFAULT_PROVIDER = "cerebras"
@@ -52,6 +73,7 @@ _BLACKLIST = set(CEREBRAS_MODEL_BLACKLIST)
 # --------------------------------------------------------------------------- #
 # Selezione provider e chiavi
 # --------------------------------------------------------------------------- #
+
 
 def active_provider() -> str:
     """Provider attivo da env `AI_PROVIDER` (default cerebras; invalido → default)."""
@@ -94,6 +116,7 @@ def load_keys_from(secrets) -> None:
 # --------------------------------------------------------------------------- #
 # Oggetti normalizzati in forma OpenAI
 # --------------------------------------------------------------------------- #
+
 
 class _Message:
     def __init__(self, content: str) -> None:
@@ -143,8 +166,10 @@ class _ModelsNS:
 # Adapter Anthropic / Gemini → forma OpenAI
 # --------------------------------------------------------------------------- #
 
+
 class _AnthropicAdapter:
     """Espone `.chat.completions.create` e `.models.list` su un client Anthropic."""
+
     DEFAULT_MODELS = ("claude-sonnet-4-5", "claude-3-5-haiku-latest")
 
     def __init__(self, client) -> None:
@@ -155,12 +180,19 @@ class _AnthropicAdapter:
     def _create(self, *, model, messages, temperature: float = 0.1, max_tokens: int = 4096, **_):
         system = "\n".join(m["content"] for m in messages if m.get("role") == "system")
         conv = [
-            {"role": ("assistant" if m.get("role") == "assistant" else "user"), "content": m["content"]}
-            for m in messages if m.get("role") != "system"
+            {
+                "role": ("assistant" if m.get("role") == "assistant" else "user"),
+                "content": m["content"],
+            }
+            for m in messages
+            if m.get("role") != "system"
         ]
         resp = self._client.messages.create(
-            model=model, system=system or None, messages=conv,
-            max_tokens=max_tokens, temperature=temperature,
+            model=model,
+            system=system or None,
+            messages=conv,
+            max_tokens=max_tokens,
+            temperature=temperature,
         )
         text = "".join(getattr(b, "text", "") for b in (resp.content or []))
         return _Completion(text)
@@ -168,6 +200,7 @@ class _AnthropicAdapter:
 
 class _GeminiAdapter:
     """Espone la forma OpenAI su Google Generative AI."""
+
     DEFAULT_MODELS = ("gemini-2.0-flash", "gemini-2.5-pro")
 
     def __init__(self, model_factory) -> None:
@@ -186,6 +219,7 @@ class _GeminiAdapter:
 # Costruzione client + selezione modello
 # --------------------------------------------------------------------------- #
 
+
 def build_client(provider: str | None = None):
     """Costruisce il client per `provider` (default = attivo). None se non
     configurato o SDK mancante."""
@@ -202,6 +236,7 @@ def build_client(provider: str | None = None):
         if provider == "cerebras":
             try:
                 from cerebras.cloud.sdk import Cerebras
+
                 return Cerebras(api_key=key)
             except Exception:
                 pass

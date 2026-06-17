@@ -12,7 +12,7 @@ def load_css(theme_mode: str = "light") -> None:
     _dir = os.path.dirname(os.path.abspath(__file__))
     _css_path = os.path.join(_dir, "styles.css")
     if os.path.exists(_css_path):
-        with open(_css_path, "r", encoding="utf-8") as f:
+        with open(_css_path, encoding="utf-8") as f:
             css = f.read()
     else:
         css = ""

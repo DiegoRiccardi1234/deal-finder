@@ -1,21 +1,10 @@
 """offerte: offerte/scrapers/aliexpress.py"""
+
 from __future__ import annotations
 
-import base64
-import json
 import math
-import os
-import random
-import re
-import sys
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
-from typing import Callable, Optional
-from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
+from urllib.parse import quote_plus
 
-import requests
-from bs4 import BeautifulSoup
 
 try:
     from cerebras.cloud.sdk import Cerebras
@@ -34,23 +23,24 @@ except Exception:
 _CEREBRAS_MODEL_FALLBACK = "llama-3.3-70b"
 from offerte._constants import *  # noqa: F401,F403
 from offerte.models import Offerta
-from offerte.http import fetch_with_retry, get_headers, _random_delay
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import is_relevant
-from offerte.scrapers._base import _get_ebay_token
+
 
 def scrape_aliexpress(
     query: str,
     prezzo_min: float,
-    budget_max: Optional[float],
+    budget_max: float | None,
     query_tokens: list[str],
 ) -> list[Offerta]:
     """Scraper per AliExpress via Playwright headless."""
-    print(f"\n🔍 Cerco su AliExpress.com: \"{query}\"")
+    print(f'\n🔍 Cerco su AliExpress.com: "{query}"')
     try:
         from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
     except ImportError:
-        print("    ⚠️  AliExpress: playwright non installato. Esegui: pip install playwright && playwright install chromium")
+        print(
+            "    ⚠️  AliExpress: playwright non installato. Esegui: pip install playwright && playwright install chromium"
+        )
         return []
 
     url = f"https://it.aliexpress.com/wholesale?SearchText={quote_plus(query)}&SortType=price_asc"
@@ -101,7 +91,11 @@ def scrape_aliexpress(
                                 href = link_el.get_attribute("href") if link_el else ""
                             if not href or "/item/" not in href:
                                 continue
-                            link = href if href.startswith("http") else "https://it.aliexpress.com" + href
+                            link = (
+                                href
+                                if href.startswith("http")
+                                else "https://it.aliexpress.com" + href
+                            )
 
                             righe = [r.strip() for r in testo.splitlines() if r.strip()]
                             nome = righe[0] if righe else ""
@@ -123,8 +117,14 @@ def scrape_aliexpress(
                                 continue
 
                             risultati.append(
-                                Offerta(nome=nome, prezzo=prezzo, negozio="AliExpress",
-                                        link=link, fonte="aliexpress.com", spedizione="n.d.")
+                                Offerta(
+                                    nome=nome,
+                                    prezzo=prezzo,
+                                    negozio="AliExpress",
+                                    link=link,
+                                    fonte="aliexpress.com",
+                                    spedizione="n.d.",
+                                )
                             )
                         except Exception:
                             continue
@@ -141,5 +141,3 @@ def scrape_aliexpress(
 
     print(f"    → {len(risultati)} risultati AliExpress")
     return risultati
-
-

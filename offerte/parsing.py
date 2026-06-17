@@ -1,4 +1,5 @@
 """offerte: offerte/parsing.py"""
+
 from __future__ import annotations
 
 import base64
@@ -11,7 +12,8 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import Optional
+from collections.abc import Callable
 from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 
 import requests
@@ -33,6 +35,7 @@ except Exception:
 
 _CEREBRAS_MODEL_FALLBACK = "llama-3.3-70b"
 from offerte._constants import *  # noqa: F401,F403
+
 
 def parse_price(text: str) -> float:
     """
@@ -109,7 +112,7 @@ def parse_price(text: str) -> float:
         return math.inf
 
 
-def _within_price_range(prezzo: float, prezzo_min: float, budget_max: Optional[float]) -> bool:
+def _within_price_range(prezzo: float, prezzo_min: float, budget_max: float | None) -> bool:
     """Verifica che il prezzo rientri nel range configurato."""
     if not math.isfinite(prezzo):
         return False
@@ -175,12 +178,16 @@ def _extract_ram_gb_values(text: str) -> list[int]:
 def _extract_storage_gb_values(text: str) -> list[int]:
     """Estrae valori storage (GB/TB) associati a SSD/HDD/NVMe/disco."""
     values: list[int] = []
-    for m in re.finditer(r"(\d{2,4})\s*gb\s*(?:ssd|hdd|nvme|emmc|disco|storage)\b", text, flags=re.IGNORECASE):
+    for m in re.finditer(
+        r"(\d{2,4})\s*gb\s*(?:ssd|hdd|nvme|emmc|disco|storage)\b", text, flags=re.IGNORECASE
+    ):
         try:
             values.append(int(m.group(1)))
         except Exception:
             continue
-    for m in re.finditer(r"(?:ssd|hdd|nvme|emmc|disco|storage)\s*(\d{2,4})\s*gb\b", text, flags=re.IGNORECASE):
+    for m in re.finditer(
+        r"(?:ssd|hdd|nvme|emmc|disco|storage)\s*(\d{2,4})\s*gb\b", text, flags=re.IGNORECASE
+    ):
         try:
             values.append(int(m.group(1)))
         except Exception:
@@ -206,7 +213,7 @@ def _extract_inches_values(text: str) -> list[float]:
     return values
 
 
-def _parse_target_range(value: str) -> Optional[tuple[float, float]]:
+def _parse_target_range(value: str) -> tuple[float, float] | None:
     """Converte '14-15' / '14/15' / '14,15' in range numerico."""
     txt = str(value or "").strip().lower()
     if not txt:
@@ -234,7 +241,11 @@ def _extract_clothing_specs(nome_prodotto: str) -> dict[str, object]:
     lower_name = nome.lower()
 
     brand_match = re.search(r"\b([A-Z][A-Za-z0-9'&-]+)\b", nome)
-    size_match = re.search(r"\b(?:XXS|XS|S|M|L|XL|XXL|36|37|38|39|40|41|42|43|44|45|46|47|48|49|50)\b", nome, flags=re.IGNORECASE)
+    size_match = re.search(
+        r"\b(?:XXS|XS|S|M|L|XL|XXL|36|37|38|39|40|41|42|43|44|45|46|47|48|49|50)\b",
+        nome,
+        flags=re.IGNORECASE,
+    )
 
     materiale = None
     for candidate in ("cotone", "poliestere", "lana", "pelle"):
@@ -261,7 +272,11 @@ def _extract_clothing_specs(nome_prodotto: str) -> dict[str, object]:
 def _extract_shipping_from_text(text: str) -> str:
     """Estrae costo spedizione da testo libero con fallback 'n.d.'."""
     text_lower = text.lower()
-    if "spedizione gratuita" in text_lower or "consegna gratuita" in text_lower or "free shipping" in text_lower:
+    if (
+        "spedizione gratuita" in text_lower
+        or "consegna gratuita" in text_lower
+        or "free shipping" in text_lower
+    ):
         return "Gratuita ✅"
 
     match = re.search(
@@ -270,7 +285,11 @@ def _extract_shipping_from_text(text: str) -> str:
         flags=re.IGNORECASE,
     )
     if not match:
-        match = re.search(r"spedizione\s*(?:da|:)?\s*((?:€|EUR)\s*\d{1,3}(?:[\.\s]\d{3})*(?:[\.,]\d{2})?)", text, flags=re.IGNORECASE)
+        match = re.search(
+            r"spedizione\s*(?:da|:)?\s*((?:€|EUR)\s*\d{1,3}(?:[\.\s]\d{3})*(?:[\.,]\d{2})?)",
+            text,
+            flags=re.IGNORECASE,
+        )
     if match:
         value = match.group(1).replace("EUR", "€").replace("  ", " ").strip()
         return value
@@ -287,45 +306,43 @@ def tokenize_query(query: str) -> list[str]:
     return [t for t in tokens if t not in _STOPWORDS and len(t) > 1]
 
 
-
-
 __all__ = [
-    'annotations',
-    'base64',
-    'json',
-    'math',
-    'os',
-    'random',
-    're',
-    'sys',
-    'time',
-    'ThreadPoolExecutor',
-    'as_completed',
-    'dataclass',
-    'field',
-    'Callable',
-    'Optional',
-    'parse_qs',
-    'quote_plus',
-    'unquote',
-    'urljoin',
-    'urlparse',
-    'requests',
-    'BeautifulSoup',
-    'Cerebras',
-    '_get_best_model',
-    '_cerebras_chat_lib',
-    '_CEREBRAS_MODEL_FALLBACK',
-    'parse_price',
-    '_within_price_range',
-    '_normalize_category',
-    '_extract_json_object',
-    '_extract_gb_values',
-    '_extract_ram_gb_values',
-    '_extract_storage_gb_values',
-    '_extract_inches_values',
-    '_parse_target_range',
-    '_extract_clothing_specs',
-    '_extract_shipping_from_text',
-    'tokenize_query',
+    "annotations",
+    "base64",
+    "json",
+    "math",
+    "os",
+    "random",
+    "re",
+    "sys",
+    "time",
+    "ThreadPoolExecutor",
+    "as_completed",
+    "dataclass",
+    "field",
+    "Callable",
+    "Optional",
+    "parse_qs",
+    "quote_plus",
+    "unquote",
+    "urljoin",
+    "urlparse",
+    "requests",
+    "BeautifulSoup",
+    "Cerebras",
+    "_get_best_model",
+    "_cerebras_chat_lib",
+    "_CEREBRAS_MODEL_FALLBACK",
+    "parse_price",
+    "_within_price_range",
+    "_normalize_category",
+    "_extract_json_object",
+    "_extract_gb_values",
+    "_extract_ram_gb_values",
+    "_extract_storage_gb_values",
+    "_extract_inches_values",
+    "_parse_target_range",
+    "_extract_clothing_specs",
+    "_extract_shipping_from_text",
+    "tokenize_query",
 ]

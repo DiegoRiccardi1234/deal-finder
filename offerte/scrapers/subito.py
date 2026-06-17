@@ -1,18 +1,9 @@
 """offerte: offerte/scrapers/subito.py"""
+
 from __future__ import annotations
 
-import base64
-import json
 import math
-import os
-import random
-import re
-import sys
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
-from typing import Callable, Optional
-from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
+from urllib.parse import quote_plus, urljoin
 
 import requests
 from bs4 import BeautifulSoup
@@ -37,12 +28,12 @@ from offerte.models import Offerta
 from offerte.http import fetch_with_retry, get_headers, _random_delay
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import is_relevant
-from offerte.scrapers._base import _get_ebay_token
+
 
 def scrape_subito(
     query: str,
     prezzo_min: float,
-    budget_max: Optional[float],
+    budget_max: float | None,
     query_tokens: list[str],
     condizione: str = "tutti",
 ) -> list[Offerta]:
@@ -50,13 +41,17 @@ def scrape_subito(
     if condizione == "nuovo":
         print("\nℹ️ Subito.it: skip (solo usato/privati)")
         return []
-    print(f"\n🔍 Cerco su Subito.it: \"{query}\"")
-    print("    ⚠️  Subito.it: protetto da Akamai CDN (HTTP 403). Fonte non disponibile senza browser headless.")
+    print(f'\n🔍 Cerco su Subito.it: "{query}"')
+    print(
+        "    ⚠️  Subito.it: protetto da Akamai CDN (HTTP 403). Fonte non disponibile senza browser headless."
+    )
     return []
     # Implementazione HTML conservata per riferimento futuro:
 
-    url = f"https://www.subito.it/annunci-italia/vendita/usato/?q={quote_plus(query)}&sort=price_asc"
-    print(f"\n🔍 Cerco su Subito.it: \"{query}\"")
+    url = (
+        f"https://www.subito.it/annunci-italia/vendita/usato/?q={quote_plus(query)}&sort=price_asc"
+    )
+    print(f'\n🔍 Cerco su Subito.it: "{query}"')
 
     risultati: list[Offerta] = []
     try:
@@ -73,9 +68,11 @@ def scrape_subito(
         cards = soup.select('div[class*="item-card"]') or soup.select('article[class*="item"]')
         if not cards:
             # Fallback: cerca tutti i link con /annunci/ nel path
-            cards = soup.select('div.items__item')
+            cards = soup.select("div.items__item")
         if not cards:
-            print("    ⚠️  Nessun prodotto trovato su Subito.it — possibile blocco o layout cambiato.")
+            print(
+                "    ⚠️  Nessun prodotto trovato su Subito.it — possibile blocco o layout cambiato."
+            )
             return risultati
 
         print(f"    ✅ Trovate {len(cards)} card grezze su Subito.it")
@@ -85,7 +82,7 @@ def scrape_subito(
                 nome_tag = (
                     card.select_one('h2[class*="item-title"]')
                     or card.select_one('[class*="item-title"]')
-                    or card.select_one('h2')
+                    or card.select_one("h2")
                     or card.select_one('[data-testid="item-title"]')
                 )
                 if not nome_tag:
@@ -94,9 +91,8 @@ def scrape_subito(
                 if not nome:
                     continue
 
-                prezzo_tag = (
-                    card.select_one('[class*="price"]')
-                    or card.select_one('[data-testid*="price"]')
+                prezzo_tag = card.select_one('[class*="price"]') or card.select_one(
+                    '[data-testid*="price"]'
                 )
                 if not prezzo_tag:
                     continue
@@ -125,8 +121,15 @@ def scrape_subito(
                     img_url = ""
 
                 risultati.append(
-                    Offerta(nome=nome, prezzo=prezzo, negozio="Subito.it", link=link,
-                            fonte="subito.it", spedizione="n.d.", immagine=img_url)
+                    Offerta(
+                        nome=nome,
+                        prezzo=prezzo,
+                        negozio="Subito.it",
+                        link=link,
+                        fonte="subito.it",
+                        spedizione="n.d.",
+                        immagine=img_url,
+                    )
                 )
             except (AttributeError, TypeError):
                 continue
@@ -143,5 +146,3 @@ def scrape_subito(
 
     _random_delay()
     return risultati
-
-

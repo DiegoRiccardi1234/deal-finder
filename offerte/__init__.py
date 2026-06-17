@@ -1,4 +1,5 @@
 """offerte: package pubblico. Re-export API stabili."""
+
 from offerte.ai import (
     detect_category_and_questions,
     fetch_specs_ai,
@@ -6,14 +7,14 @@ from offerte.ai import (
     parse_comparison_query,
     parse_search_intent,
 )
-from offerte.dedup import _deduplica
+from offerte.dedup import _deduplica as _deduplica  # re-export privato (usato dai test)
 from offerte.export import export_to_csv, print_results
 from offerte.filters import is_relevant
 from offerte.http import fetch_with_retry, get_headers
 from offerte.models import Offerta
 from offerte.orchestrator import cerca_offerte
 from offerte.parsing import (
-    _extract_json_object,
+    _extract_json_object as _extract_json_object,  # re-export privato (usato da offerte.ai)
     parse_price,
     tokenize_query,
 )

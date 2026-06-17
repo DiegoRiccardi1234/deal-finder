@@ -1,18 +1,9 @@
 """offerte: offerte/scrapers/alibaba.py"""
+
 from __future__ import annotations
 
-import base64
-import json
 import math
-import os
-import random
-import re
-import sys
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
-from typing import Callable, Optional
-from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
+from urllib.parse import quote_plus
 
 import requests
 from bs4 import BeautifulSoup
@@ -37,17 +28,19 @@ from offerte.models import Offerta
 from offerte.http import fetch_with_retry, get_headers, _random_delay
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import is_relevant
-from offerte.scrapers._base import _get_ebay_token
+
 
 def scrape_alibaba(
     query: str,
     prezzo_min: float,
-    budget_max: Optional[float],
+    budget_max: float | None,
     query_tokens: list[str],
 ) -> list[Offerta]:
     """Scraper per Alibaba.com — DOM vuoto (89KB ma nessun testo estraibile, JS-rendered)."""
-    print(f"\n🔍 Cerco su Alibaba.com: \"{query}\"")
-    print("    ⚠️  Alibaba.com: pagina JS-rendered (89KB senza testo/prezzi estraibili). Fonte non disponibile senza browser headless.")
+    print(f'\n🔍 Cerco su Alibaba.com: "{query}"')
+    print(
+        "    ⚠️  Alibaba.com: pagina JS-rendered (89KB senza testo/prezzi estraibili). Fonte non disponibile senza browser headless."
+    )
     return []
     # Implementazione HTML conservata per riferimento futuro:
     url = f"https://www.alibaba.com/trade/search?SearchText={quote_plus(query)}&SortType=price_asc"
@@ -66,7 +59,7 @@ def scrape_alibaba(
         cards = (
             soup.select('div[class*="organic-list-offer"]')
             or soup.select('div[class*="offer-list-row"]')
-            or soup.select('.J-offer-wrapper')
+            or soup.select(".J-offer-wrapper")
         )
 
         if not cards:
@@ -80,7 +73,7 @@ def scrape_alibaba(
                 nome_tag = (
                     card.select_one('[class*="subject"]')
                     or card.select_one('[class*="title"]')
-                    or card.select_one('h2')
+                    or card.select_one("h2")
                 )
                 if not nome_tag:
                     continue
@@ -99,7 +92,13 @@ def scrape_alibaba(
                 if not link_tag:
                     continue
                 href = str(link_tag.get("href", "") or "")
-                link = href if href.startswith("http") else "https:" + href if href.startswith("//") else "https://www.alibaba.com" + href
+                link = (
+                    href
+                    if href.startswith("http")
+                    else "https:" + href
+                    if href.startswith("//")
+                    else "https://www.alibaba.com" + href
+                )
 
                 if not is_relevant(nome, query_tokens, strict_specs=False):
                     continue
@@ -107,8 +106,14 @@ def scrape_alibaba(
                     continue
 
                 risultati.append(
-                    Offerta(nome=nome, prezzo=prezzo, negozio="Alibaba", link=link,
-                            fonte="alibaba.com", spedizione="n.d.")
+                    Offerta(
+                        nome=nome,
+                        prezzo=prezzo,
+                        negozio="Alibaba",
+                        link=link,
+                        fonte="alibaba.com",
+                        spedizione="n.d.",
+                    )
                 )
             except (AttributeError, TypeError):
                 continue
@@ -125,5 +130,3 @@ def scrape_alibaba(
 
     _random_delay()
     return risultati
-
-

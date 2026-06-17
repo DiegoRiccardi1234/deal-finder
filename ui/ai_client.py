@@ -1,17 +1,13 @@
 """ui: ui/ai_client.py"""
+
 from __future__ import annotations
 
-import contextlib
-import csv
-import hashlib
-import io
 import json
 import os
 import random
 import re
 import time
-from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import streamlit as st
 
@@ -36,13 +32,14 @@ try:
 except Exception:
     kb_manager = None  # type: ignore[assignment]
 
-from offerte_tech import Offerta, cerca_offerte, parse_search_intent, parse_comparison_query
 
 try:
     from search_history import load_history, save_search as _save_search
 except ImportError:
+
     def load_history() -> list[dict[str, Any]]:
         return []
+
     def _save_search(**kw: Any) -> None:
         return None
 
@@ -51,6 +48,7 @@ def _get_cerebras_api_key() -> str:
     """Bootstrap dei secret Streamlit nelle env var e ritorna la API key del
     provider AI attivo (multi-provider via offerte.providers)."""
     from offerte import providers
+
     try:
         providers.load_keys_from(st.secrets)
     except Exception:
@@ -78,11 +76,19 @@ class _MockCompletionResponse:
 
 
 class _MockChatCompletions:
-    def create(self, model: str, messages: list[dict[str, str]], temperature: float = 0.0) -> object:
-        system_prompt = next((message.get("content", "") for message in messages if message.get("role") == "system"), "")
+    def create(
+        self, model: str, messages: list[dict[str, str]], temperature: float = 0.0
+    ) -> object:
+        system_prompt = next(
+            (message.get("content", "") for message in messages if message.get("role") == "system"),
+            "",
+        )
         user_payload = messages[-1].get("content", "") if messages else ""
 
-        if "Sei un consulente acquisti esperto italiano" in system_prompt or "Sei un assistente shopping esperto italiano" in system_prompt:
+        if (
+            "Sei un consulente acquisti esperto italiano" in system_prompt
+            or "Sei un assistente shopping esperto italiano" in system_prompt
+        ):
             try:
                 payload = json.loads(user_payload)
             except Exception:
@@ -90,11 +96,30 @@ class _MockChatCompletions:
             transcript = str(payload.get("trascrizione", "") or "").lower()
             domande_fatte = int(payload.get("domande_fatte", 0) or 0)
             if domande_fatte <= 0:
-                content = json.dumps({"domanda": "Qual e il tuo budget massimo?", "pronto": False}, ensure_ascii=False)
+                content = json.dumps(
+                    {"domanda": "Qual e il tuo budget massimo?", "pronto": False},
+                    ensure_ascii=False,
+                )
             elif domande_fatte == 1:
-                content = json.dumps({"domanda": "Preferisci nuovo o usato?", "pronto": False}, ensure_ascii=False)
+                content = json.dumps(
+                    {"domanda": "Preferisci nuovo o usato?", "pronto": False}, ensure_ascii=False
+                )
             else:
-                categoria = "tech" if any(token in transcript for token in ("smartphone", "iphone", "telefono", "cellulare", "notebook", "laptop")) else "altro"
+                categoria = (
+                    "tech"
+                    if any(
+                        token in transcript
+                        for token in (
+                            "smartphone",
+                            "iphone",
+                            "telefono",
+                            "cellulare",
+                            "notebook",
+                            "laptop",
+                        )
+                    )
+                    else "altro"
+                )
                 # Estrai filtri_ai dal transcript
                 filtri_ai_mock: dict[str, str] = {}
                 ram_m = re.search(r"(\d{1,3})\s*gb\s*(?:di\s*)?ram", transcript)
@@ -103,7 +128,11 @@ class _MockChatCompletions:
                 content = json.dumps(
                     {
                         "pronto": True,
-                        "query": "smartphone nuovo" if "smartphone" in transcript else "notebook 14 pollici" if "notebook" in transcript else "prodotto cercato",
+                        "query": "smartphone nuovo"
+                        if "smartphone" in transcript
+                        else "notebook 14 pollici"
+                        if "notebook" in transcript
+                        else "prodotto cercato",
                         "prezzo_min": 200,
                         "budget_max": 800,
                         "categoria": categoria,
@@ -144,10 +173,11 @@ class _MockCerebrasClient:
         self.chat = _MockChat()
 
 
-def _get_cerebras_client(api_key: str) -> Optional[object]:
+def _get_cerebras_client(api_key: str) -> object | None:
     if _is_test_mode():
         return _MockCerebrasClient()
     from offerte import providers
+
     return providers.build_client(providers.active_provider())
 
 
@@ -174,7 +204,7 @@ def _cerebras_chat_with_retry(
         return str(content or "").strip()
 
     # Fallback se il modulo non è disponibile
-    last_exc: Optional[BaseException] = None
+    last_exc: BaseException | None = None
     for attempt in range(1 + max_retries):
         try:
             _model = _get_best_model(client) if _get_best_model else CEREBRAS_MODEL
@@ -183,7 +213,9 @@ def _cerebras_chat_with_retry(
                 messages=messages,
                 temperature=temperature,
             )
-            content = completion.choices[0].message.content if completion and completion.choices else ""
+            content = (
+                completion.choices[0].message.content if completion and completion.choices else ""
+            )
             return str(content or "").strip()
         except Exception as exc:
             last_exc = exc
@@ -214,5 +246,3 @@ def _extract_json_object(raw: str) -> dict[str, Any]:
             return payload if isinstance(payload, dict) else {}
         except Exception:
             return {}
-
-

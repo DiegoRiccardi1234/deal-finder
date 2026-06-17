@@ -1,17 +1,12 @@
 """ui: ui/search.py"""
+
 from __future__ import annotations
 
 import contextlib
-import csv
-import hashlib
 import io
-import json
 import os
-import random
-import re
 import time
-from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import streamlit as st
 
@@ -36,15 +31,18 @@ try:
 except Exception:
     kb_manager = None  # type: ignore[assignment]
 
-from offerte_tech import Offerta, cerca_offerte, parse_search_intent, parse_comparison_query
+from offerte_tech import Offerta, cerca_offerte
 
 try:
     from search_history import load_history, save_search as _save_search
 except ImportError:
+
     def load_history() -> list[dict[str, Any]]:
         return []
+
     def _save_search(**kw: Any) -> None:
         return None
+
 
 try:
     import price_history
@@ -54,14 +52,8 @@ except Exception:
     price_history = None  # type: ignore[assignment]
     _disk_cache = None  # type: ignore[assignment]
 from ui.ai_client import _is_test_mode
-from ui.cards import _render_offerta_card, _render_results_grid, _render_specs_grid
-from ui.comparison import _render_comparison_board, _render_manual_comparison_matrix, _run_comparison_search
-from ui.export import _offerte_to_copy_text, _offerte_to_csv_bytes, _offerte_to_records, _specs_from_name, _summarize_specs
 from ui.presearch import _infer_categoria_from_query
-from ui.recommendation import _build_products_payload, _build_comparison_payload, _call_final_recommendation
-from ui.state import _format_price
 from ui.test_mode import _build_mock_results
-from ui.sources import _status_rows_for_sources, _render_source_status_monitor
 
 
 def _run_search(
@@ -72,7 +64,7 @@ def _run_search(
     top_n: int,
     condizione: str,
     fonti_backend: list[str],
-    cerebras_client: Optional[object],
+    cerebras_client: object | None,
 ) -> None:
     st.session_state["ricerca_effettuata"] = True
     st.session_state["ultima_query"] = query
@@ -105,14 +97,19 @@ def _run_search(
     if _is_test_mode():
         risultati = _build_mock_results(query, categoria, prezzo_min, budget_max)
         st.session_state["risultati"] = risultati
-        st.session_state["log_ricerca"] = "[mock-mode] risultati generati localmente per la suite UI"
+        st.session_state["log_ricerca"] = (
+            "[mock-mode] risultati generati localmente per la suite UI"
+        )
         st.session_state["filtri_ai_ultima_ricerca"] = st.session_state.get("filtri_ai", {})
         return
 
     # ── Cache: stessa ricerca entro 5 minuti → riusa i risultati ──────────────
     _cache_key = (
-        query.strip().lower(), int(prezzo_min), int(budget_max),
-        condizione, tuple(sorted(fonti_backend)),
+        query.strip().lower(),
+        int(prezzo_min),
+        int(budget_max),
+        condizione,
+        tuple(sorted(fonti_backend)),
     )
     _cache = st.session_state.get("_search_cache", {})
     if _cache.get("key") == _cache_key and (time.time() - float(_cache.get("ts", 0))) < 300:
@@ -125,7 +122,8 @@ def _run_search(
     # ── Cache su disco: persiste tra sessioni/riavvii ─────────────────────────
     _disk_key = (
         _disk_cache.make_cache_key(query, prezzo_min, budget_max, condizione, fonti_backend)
-        if _disk_cache else None
+        if _disk_cache
+        else None
     )
     if _disk_key:
         _disk_hit = _disk_cache.read(_disk_key, ttl=300)
@@ -149,11 +147,15 @@ def _run_search(
     st.session_state["auto_recommend_tried"] = False
 
     try:
-        with st.status("⏳ Ricerca in corso sulle fonti selezionate...", expanded=True) as search_status:
+        with st.status(
+            "⏳ Ricerca in corso sulle fonti selezionate...", expanded=True
+        ) as search_status:
 
             def on_source_done(source_label: str, count: int) -> None:
                 if count > 0:
-                    st.write(f"✅ **{source_label}** → {count} {'risultato' if count == 1 else 'risultati'}")
+                    st.write(
+                        f"✅ **{source_label}** → {count} {'risultato' if count == 1 else 'risultati'}"
+                    )
                 elif count == -2:
                     st.write(f"⚙️ **{source_label}** → non configurato (chiavi API mancanti)")
                 elif count == -1:
@@ -225,5 +227,3 @@ def _run_search(
             f"❌ Si e verificato un errore durante la ricerca:\n\n```\n{exc}\n```\n\n"
             "Verifica la connessione internet e riprova."
         )
-
-

@@ -52,11 +52,13 @@ class _FakeSession:
         return _FakeResponse("<html></html>")
 
 
-def test_scrape_amazon_retry_second_attempt_with_open_session(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_scrape_amazon_retry_second_attempt_with_open_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Il secondo tentativo Amazon deve avvenire con sessione ancora aperta."""
     desktop_empty = "<html><body><div>no cards</div></body></html>"
     desktop_with_card = (
-        '<html><body>'
+        "<html><body>"
         '<div data-component-type="s-search-result">'
         '<h2><span class="a-text-normal">Apple iPhone 16 128GB Nero</span></h2>'
         '<span class="a-price"><span class="a-offscreen">€ 879,00</span></span>'
@@ -84,7 +86,11 @@ def test_scrape_amazon_retry_second_attempt_with_open_session(monkeypatch: pytes
     monkeypatch.setattr("offerte.scrapers.amazon.time.sleep", lambda *_: None)
 
     risultati = __import__("offerte_tech").scrape_amazon(
-        "iphone 16", prezzo_min=300, budget_max=1000, query_tokens=["iphone", "16"], condizione="nuovo"
+        "iphone 16",
+        prezzo_min=300,
+        budget_max=1000,
+        query_tokens=["iphone", "16"],
+        condizione="nuovo",
     )
 
     assert len(calls) >= 2
@@ -93,7 +99,9 @@ def test_scrape_amazon_retry_second_attempt_with_open_session(monkeypatch: pytes
     assert "iphone 16" in risultati[0].nome.lower()
 
 
-def test_scrape_amazon_does_not_use_broken_rh_condition_filter(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_scrape_amazon_does_not_use_broken_rh_condition_filter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Per evitare false pagine 'nessun risultato', Amazon non deve usare rh condition in URL."""
     calls: list[str] = []
 
@@ -107,17 +115,23 @@ def test_scrape_amazon_does_not_use_broken_rh_condition_filter(monkeypatch: pyte
     monkeypatch.setattr("offerte.scrapers.amazon.time.sleep", lambda *_: None)
 
     __import__("offerte_tech").scrape_amazon(
-        "iphone 16", prezzo_min=300, budget_max=1000, query_tokens=["iphone", "16"], condizione="nuovo"
+        "iphone 16",
+        prezzo_min=300,
+        budget_max=1000,
+        query_tokens=["iphone", "16"],
+        condizione="nuovo",
     )
 
     assert calls
     assert "p_n_condition-type" not in calls[0]
 
 
-def test_scrape_amazon_condizione_nuovo_filtra_ricondizionato(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_scrape_amazon_condizione_nuovo_filtra_ricondizionato(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Con condizione=nuovo lo scraper Amazon esclude i titoli ricondizionati/usati."""
     html = (
-        '<html><body>'
+        "<html><body>"
         '<div data-component-type="s-search-result">'
         '<h2><span class="a-text-normal">Apple iPhone 16 128GB Nero</span></h2>'
         '<span class="a-price"><span class="a-offscreen">€ 879,00</span></span>'
@@ -131,13 +145,19 @@ def test_scrape_amazon_condizione_nuovo_filtra_ricondizionato(monkeypatch: pytes
         "</body></html>"
     )
 
-    monkeypatch.setattr("offerte.scrapers.amazon.fetch_with_retry", lambda *a, **k: _FakeResponse(html, 200))
+    monkeypatch.setattr(
+        "offerte.scrapers.amazon.fetch_with_retry", lambda *a, **k: _FakeResponse(html, 200)
+    )
     monkeypatch.setattr("offerte.scrapers.amazon.requests.Session", _FakeSession)
     monkeypatch.setattr("offerte.scrapers.amazon._random_delay", lambda: None)
     monkeypatch.setattr("offerte.scrapers.amazon.time.sleep", lambda *_: None)
 
     risultati = __import__("offerte_tech").scrape_amazon(
-        "iphone 16", prezzo_min=300, budget_max=1000, query_tokens=["iphone", "16"], condizione="nuovo"
+        "iphone 16",
+        prezzo_min=300,
+        budget_max=1000,
+        query_tokens=["iphone", "16"],
+        condizione="nuovo",
     )
 
     assert len(risultati) == 1
@@ -147,7 +167,7 @@ def test_scrape_amazon_condizione_nuovo_filtra_ricondizionato(monkeypatch: pytes
 def test_scrape_amazon_fallback_mobile_on_desktop_503(monkeypatch: pytest.MonkeyPatch) -> None:
     """Se Amazon desktop torna 503, lo scraper tenta automaticamente l'endpoint mobile."""
     mobile_html = (
-        '<html><body>'
+        "<html><body>"
         '<div data-component-type="s-search-result">'
         '<h2><span class="a-text-normal">Apple iPhone 16 128GB Nero</span></h2>'
         '<span class="a-price"><span class="a-offscreen">€ 879,00</span></span>'
@@ -170,7 +190,11 @@ def test_scrape_amazon_fallback_mobile_on_desktop_503(monkeypatch: pytest.Monkey
     monkeypatch.setattr("offerte.scrapers.amazon.time.sleep", lambda *_: None)
 
     risultati = __import__("offerte_tech").scrape_amazon(
-        "iphone 16", prezzo_min=300, budget_max=1000, query_tokens=["iphone", "16"], condizione="nuovo"
+        "iphone 16",
+        prezzo_min=300,
+        budget_max=1000,
+        query_tokens=["iphone", "16"],
+        condizione="nuovo",
     )
 
     assert any("/gp/aw/s?" in c for c in calls)
@@ -193,7 +217,9 @@ def test_parse_price_range() -> None:
     assert parse_price("100,00 - 200,00") == 100.0
 
 
-def _make_monkeypatch_cerca(monkeypatch: pytest.MonkeyPatch, amazon_results: list[Offerta] | None = None) -> None:
+def _make_monkeypatch_cerca(
+    monkeypatch: pytest.MonkeyPatch, amazon_results: list[Offerta] | None = None
+) -> None:
     """Helper: patcha tutte le fonti di cerca_offerte."""
     monkeypatch.setattr("offerte.orchestrator.scrape_amazon", lambda *a, **kw: amazon_results or [])
     monkeypatch.setattr("offerte.orchestrator.scrape_ebay", lambda *a, **kw: [])
@@ -204,15 +230,27 @@ def _make_monkeypatch_cerca(monkeypatch: pytest.MonkeyPatch, amazon_results: lis
     monkeypatch.setattr("offerte.orchestrator.scrape_wallapop", lambda *a, **kw: [])
     monkeypatch.setattr("offerte.orchestrator.scrape_comet", lambda *a, **kw: [])
     monkeypatch.setattr("offerte.orchestrator.scrape_expert", lambda *a, **kw: [])
-    monkeypatch.setattr("offerte.orchestrator.fetch_specs_ai", lambda offerte, categoria, cerebras_client: offerte)
+    monkeypatch.setattr(
+        "offerte.orchestrator.fetch_specs_ai", lambda offerte, categoria, cerebras_client: offerte
+    )
 
 
 def test_prezzo_min_filter(monkeypatch: pytest.MonkeyPatch) -> None:
     _make_monkeypatch_cerca(
         monkeypatch,
         amazon_results=[
-            Offerta(nome="Apple iPhone 17 128GB", prezzo=150.0, negozio="A", link="https://example.com/1"),
-            Offerta(nome="Apple iPhone 17 256GB", prezzo=320.0, negozio="B", link="https://example.com/2"),
+            Offerta(
+                nome="Apple iPhone 17 128GB",
+                prezzo=150.0,
+                negozio="A",
+                link="https://example.com/1",
+            ),
+            Offerta(
+                nome="Apple iPhone 17 256GB",
+                prezzo=320.0,
+                negozio="B",
+                link="https://example.com/2",
+            ),
         ],
     )
 
@@ -234,8 +272,12 @@ def test_prezzo_min_filter(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_deduplicazione() -> None:
     offerte = [
-        Offerta(nome="Apple iPhone 17 128GB", prezzo=800.0, negozio="A", link="https://example.com/1"),
-        Offerta(nome="Apple iPhone 17 128GB", prezzo=790.0, negozio="B", link="https://example.com/2"),
+        Offerta(
+            nome="Apple iPhone 17 128GB", prezzo=800.0, negozio="A", link="https://example.com/1"
+        ),
+        Offerta(
+            nome="Apple iPhone 17 128GB", prezzo=790.0, negozio="B", link="https://example.com/2"
+        ),
     ]
     deduplicate = _deduplica(offerte)
     assert len(deduplicate) == 1
@@ -251,7 +293,11 @@ def test_is_relevant_corretto() -> None:
 
 
 def test_fetch_specs_ai_tech(cerebras_mock: MagicMock) -> None:
-    offerte = [Offerta(nome="Apple iPhone 17 256GB", prezzo=999.0, negozio="Test", link="https://example.com")]
+    offerte = [
+        Offerta(
+            nome="Apple iPhone 17 256GB", prezzo=999.0, negozio="Test", link="https://example.com"
+        )
+    ]
     risultati = fetch_specs_ai(offerte, "tech", cerebras_mock)
     assert risultati[0].specs["display"] == "6.1 OLED"
     assert risultati[0].specs["processore"] == "A19"
@@ -259,9 +305,15 @@ def test_fetch_specs_ai_tech(cerebras_mock: MagicMock) -> None:
     assert risultati[0].specs["storage"] == "256 GB"
 
 
-
 def test_fetch_specs_abbigliamento() -> None:
-    offerte = [Offerta(nome="Nike Felpa Oversize Cotone Donna M", prezzo=59.0, negozio="Test", link="https://example.com")]
+    offerte = [
+        Offerta(
+            nome="Nike Felpa Oversize Cotone Donna M",
+            prezzo=59.0,
+            negozio="Test",
+            link="https://example.com",
+        )
+    ]
     risultati = fetch_specs_ai(offerte, "abbigliamento", None)
     assert risultati[0].specs["brand"] == "Nike"
     assert risultati[0].specs["taglia"] == "M"
@@ -281,17 +333,32 @@ def test_is_spec_token() -> None:
 
 def test_is_relevant_lenient_specs() -> None:
     """Con strict_specs=False, i token spec (16gb, ram) vengono ignorati nel matching."""
-    assert is_relevant("Lenovo IdeaPad Laptop 14 pollici", ["notebook", "14", "16gb", "ram"], strict_specs=False) is True
+    assert (
+        is_relevant(
+            "Lenovo IdeaPad Laptop 14 pollici",
+            ["notebook", "14", "16gb", "ram"],
+            strict_specs=False,
+        )
+        is True
+    )
 
 
 def test_is_relevant_strict_specs() -> None:
     """Con strict_specs=True (default), tutti i token devono matchare."""
-    assert is_relevant("Lenovo IdeaPad Laptop 14 pollici", ["notebook", "14", "16gb", "ram"], strict_specs=True) is False
+    assert (
+        is_relevant(
+            "Lenovo IdeaPad Laptop 14 pollici", ["notebook", "14", "16gb", "ram"], strict_specs=True
+        )
+        is False
+    )
 
 
 def test_is_relevant_product_alias() -> None:
     """Notebook/laptop sono alias tra loro."""
-    assert is_relevant("Lenovo IdeaPad Laptop 14 pollici 16GB RAM", ["notebook", "14", "16gb", "ram"]) is True
+    assert (
+        is_relevant("Lenovo IdeaPad Laptop 14 pollici 16GB RAM", ["notebook", "14", "16gb", "ram"])
+        is True
+    )
 
 
 def test_spec_aware_sorting(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -299,8 +366,18 @@ def test_spec_aware_sorting(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "offerte.orchestrator.scrape_amazon",
         lambda *args, **kwargs: [
-            Offerta(nome="HP Laptop 14 pollici Intel i5", prezzo=600.0, negozio="Amazon", link="https://example.com/1"),
-            Offerta(nome="HP Laptop 14 pollici 16GB RAM SSD", prezzo=700.0, negozio="Amazon", link="https://example.com/2"),
+            Offerta(
+                nome="HP Laptop 14 pollici Intel i5",
+                prezzo=600.0,
+                negozio="Amazon",
+                link="https://example.com/1",
+            ),
+            Offerta(
+                nome="HP Laptop 14 pollici 16GB RAM SSD",
+                prezzo=700.0,
+                negozio="Amazon",
+                link="https://example.com/2",
+            ),
         ],
     )
     monkeypatch.setattr("offerte.orchestrator.scrape_ebay", lambda *args, **kwargs: [])
@@ -308,7 +385,9 @@ def test_spec_aware_sorting(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("offerte.orchestrator.scrape_euronics", lambda *args, **kwargs: [])
     monkeypatch.setattr("offerte.orchestrator.scrape_unieuro", lambda *args, **kwargs: [])
     monkeypatch.setattr("offerte.orchestrator.scrape_mediaworld", lambda *args, **kwargs: [])
-    monkeypatch.setattr("offerte.orchestrator.fetch_specs_ai", lambda offerte, categoria, cerebras_client: offerte)
+    monkeypatch.setattr(
+        "offerte.orchestrator.fetch_specs_ai", lambda offerte, categoria, cerebras_client: offerte
+    )
 
     risultati = cerca_offerte(
         query="notebook 14 pollici 16gb ram",
@@ -329,11 +408,36 @@ def test_spec_aware_sorting(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_filtra_risultati_con_ai_hard_specs_notebook() -> None:
     """I filtri hard devono scartare notebook fuori dimensione/RAM/storage richiesti."""
     risultati = [
-        Offerta(nome='Notebook 15,6" Intel i5 16GB RAM 512GB SSD', prezzo=599.0, negozio="A", link="https://x/1"),
-        Offerta(nome='Notebook 17,3" Intel i5 16GB RAM 512GB SSD', prezzo=579.0, negozio="B", link="https://x/2"),
-        Offerta(nome='Notebook 15,6" Intel i5 8GB RAM 512GB SSD', prezzo=499.0, negozio="C", link="https://x/3"),
-        Offerta(nome='Notebook 14" Intel i5 16GB RAM 256GB SSD', prezzo=469.0, negozio="D", link="https://x/4"),
-        Offerta(nome='Notebook 14" Intel i5 16GB RAM 1TB SSD', prezzo=649.0, negozio="E", link="https://x/5"),
+        Offerta(
+            nome='Notebook 15,6" Intel i5 16GB RAM 512GB SSD',
+            prezzo=599.0,
+            negozio="A",
+            link="https://x/1",
+        ),
+        Offerta(
+            nome='Notebook 17,3" Intel i5 16GB RAM 512GB SSD',
+            prezzo=579.0,
+            negozio="B",
+            link="https://x/2",
+        ),
+        Offerta(
+            nome='Notebook 15,6" Intel i5 8GB RAM 512GB SSD',
+            prezzo=499.0,
+            negozio="C",
+            link="https://x/3",
+        ),
+        Offerta(
+            nome='Notebook 14" Intel i5 16GB RAM 256GB SSD',
+            prezzo=469.0,
+            negozio="D",
+            link="https://x/4",
+        ),
+        Offerta(
+            nome='Notebook 14" Intel i5 16GB RAM 1TB SSD',
+            prezzo=649.0,
+            negozio="E",
+            link="https://x/5",
+        ),
     ]
     filtri = {
         "ram_gb": "16",
@@ -347,8 +451,8 @@ def test_filtra_risultati_con_ai_hard_specs_notebook() -> None:
     assert any('15,6" intel i5 16gb ram 512gb' in n for n in names)
     assert any('14" intel i5 16gb ram 1tb' in n for n in names)
     assert not any('17,3"' in n for n in names)
-    assert not any('8gb ram' in n for n in names)
-    assert not any('256gb ssd' in n for n in names)
+    assert not any("8gb ram" in n for n in names)
+    assert not any("256gb ssd" in n for n in names)
 
 
 def test_filtra_risultati_con_ai_logga_motivi_scarto(
@@ -359,9 +463,18 @@ def test_filtra_risultati_con_ai_logga_motivi_scarto(
     monkeypatch.setattr("offerte.ai._get_cerebras_client", lambda: None)
 
     risultati = [
-        Offerta(nome='Notebook 17,3" 16GB RAM 512GB SSD', prezzo=579.0, negozio="A", link="https://x/1"),
-        Offerta(nome='Notebook 14" 16GB RAM 512GB SSD', prezzo=629.0, negozio="B", link="https://x/2"),
-        Offerta(nome='Notebook 14" 16GB RAM 512GB SSD colore silver', prezzo=649.0, negozio="C", link="https://x/3"),
+        Offerta(
+            nome='Notebook 17,3" 16GB RAM 512GB SSD', prezzo=579.0, negozio="A", link="https://x/1"
+        ),
+        Offerta(
+            nome='Notebook 14" 16GB RAM 512GB SSD', prezzo=629.0, negozio="B", link="https://x/2"
+        ),
+        Offerta(
+            nome='Notebook 14" 16GB RAM 512GB SSD colore silver',
+            prezzo=649.0,
+            negozio="C",
+            link="https://x/3",
+        ),
     ]
     filtri_hard = {
         "ram_gb": "16",
@@ -396,8 +509,23 @@ def test_nuove_fonti_vuote(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("requests.get", _raise_conn)
     monkeypatch.setattr("requests.post", _raise_conn)
 
-    from offerte_tech import scrape_euronics, scrape_unieuro, scrape_mediaworld, scrape_comet, scrape_wallapop, scrape_expert
-    for scraper in (scrape_euronics, scrape_unieuro, scrape_mediaworld, scrape_comet, scrape_wallapop, scrape_expert):
+    from offerte_tech import (
+        scrape_euronics,
+        scrape_unieuro,
+        scrape_mediaworld,
+        scrape_comet,
+        scrape_wallapop,
+        scrape_expert,
+    )
+
+    for scraper in (
+        scrape_euronics,
+        scrape_unieuro,
+        scrape_mediaworld,
+        scrape_comet,
+        scrape_wallapop,
+        scrape_expert,
+    ):
         result = scraper("notebook", 0, 1000, ["notebook"])
         assert result == [], f"{scraper.__name__} doveva restituire [] su ConnectionError"
 
@@ -409,17 +537,43 @@ def test_cerca_offerte_nuove_fonti_integrate(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr("offerte.orchestrator.scrape_vinted", lambda *a, **kw: [])
     monkeypatch.setattr(
         "offerte.orchestrator.scrape_euronics",
-        lambda *a, **kw: [Offerta(nome="Samsung Galaxy A55 128GB", prezzo=349.0, negozio="Euronics", link="https://euronics.it/1", fonte="euronics.it")],
+        lambda *a, **kw: [
+            Offerta(
+                nome="Samsung Galaxy A55 128GB",
+                prezzo=349.0,
+                negozio="Euronics",
+                link="https://euronics.it/1",
+                fonte="euronics.it",
+            )
+        ],
     )
     monkeypatch.setattr(
         "offerte.orchestrator.scrape_unieuro",
-        lambda *a, **kw: [Offerta(nome="Samsung Galaxy A55 256GB", prezzo=399.0, negozio="Unieuro", link="https://unieuro.it/1", fonte="unieuro.it")],
+        lambda *a, **kw: [
+            Offerta(
+                nome="Samsung Galaxy A55 256GB",
+                prezzo=399.0,
+                negozio="Unieuro",
+                link="https://unieuro.it/1",
+                fonte="unieuro.it",
+            )
+        ],
     )
     monkeypatch.setattr(
         "offerte.orchestrator.scrape_mediaworld",
-        lambda *a, **kw: [Offerta(nome="Samsung Galaxy A56 128GB", prezzo=429.0, negozio="MediaWorld", link="https://mw.it/1", fonte="mediaworld.it")],
+        lambda *a, **kw: [
+            Offerta(
+                nome="Samsung Galaxy A56 128GB",
+                prezzo=429.0,
+                negozio="MediaWorld",
+                link="https://mw.it/1",
+                fonte="mediaworld.it",
+            )
+        ],
     )
-    monkeypatch.setattr("offerte.orchestrator.fetch_specs_ai", lambda offerte, categoria, cerebras_client: offerte)
+    monkeypatch.setattr(
+        "offerte.orchestrator.fetch_specs_ai", lambda offerte, categoria, cerebras_client: offerte
+    )
 
     risultati = cerca_offerte(
         query="samsung galaxy",
@@ -454,12 +608,17 @@ def test_parse_comparison_query() -> None:
     parts2 = parse_comparison_query("confronta samsung galaxy s24 e iphone 16")
     assert len(parts2) == 2
     # versus
-    assert parse_comparison_query("notebook dell versus notebook asus") == ["notebook dell", "notebook asus"]
+    assert parse_comparison_query("notebook dell versus notebook asus") == [
+        "notebook dell",
+        "notebook asus",
+    ]
     # query normale → lista vuota
     assert parse_comparison_query("notebook 14 pollici") == []
     assert parse_comparison_query("iphone 16") == []
     # Pattern "X V1 o V2 + confronto" (caso d'uso reale)
-    parts3 = parse_comparison_query("vorrei prendere un iphone 16 o 17 fammi un confronto su quale scegliere")
+    parts3 = parse_comparison_query(
+        "vorrei prendere un iphone 16 o 17 fammi un confronto su quale scegliere"
+    )
     assert len(parts3) == 2
     assert any("16" in p for p in parts3), f"Atteso 'iphone 16' nei parts: {parts3}"
     assert any("17" in p for p in parts3), f"Atteso 'iphone 17' nei parts: {parts3}"
@@ -467,7 +626,9 @@ def test_parse_comparison_query() -> None:
     parts4 = parse_comparison_query("iphone 16 o 17 confronto")
     assert len(parts4) == 2
     # vs con testo trailing (deve essere pulito)
-    parts5 = parse_comparison_query("iphone 16 vs iphone 17 da 256gb, quale mi conviene prendere dei due?")
+    parts5 = parse_comparison_query(
+        "iphone 16 vs iphone 17 da 256gb, quale mi conviene prendere dei due?"
+    )
     assert len(parts5) == 2
     assert parts5[0] == "iphone 16"
     assert "iphone 17" in parts5[1]
@@ -586,9 +747,15 @@ def test_chat_finale_risponde(page: Page, base_url: str, streamlit_server: str) 
     expect(last_message).to_contain_text("Ti consiglio", timeout=30000)
 
 
-def test_chat_finale_confronto_include_entrambi_modelli(page: Page, base_url: str, streamlit_server: str) -> None:
+def test_chat_finale_confronto_include_entrambi_modelli(
+    page: Page, base_url: str, streamlit_server: str
+) -> None:
     _open_home(page, base_url)
-    _send_chat(page, "Descrivi prodotto, uso, vincoli e preferenze", "iphone 16 vs iphone 17 nuovo budget 1000")
+    _send_chat(
+        page,
+        "Descrivi prodotto, uso, vincoli e preferenze",
+        "iphone 16 vs iphone 17 nuovo budget 1000",
+    )
     expect(page.get_by_role("button", name="Cerca offerte")).to_be_enabled(timeout=10000)
     page.get_by_role("button", name="Cerca offerte").click()
 
@@ -611,7 +778,9 @@ def test_chat_refine_state2_non_crasha(page: Page, base_url: str, streamlit_serv
     _open_home(page, base_url)
     _complete_presearch(page)
 
-    _send_chat(page, "Vuoi affinare la query o il budget? Scrivi qui...", "alza budget massimo a 1000")
+    _send_chat(
+        page, "Vuoi affinare la query o il budget? Scrivi qui...", "alza budget massimo a 1000"
+    )
 
     expect(page.get_by_role("button", name="Cerca offerte")).to_be_visible(timeout=10000)
     body_text = page.locator("section[data-testid='stMain']").inner_text(timeout=15000).lower()
@@ -621,6 +790,7 @@ def test_chat_refine_state2_non_crasha(page: Page, base_url: str, streamlit_serv
 # ===========================================================================
 # Vinted (library-based)
 # ===========================================================================
+
 
 def test_scrape_vinted_library_returns_results(monkeypatch: pytest.MonkeyPatch) -> None:
     """scrape_vinted deve usare VintedScraper e restituire Offerta objects."""
@@ -635,6 +805,7 @@ def test_scrape_vinted_library_returns_results(monkeypatch: pytest.MonkeyPatch) 
     class _FakeScraper:
         def __init__(self, base_url: str) -> None:
             pass
+
         def search(self, params: dict) -> list:
             return [_FakeItem()]
 
@@ -649,6 +820,7 @@ def test_scrape_vinted_library_returns_results(monkeypatch: pytest.MonkeyPatch) 
 
 def test_scrape_vinted_skips_nuovo_condizione(monkeypatch: pytest.MonkeyPatch) -> None:
     from offerte_tech import scrape_vinted
+
     results = scrape_vinted("notebook", 0.0, 500.0, ["notebook"], condizione="nuovo")
     assert results == []
 
@@ -657,33 +829,51 @@ def test_scrape_vinted_skips_nuovo_condizione(monkeypatch: pytest.MonkeyPatch) -
 # Wallapop
 # ===========================================================================
 
+
 def test_scrape_wallapop_returns_results(monkeypatch: pytest.MonkeyPatch) -> None:
     from offerte_tech import scrape_wallapop
 
     comp_resp = {
-        "components": [{"type": "search_results", "type_data": {"query_params": {
-            "search_id": "abc-123", "category_id": "24200",
-        }}}]
+        "components": [
+            {
+                "type": "search_results",
+                "type_data": {
+                    "query_params": {
+                        "search_id": "abc-123",
+                        "category_id": "24200",
+                    }
+                },
+            }
+        ]
     }
     section_resp = {
-        "data": {"section": {"items": [{
-            "title": "Notebook HP 15 usato",
-            "price": {"amount": 280.0, "currency": "EUR"},
-            "web_slug": "notebook-hp-15-280",
-            "images": [{"urls": {"small": "https://cdn.wallapop.com/img.jpg"}}],
-            "shipping": {"user_allows_shipping": True},
-            "is_refurbished": False,
-        }]}}
+        "data": {
+            "section": {
+                "items": [
+                    {
+                        "title": "Notebook HP 15 usato",
+                        "price": {"amount": 280.0, "currency": "EUR"},
+                        "web_slug": "notebook-hp-15-280",
+                        "images": [{"urls": {"small": "https://cdn.wallapop.com/img.jpg"}}],
+                        "shipping": {"user_allows_shipping": True},
+                        "is_refurbished": False,
+                    }
+                ]
+            }
+        }
     }
 
     call_count: dict[str, int] = {"n": 0}
 
     class _FakeResp:
         status_code = 200
+
         def __init__(self, data: dict) -> None:
             self._data = data
+
         def json(self) -> dict:
             return self._data
+
         def raise_for_status(self) -> None:
             pass
 
@@ -707,21 +897,32 @@ def test_scrape_wallapop_returns_results(monkeypatch: pytest.MonkeyPatch) -> Non
 # Comet
 # ===========================================================================
 
+
 def test_scrape_comet_returns_results(monkeypatch: pytest.MonkeyPatch) -> None:
     from offerte_tech import scrape_comet
 
-    algolia_resp = {"results": [{"hits": [{
-        "name": "Lenovo IdeaPad 3 15 - 16GB/512GB",
-        "pFinale": 549.0,
-        "url": "https://www.comet.it/lenovo-ideapad-3-LEN001",
-        "image": "https://static.comet.it/img/LEN001.jpg",
-        "isAcquistabile": True,
-    }]}]}
+    algolia_resp = {
+        "results": [
+            {
+                "hits": [
+                    {
+                        "name": "Lenovo IdeaPad 3 15 - 16GB/512GB",
+                        "pFinale": 549.0,
+                        "url": "https://www.comet.it/lenovo-ideapad-3-LEN001",
+                        "image": "https://static.comet.it/img/LEN001.jpg",
+                        "isAcquistabile": True,
+                    }
+                ]
+            }
+        ]
+    }
 
     class _FakeResp:
         status_code = 200
+
         def json(self) -> dict:
             return algolia_resp
+
         def raise_for_status(self) -> None:
             pass
 
@@ -738,29 +939,38 @@ def test_scrape_comet_returns_results(monkeypatch: pytest.MonkeyPatch) -> None:
 # Expert
 # ===========================================================================
 
+
 def test_scrape_expert_returns_results(monkeypatch: pytest.MonkeyPatch) -> None:
     from offerte_tech import scrape_expert
 
-    json_ld = json.dumps({
-        "@context": "https://schema.org",
-        "@type": "ItemList",
-        "numberOfItems": "1",
-        "itemListElement": [{"@type": "ListItem", "position": 1, "item": {
-            "@type": "Product",
-            "name": "NOTEBOOK ACER ASPIRE 15 - Intel Ultra 5",
-            "url": "https://www.expert.it/it/it/exp/shop/product/notebook-acer/exp123456",
-            "image": "https://d3s2y7lmzr67yx.cloudfront.net/IMG/EXPERT/EXP123456.jpg",
-            "offers": {"@type": "Offer", "price": "699", "priceCurrency": "EUR"},
-        }}],
-    })
+    json_ld = json.dumps(
+        {
+            "@context": "https://schema.org",
+            "@type": "ItemList",
+            "numberOfItems": "1",
+            "itemListElement": [
+                {
+                    "@type": "ListItem",
+                    "position": 1,
+                    "item": {
+                        "@type": "Product",
+                        "name": "NOTEBOOK ACER ASPIRE 15 - Intel Ultra 5",
+                        "url": "https://www.expert.it/it/it/exp/shop/product/notebook-acer/exp123456",
+                        "image": "https://d3s2y7lmzr67yx.cloudfront.net/IMG/EXPERT/EXP123456.jpg",
+                        "offers": {"@type": "Offer", "price": "699", "priceCurrency": "EUR"},
+                    },
+                }
+            ],
+        }
+    )
     html = f'<html><head></head><body><script type="application/ld+json">{json_ld}</script></body></html>'
 
-    monkeypatch.setattr("offerte.scrapers.expert.fetch_with_retry", lambda *a, **k: _FakeResponse(html, 200))
+    monkeypatch.setattr(
+        "offerte.scrapers.expert.fetch_with_retry", lambda *a, **k: _FakeResponse(html, 200)
+    )
 
     results = scrape_expert("notebook", 0.0, 800.0, ["notebook", "acer"])
     assert len(results) == 1
     assert results[0].negozio == "Expert"
     assert results[0].prezzo == 699.0
     assert "expert.it" in results[0].link
-
-

@@ -1,17 +1,11 @@
 """ui: ui/auth.py"""
+
 from __future__ import annotations
 
-import contextlib
-import csv
 import hashlib
-import io
 import json
-import os
-import random
-import re
-import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import streamlit as st
 
@@ -36,13 +30,14 @@ try:
 except Exception:
     kb_manager = None  # type: ignore[assignment]
 
-from offerte_tech import Offerta, cerca_offerte, parse_search_intent, parse_comparison_query
 
 try:
     from search_history import load_history, save_search as _save_search
 except ImportError:
+
     def load_history() -> list[dict[str, Any]]:
         return []
+
     def _save_search(**kw: Any) -> None:
         return None
 
@@ -65,7 +60,9 @@ def _load_auth_sessions() -> dict[str, float]:
 
 def _save_auth_sessions(sessions: dict[str, float]) -> None:
     try:
-        _AUTH_SESSIONS_PATH.write_text(json.dumps(sessions, ensure_ascii=False, indent=2), encoding="utf-8")
+        _AUTH_SESSIONS_PATH.write_text(
+            json.dumps(sessions, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
     except Exception:
         pass
 
@@ -99,5 +96,3 @@ def _persist_client_auth(fingerprint: str, now_ts: float, ttl_seconds: int = 360
     sessions = _load_auth_sessions()
     sessions[fingerprint] = float(now_ts + ttl_seconds)
     _save_auth_sessions(sessions)
-
-

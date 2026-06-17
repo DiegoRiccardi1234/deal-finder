@@ -1,17 +1,8 @@
 """ui: ui/sources.py"""
+
 from __future__ import annotations
 
-import contextlib
-import csv
-import hashlib
-import io
-import json
-import os
-import random
-import re
-import time
-from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import streamlit as st
 
@@ -36,13 +27,15 @@ try:
 except Exception:
     kb_manager = None  # type: ignore[assignment]
 
-from offerte_tech import Offerta, cerca_offerte, parse_search_intent, parse_comparison_query
+from offerte_tech import Offerta
 
 try:
     from search_history import load_history, save_search as _save_search
 except ImportError:
+
     def load_history() -> list[dict[str, Any]]:
         return []
+
     def _save_search(**kw: Any) -> None:
         return None
 
@@ -83,7 +76,8 @@ def _status_rows_for_sources(
                 found += c
 
         source_error = any(
-            token in log_lower for token in [
+            token in log_lower
+            for token in [
                 f"{key} -> errore",
                 f"errore {key}",
                 f"{key} timeout",
@@ -105,12 +99,14 @@ def _status_rows_for_sources(
             dot_class = "is-warn"
             detail = "0 risultati"
 
-        rows.append({
-            "label": label,
-            "status": status,
-            "detail": detail,
-            "dot_class": dot_class,
-        })
+        rows.append(
+            {
+                "label": label,
+                "status": status,
+                "detail": detail,
+                "dot_class": dot_class,
+            }
+        )
     return rows
 
 
@@ -135,5 +131,3 @@ def _render_source_status_monitor(
             unsafe_allow_html=True,
         )
     st.markdown("</div>", unsafe_allow_html=True)
-
-

@@ -11,6 +11,7 @@ Uso:
     python tests/probe_scrapers.py --query "samsung galaxy s24" --budget 800
     python tests/probe_scrapers.py --sites amazon ebay subito
 """
+
 from __future__ import annotations
 
 import argparse
@@ -100,12 +101,12 @@ def _scrape_ebay_html(query: str, prezzo_min: float, budget_max, tokens: list[st
         resp = ot.fetch_with_retry(url, headers)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
-        cards = soup.select('li.s-item')
+        cards = soup.select("li.s-item")
         risultati = []
         for card in cards[:30]:
-            nome_tag = card.select_one('.s-item__title')
-            prezzo_tag = card.select_one('.s-item__price')
-            link_tag = card.select_one('a.s-item__link')
+            nome_tag = card.select_one(".s-item__title")
+            prezzo_tag = card.select_one(".s-item__price")
+            link_tag = card.select_one("a.s-item__link")
             if not nome_tag or not prezzo_tag or not link_tag:
                 continue
             nome = nome_tag.get_text(strip=True)
@@ -113,6 +114,7 @@ def _scrape_ebay_html(query: str, prezzo_min: float, budget_max, tokens: list[st
                 continue
             prezzo = ot.parse_price(prezzo_tag.get_text(strip=True))
             import math
+
             if not math.isfinite(prezzo):
                 continue
             link = str(link_tag.get("href", ""))
@@ -120,7 +122,9 @@ def _scrape_ebay_html(query: str, prezzo_min: float, budget_max, tokens: list[st
                 continue
             if not ot._within_price_range(prezzo, prezzo_min, budget_max):
                 continue
-            risultati.append(ot.Offerta(nome=nome, prezzo=prezzo, negozio="eBay", link=link, fonte="ebay.it"))
+            risultati.append(
+                ot.Offerta(nome=nome, prezzo=prezzo, negozio="eBay", link=link, fonte="ebay.it")
+            )
         return risultati
     except Exception as e:
         print(f"    eBay HTML error: {e}")
@@ -130,6 +134,7 @@ def _scrape_ebay_html(query: str, prezzo_min: float, budget_max, tokens: list[st
 # ---------------------------------------------------------------------------
 # Diagnostica HTML per siti che ritornano 0 risultati
 # ---------------------------------------------------------------------------
+
 
 def _diagnose_site(site_name: str, query: str) -> None:
     """Fa una GET raw al sito e stampa info diagnostiche."""
@@ -159,9 +164,13 @@ def _diagnose_site(site_name: str, query: str) -> None:
 
         # Cerca tutti i div/article con classi potenzialmente rilevanti
         candidate_selectors = [
-            'article', 'div[class*="item"]', 'div[class*="product"]',
-            'div[class*="card"]', 'div[class*="result"]', 'li[class*="item"]',
-            '[data-testid]',
+            "article",
+            'div[class*="item"]',
+            'div[class*="product"]',
+            'div[class*="card"]',
+            'div[class*="result"]',
+            'li[class*="item"]',
+            "[data-testid]",
         ]
         print("  Selettori trovati nel DOM:")
         for sel in candidate_selectors:
@@ -177,7 +186,9 @@ def _diagnose_site(site_name: str, query: str) -> None:
             if any(kw in t for kw in ('"price"', '"title"', '"goods"', '"items"', '"products"')):
                 scripts_with_data.append(len(t))
         if scripts_with_data:
-            print(f"  Script con dati JSON: {len(scripts_with_data)} — dimensioni: {scripts_with_data}")
+            print(
+                f"  Script con dati JSON: {len(scripts_with_data)} — dimensioni: {scripts_with_data}"
+            )
         else:
             print("  Script con dati JSON: nessuno trovato")
 
@@ -193,7 +204,10 @@ def _diagnose_site(site_name: str, query: str) -> None:
 # Runner principale
 # ---------------------------------------------------------------------------
 
-def run_probe(query: str, budget_max: float, prezzo_min: float, sites: list[str], condizione: str) -> None:
+
+def run_probe(
+    query: str, budget_max: float, prezzo_min: float, sites: list[str], condizione: str
+) -> None:
     tokens = ot.tokenize_query(query)
     print(f"\n{'=' * 70}")
     print(f"  PROBE SCRAPERS — query: '{query}'")
@@ -241,7 +255,7 @@ def run_probe(query: str, budget_max: float, prezzo_min: float, sites: list[str]
     print("  RIEPILOGO")
     print(f"{'=' * 70}")
     print(f"  {'Sito':<15} {'Risultati':>10} {'Tempo':>8}")
-    print(f"  {'─'*15} {'─'*10} {'─'*8}")
+    print(f"  {'─' * 15} {'─' * 10} {'─' * 8}")
     for site_name, n, elapsed in results_summary:
         status = "✅" if n > 0 else "❌"
         print(f"  {status} {site_name:<13} {n:>10} {elapsed:>7.2f}s")
@@ -250,12 +264,26 @@ def run_probe(query: str, budget_max: float, prezzo_min: float, sites: list[str]
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Probe real HTTP scrapers")
-    parser.add_argument("--query", default=DEFAULT_QUERY, help=f"Query di ricerca (default: '{DEFAULT_QUERY}')")
-    parser.add_argument("--budget", type=float, default=DEFAULT_BUDGET, help=f"Budget max in € (default: {DEFAULT_BUDGET})")
-    parser.add_argument("--min", type=float, default=DEFAULT_PREZZO_MIN, dest="prezzo_min", help="Prezzo minimo (default: 0)")
+    parser.add_argument(
+        "--query", default=DEFAULT_QUERY, help=f"Query di ricerca (default: '{DEFAULT_QUERY}')"
+    )
+    parser.add_argument(
+        "--budget",
+        type=float,
+        default=DEFAULT_BUDGET,
+        help=f"Budget max in € (default: {DEFAULT_BUDGET})",
+    )
+    parser.add_argument(
+        "--min",
+        type=float,
+        default=DEFAULT_PREZZO_MIN,
+        dest="prezzo_min",
+        help="Prezzo minimo (default: 0)",
+    )
     parser.add_argument("--condizione", default="tutti", choices=["tutti", "nuovo", "usato"])
     parser.add_argument(
-        "--sites", nargs="+",
+        "--sites",
+        nargs="+",
         default=list(SITES.keys()),
         choices=list(SITES.keys()),
         help="Siti da testare (default: tutti)",

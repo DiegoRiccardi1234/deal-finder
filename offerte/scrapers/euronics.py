@@ -1,18 +1,10 @@
 """offerte: offerte/scrapers/euronics.py"""
+
 from __future__ import annotations
 
-import base64
 import json
 import math
-import os
-import random
-import re
-import sys
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
-from typing import Callable, Optional
-from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
+from urllib.parse import quote_plus
 
 import requests
 from bs4 import BeautifulSoup
@@ -37,12 +29,12 @@ from offerte.models import Offerta
 from offerte.http import fetch_with_retry, get_headers, _random_delay
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import is_relevant
-from offerte.scrapers._base import _get_ebay_token
+
 
 def scrape_euronics(
     query: str,
     prezzo_min: float,
-    budget_max: Optional[float],
+    budget_max: float | None,
     query_tokens: list[str],
 ) -> list[Offerta]:
     """
@@ -59,7 +51,7 @@ def scrape_euronics(
     una pagina compressa/minimizzata di 38KB (bot-detection) invece dei 686KB reali.
     """
     url = f"https://www.euronics.it/search?q={quote_plus(query)}"
-    print(f"\n🔍 Cerco su Euronics.it: \"{query}\"")
+    print(f'\n🔍 Cerco su Euronics.it: "{query}"')
     risultati: list[Offerta] = []
 
     try:
@@ -69,14 +61,18 @@ def scrape_euronics(
 
         resp = fetch_with_retry(url, headers)
         if resp.status_code in (401, 403, 429, 503):
-            print(f"    ⚠️  Euronics.it: accesso bloccato (HTTP {resp.status_code}), salto la fonte.")
+            print(
+                f"    ⚠️  Euronics.it: accesso bloccato (HTTP {resp.status_code}), salto la fonte."
+            )
             return risultati
         resp.raise_for_status()
 
         soup = BeautifulSoup(resp.text, "html.parser")
 
         page_title = str((soup.title.string or "") if soup.title else "")
-        if any(kw in page_title.lower() for kw in ("captcha", "robot", "sorry", "access denied", "404")):
+        if any(
+            kw in page_title.lower() for kw in ("captcha", "robot", "sorry", "access denied", "404")
+        ):
             print("    ⚠️  Euronics.it: blocco anti-bot o pagina non trovata, salto la fonte.")
             return risultati
 
@@ -85,8 +81,11 @@ def scrape_euronics(
         cards = soup.select("div.new-product-tile.flex-fill")
         if not cards:
             # Fallback: qualsiasi tile con classe new-product-tile (esclude esplicitamente list)
-            cards = [c for c in soup.select("[class*='new-product-tile']")
-                     if "new-product-tile-list" not in " ".join(c.get("class") or [])]
+            cards = [
+                c
+                for c in soup.select("[class*='new-product-tile']")
+                if "new-product-tile-list" not in " ".join(c.get("class") or [])
+            ]
 
         if cards:
             print(f"    ✅ Trovate {len(cards)} card su Euronics.it")
@@ -94,8 +93,17 @@ def scrape_euronics(
             # Token senza parole-categoria: Euronics filtra già per notebook/laptop.
             # Manteniamo solo token di dimensione/brand (es. "14") per is_relevant.
             _euronics_cat_words = {
-                "notebook", "laptop", "smartphone", "tablet", "telefono",
-                "cellulare", "monitor", "cuffie", "auricolari", "pc", "ultrabook",
+                "notebook",
+                "laptop",
+                "smartphone",
+                "tablet",
+                "telefono",
+                "cellulare",
+                "monitor",
+                "cuffie",
+                "auricolari",
+                "pc",
+                "ultrabook",
             }
             eu_tokens = [t for t in query_tokens if t not in _euronics_cat_words] or query_tokens
             for card in cards:
@@ -103,10 +111,10 @@ def scrape_euronics(
                     # Filtra accessori: accetta solo categorie laptop/notebook
                     # Nome: span.tile-name
                     nome_tag = (
-                        card.select_one("span.tile-name") or
-                        card.select_one("[class*='tile-name']") or
-                        card.select_one("h2") or
-                        card.select_one("h3")
+                        card.select_one("span.tile-name")
+                        or card.select_one("[class*='tile-name']")
+                        or card.select_one("h2")
+                        or card.select_one("h3")
                     )
                     if not nome_tag:
                         continue
@@ -116,10 +124,10 @@ def scrape_euronics(
 
                     # Prezzo: span.value (il prezzo visibile sulla pagina, es. "€ 879,00")
                     prezzo_tag = (
-                        card.select_one("span.value") or
-                        card.select_one("[class*='price'] span.value") or
-                        card.select_one("[class*='price-formatted']") or
-                        card.select_one("[class*='price']")
+                        card.select_one("span.value")
+                        or card.select_one("[class*='price'] span.value")
+                        or card.select_one("[class*='price-formatted']")
+                        or card.select_one("[class*='price']")
                     )
                     if not prezzo_tag:
                         continue
@@ -146,14 +154,25 @@ def scrape_euronics(
 
                     try:
                         _img_tag = card.select_one("img")
-                        _img_url = str(_img_tag.get("src", "") or _img_tag.get("data-src", "") or "") if _img_tag else ""
+                        _img_url = (
+                            str(_img_tag.get("src", "") or _img_tag.get("data-src", "") or "")
+                            if _img_tag
+                            else ""
+                        )
                     except Exception:
                         _img_url = ""
 
-                    risultati.append(Offerta(
-                        nome=nome, prezzo=prezzo, negozio="Euronics",
-                        link=link, fonte="euronics.it", spedizione="n.d.", immagine=_img_url,
-                    ))
+                    risultati.append(
+                        Offerta(
+                            nome=nome,
+                            prezzo=prezzo,
+                            negozio="Euronics",
+                            link=link,
+                            fonte="euronics.it",
+                            spedizione="n.d.",
+                            immagine=_img_url,
+                        )
+                    )
                 except (AttributeError, TypeError):
                     continue
 
@@ -168,7 +187,9 @@ def scrape_euronics(
                         items_raw = data
                     elif isinstance(data, dict):
                         if data.get("@type") == "ItemList":
-                            items_raw = [el.get("item", el) for el in data.get("itemListElement", [])]
+                            items_raw = [
+                                el.get("item", el) for el in data.get("itemListElement", [])
+                            ]
                         else:
                             items_raw = [data]
                     for item_data in items_raw:
@@ -192,13 +213,24 @@ def scrape_euronics(
                             continue
                         try:
                             _img_raw = item_data.get("image", "")
-                            _img_url = str(_img_raw[0] if isinstance(_img_raw, list) and _img_raw else _img_raw or "")
+                            _img_url = str(
+                                _img_raw[0]
+                                if isinstance(_img_raw, list) and _img_raw
+                                else _img_raw or ""
+                            )
                         except Exception:
                             _img_url = ""
-                        risultati.append(Offerta(
-                            nome=nome, prezzo=prezzo, negozio="Euronics",
-                            link=link, fonte="euronics.it", spedizione="n.d.", immagine=_img_url,
-                        ))
+                        risultati.append(
+                            Offerta(
+                                nome=nome,
+                                prezzo=prezzo,
+                                negozio="Euronics",
+                                link=link,
+                                fonte="euronics.it",
+                                spedizione="n.d.",
+                                immagine=_img_url,
+                            )
+                        )
                 except Exception:
                     continue
 
@@ -216,5 +248,3 @@ def scrape_euronics(
 
     _random_delay()
     return risultati
-
-

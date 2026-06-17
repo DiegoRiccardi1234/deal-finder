@@ -16,7 +16,7 @@ MAX_ENTRIES = 20
 def load_history() -> list[dict[str, Any]]:
     """Carica lo storico ricerche dal file JSON, se disponibile."""
     try:
-        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+        with open(HISTORY_FILE, encoding="utf-8") as f:
             data = json.load(f)
         return data if isinstance(data, list) else []
     except (FileNotFoundError, json.JSONDecodeError, OSError):
@@ -48,7 +48,8 @@ def save_search(
     }
 
     history = [
-        item for item in history
+        item
+        for item in history
         if str(item.get("query", "")).strip().lower() != clean_query.lower()
     ]
     history.insert(0, entry)

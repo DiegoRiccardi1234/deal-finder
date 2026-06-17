@@ -81,7 +81,17 @@ def streamlit_server(base_url: str) -> str:
     env.setdefault("PYTHONUNBUFFERED", "1")
 
     process = subprocess.Popen(
-        [sys.executable, "-m", "streamlit", "run", "app.py", "--server.headless", "true", "--server.port", "9000"],
+        [
+            sys.executable,
+            "-m",
+            "streamlit",
+            "run",
+            "app.py",
+            "--server.headless",
+            "true",
+            "--server.port",
+            "9000",
+        ],
         cwd=ROOT_DIR,
         env=env,
         stdout=subprocess.PIPE,

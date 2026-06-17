@@ -1,18 +1,10 @@
 """offerte: offerte/scrapers/trovaprezzi.py"""
+
 from __future__ import annotations
 
-import base64
 import json
 import math
-import os
-import random
-import re
-import sys
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
-from typing import Callable, Optional
-from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
+from urllib.parse import quote_plus
 
 import requests
 from bs4 import BeautifulSoup
@@ -37,12 +29,12 @@ from offerte.models import Offerta
 from offerte.http import fetch_with_retry, get_headers, _random_delay
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import is_relevant
-from offerte.scrapers._base import _get_ebay_token
+
 
 def scrape_trovaprezzi(
     query: str,
     prezzo_min: float,
-    budget_max: Optional[float],
+    budget_max: float | None,
     query_tokens: list[str],
 ) -> list[Offerta]:
     """
@@ -56,7 +48,7 @@ def scrape_trovaprezzi(
         Link:      href del container a (relativo → prepend https://www.trovaprezzi.it)
     """
     url = f"https://www.trovaprezzi.it/categoria.aspx?libera={quote_plus(query)}"
-    print(f"\n🔍 Cerco su Trovaprezzi.it: \"{query}\"")
+    print(f'\n🔍 Cerco su Trovaprezzi.it: "{query}"')
 
     risultati: list[Offerta] = []
 
@@ -66,7 +58,9 @@ def scrape_trovaprezzi(
 
         resp = fetch_with_retry(url, headers)
         if resp.status_code in (401, 403, 429, 503):
-            print(f"    ⚠️  Trovaprezzi.it: accesso bloccato (HTTP {resp.status_code}), salto la fonte.")
+            print(
+                f"    ⚠️  Trovaprezzi.it: accesso bloccato (HTTP {resp.status_code}), salto la fonte."
+            )
             return risultati
 
         resp.raise_for_status()
@@ -74,15 +68,28 @@ def scrape_trovaprezzi(
         base_url = resp.url  # URL finale dopo redirect (usato per la paginazione)
 
         seen_links: set[str] = set()
-        _tp_cat_words = {"notebook", "laptop", "smartphone", "tablet", "telefono",
-                         "cellulare", "monitor", "cuffie", "auricolari", "pc"}
+        _tp_cat_words = {
+            "notebook",
+            "laptop",
+            "smartphone",
+            "tablet",
+            "telefono",
+            "cellulare",
+            "monitor",
+            "cuffie",
+            "auricolari",
+            "pc",
+        }
         tp_tokens = [t for t in query_tokens if t not in _tp_cat_words] or query_tokens
 
         def _parse_page_tp(html: str) -> int:
             """Parsa una pagina trovaprezzi, aggiunge offerte valide, ritorna il numero aggiunto."""
             soup_p = BeautifulSoup(html, "html.parser")
             page_title_p = str((soup_p.title.string or "") if soup_p.title else "")
-            if any(kw in page_title_p.lower() for kw in ("sorry", "captcha", "robot", "unusual traffic", "404")):
+            if any(
+                kw in page_title_p.lower()
+                for kw in ("sorry", "captcha", "robot", "unusual traffic", "404")
+            ):
                 return 0
             cards_p = soup_p.select("a.suggested_product[href]")
             if not cards_p:
@@ -92,7 +99,11 @@ def scrape_trovaprezzi(
                 for _script in soup_p.find_all("script", {"type": "application/ld+json"}):
                     try:
                         _ld = json.loads(str(_script.string or ""))
-                        _ld_items = _ld if isinstance(_ld, list) else ([_ld] if isinstance(_ld, dict) else [])
+                        _ld_items = (
+                            _ld
+                            if isinstance(_ld, list)
+                            else ([_ld] if isinstance(_ld, dict) else [])
+                        )
                         for _ld_item in _ld_items:
                             if not isinstance(_ld_item, dict):
                                 continue
@@ -114,10 +125,22 @@ def scrape_trovaprezzi(
                             try:
                                 _img_url = str(_ld_item.get("image", "") or "")
                                 if isinstance(_ld_item.get("image"), list):
-                                    _img_url = str(_ld_item["image"][0]) if _ld_item["image"] else ""
+                                    _img_url = (
+                                        str(_ld_item["image"][0]) if _ld_item["image"] else ""
+                                    )
                             except Exception:
                                 _img_url = ""
-                            risultati.append(Offerta(nome=_nome, prezzo=_prezzo, negozio="Trovaprezzi", link=_url, fonte="trovaprezzi.it", spedizione="n.d.", immagine=_img_url))
+                            risultati.append(
+                                Offerta(
+                                    nome=_nome,
+                                    prezzo=_prezzo,
+                                    negozio="Trovaprezzi",
+                                    link=_url,
+                                    fonte="trovaprezzi.it",
+                                    spedizione="n.d.",
+                                    immagine=_img_url,
+                                )
+                            )
                             added += 1
                     except Exception:
                         continue
@@ -131,7 +154,9 @@ def scrape_trovaprezzi(
                     nome = nome_tag.get_text(strip=True)
                     if not nome:
                         continue
-                    prezzo_tag = card.select_one(".price_range") or card.select_one("[class*='price']")
+                    prezzo_tag = card.select_one(".price_range") or card.select_one(
+                        "[class*='price']"
+                    )
                     prezzo_txt = prezzo_tag.get_text(" ", strip=True) if prezzo_tag else ""
                     prezzo = parse_price(prezzo_txt)
                     if not math.isfinite(prezzo):
@@ -149,13 +174,24 @@ def scrape_trovaprezzi(
                         continue
                     try:
                         _img_tag = card.select_one("img")
-                        _img_url = str(_img_tag.get("src", "") or _img_tag.get("data-src", "") or "") if _img_tag else ""
+                        _img_url = (
+                            str(_img_tag.get("src", "") or _img_tag.get("data-src", "") or "")
+                            if _img_tag
+                            else ""
+                        )
                     except Exception:
                         _img_url = ""
-                    risultati.append(Offerta(
-                        nome=nome, prezzo=prezzo, negozio="Trovaprezzi",
-                        link=link, fonte="trovaprezzi.it", spedizione="n.d.", immagine=_img_url,
-                    ))
+                    risultati.append(
+                        Offerta(
+                            nome=nome,
+                            prezzo=prezzo,
+                            negozio="Trovaprezzi",
+                            link=link,
+                            fonte="trovaprezzi.it",
+                            spedizione="n.d.",
+                            immagine=_img_url,
+                        )
+                    )
                     added += 1
                 except (AttributeError, TypeError):
                     continue
@@ -163,7 +199,9 @@ def scrape_trovaprezzi(
 
         p1 = _parse_page_tp(resp.text)
         if not p1:
-            print("    ⚠️  Trovaprezzi.it: nessun risultato parsabile (selettori cambiati o blocco).")
+            print(
+                "    ⚠️  Trovaprezzi.it: nessun risultato parsabile (selettori cambiati o blocco)."
+            )
         else:
             print(f"    ✅ Trovate {len(risultati)} card su Trovaprezzi.it")
             # Paginazione: prova pagina 2 (stop se vuota o errore)
@@ -196,5 +234,3 @@ def scrape_trovaprezzi(
 
     _random_delay()
     return risultati
-
-

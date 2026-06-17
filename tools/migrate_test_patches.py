@@ -5,6 +5,7 @@ dopo lo split di offerte_tech in package offerte/.
 Per ogni test function, applica una sostituzione contestuale di
 `offerte_tech.X` → modulo target appropriato.
 """
+
 from __future__ import annotations
 
 import ast
@@ -85,13 +86,13 @@ def main() -> None:
             # Casi speciali: _get_cerebras_client esiste in offerte.ai
             if attr.startswith("_get_cerebras_client"):
                 changes += 1
-                return f'{quote}offerte.ai.{attr}{quote}'
+                return f"{quote}offerte.ai.{attr}{quote}"
             # _get_cerebras_api_key idem
             if attr.startswith("_get_cerebras_api_key"):
                 changes += 1
-                return f'{quote}offerte.ai.{attr}{quote}'
+                return f"{quote}offerte.ai.{attr}{quote}"
             changes += 1
-            return f'{quote}{tgt}.{attr}{quote}'
+            return f"{quote}{tgt}.{attr}{quote}"
 
         new_line = PATCH_RE.sub(sub, line)
         new_lines.append(new_line)

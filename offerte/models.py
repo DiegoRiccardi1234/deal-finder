@@ -1,21 +1,9 @@
 """offerte: offerte/models.py"""
+
 from __future__ import annotations
 
-import base64
-import json
-import math
-import os
-import random
-import re
-import sys
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from typing import Callable, Optional
-from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 
-import requests
-from bs4 import BeautifulSoup
 
 try:
     from cerebras.cloud.sdk import Cerebras
@@ -33,14 +21,16 @@ except Exception:
 
 _CEREBRAS_MODEL_FALLBACK = "llama-3.3-70b"
 
+
 @dataclass(order=False)
 class Offerta:
     """Rappresenta un'offerta raccolta da una fonte."""
-    nome:    str
-    prezzo:  float
+
+    nome: str
+    prezzo: float
     negozio: str
-    link:    str
-    fonte:   str = field(default="")
+    link: str
+    fonte: str = field(default="")
     spedizione: str = field(default="n.d.")
     alternativa: str = field(default="")
     specs: dict[str, object] = field(default_factory=dict)
@@ -54,5 +44,3 @@ class Offerta:
             f"     📦 Spedizione: {self.spedizione}\n"
             f"     🔗 {self.link}"
         )
-
-

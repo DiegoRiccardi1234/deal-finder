@@ -1,19 +1,9 @@
 """ui: ui/test_mode.py"""
+
 from __future__ import annotations
 
-import contextlib
-import csv
-import hashlib
-import io
-import json
-import os
-import random
-import re
-import time
-from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
-import streamlit as st
 
 try:
     from cerebras.cloud.sdk import Cerebras
@@ -36,18 +26,22 @@ try:
 except Exception:
     kb_manager = None  # type: ignore[assignment]
 
-from offerte_tech import Offerta, cerca_offerte, parse_search_intent, parse_comparison_query
+from offerte_tech import Offerta
 
 try:
     from search_history import load_history, save_search as _save_search
 except ImportError:
+
     def load_history() -> list[dict[str, Any]]:
         return []
+
     def _save_search(**kw: Any) -> None:
         return None
 
 
-def _build_mock_results(query: str, categoria: str, prezzo_min: int, budget_max: int) -> list[Offerta]:
+def _build_mock_results(
+    query: str, categoria: str, prezzo_min: int, budget_max: int
+) -> list[Offerta]:
     base_results = [
         Offerta(
             nome="Apple iPhone 17 128GB",
@@ -56,7 +50,7 @@ def _build_mock_results(query: str, categoria: str, prezzo_min: int, budget_max:
             link="https://example.com/iphone-17-128",
             fonte="amazon.it",
             spedizione="Prime ✅",
-            specs={"display": "6.1\" OLED", "processore": "A19", "ram": "8 GB", "storage": "128 GB"},
+            specs={"display": '6.1" OLED', "processore": "A19", "ram": "8 GB", "storage": "128 GB"},
         ),
         Offerta(
             nome="Apple iPhone 17 256GB",
@@ -65,7 +59,7 @@ def _build_mock_results(query: str, categoria: str, prezzo_min: int, budget_max:
             link="https://example.com/iphone-17-256",
             fonte="ebay.it",
             spedizione="€ 7,99",
-            specs={"display": "6.1\" OLED", "processore": "A19", "ram": "8 GB", "storage": "256 GB"},
+            specs={"display": '6.1" OLED', "processore": "A19", "ram": "8 GB", "storage": "256 GB"},
         ),
         Offerta(
             nome="Samsung Galaxy S25 256GB",
@@ -74,21 +68,28 @@ def _build_mock_results(query: str, categoria: str, prezzo_min: int, budget_max:
             link="https://example.com/galaxy-s25",
             fonte="amazon.it",
             spedizione="Gratuita ✅",
-            specs={"display": "6.2\" AMOLED", "processore": "Snapdragon", "ram": "12 GB", "storage": "256 GB"},
+            specs={
+                "display": '6.2" AMOLED',
+                "processore": "Snapdragon",
+                "ram": "12 GB",
+                "storage": "256 GB",
+            },
         ),
     ]
     categoria_norm = str(categoria or "altro").lower()
-    results = base_results if categoria_norm == "tech" or "iphone" in query.lower() else [
-        Offerta(
-            nome="Nike Felpa Donna M Cotone",
-            prezzo=59.0,
-            negozio="Mock Fashion",
-            link="https://example.com/felpa",
-            fonte="vinted.it",
-            spedizione="€ 4,99",
-            specs={"brand": "Nike", "taglia": "M", "materiale": "cotone", "genere": "donna"},
-        )
-    ]
+    results = (
+        base_results
+        if categoria_norm == "tech" or "iphone" in query.lower()
+        else [
+            Offerta(
+                nome="Nike Felpa Donna M Cotone",
+                prezzo=59.0,
+                negozio="Mock Fashion",
+                link="https://example.com/felpa",
+                fonte="vinted.it",
+                spedizione="€ 4,99",
+                specs={"brand": "Nike", "taglia": "M", "materiale": "cotone", "genere": "donna"},
+            )
+        ]
+    )
     return [item for item in results if prezzo_min <= item.prezzo <= budget_max]
-
-

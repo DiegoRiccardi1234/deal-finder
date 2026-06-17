@@ -1,4 +1,5 @@
 """offerte.scrapers: registry e re-export."""
+
 from offerte.scrapers.aliexpress import scrape_aliexpress
 from offerte.scrapers.alibaba import scrape_alibaba
 from offerte.scrapers.amazon import scrape_amazon
