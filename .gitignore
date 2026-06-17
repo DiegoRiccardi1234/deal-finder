@@ -8,7 +8,9 @@ __pycache__/
 # Virtual environment
 .venv/
 
-# Streamlit secrets
+# Environment / secrets
+.env
+.env.local
 .streamlit/secrets.toml
 
 # GitHub skills directory
@@ -47,3 +49,7 @@ nul
 
 # ZIP di release generati localmente
 dist/
+
+# Artefatti probe real-network (dump rigenerabili, possono contenere dati scrapati)
+tests/probe_siti_results.json
+report_siti.md
