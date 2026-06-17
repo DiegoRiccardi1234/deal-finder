@@ -7,6 +7,8 @@
 ![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B)
 ![Version](https://img.shields.io/badge/version-1.1.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
+[![Ruff](https://img.shields.io/badge/lint-ruff-261230?logo=ruff&logoColor=white)](https://github.com/astral-sh/ruff)
+![AI providers](https://img.shields.io/badge/AI-6%20providers-blueviolet)
 
 **🌐 Live demo:** [trova-prezzi.streamlit.app](https://trova-prezzi.streamlit.app/)
 
@@ -78,10 +80,14 @@ The LLM backend is abstracted in [`offerte/providers.py`](offerte/providers.py):
 ### ✅ Tests & CI
 
 ```bash
-pytest tests/ -k "not playwright"     # fast offline unit suite
+pytest tests/ -k "not playwright"     # fast offline unit + feature suite
 pytest tests/                          # full suite incl. Playwright E2E
+ruff check . && ruff format --check .  # lint + format
+mypy offerte ui                        # type-check (advisory)
 ```
-GitHub Actions runs the offline suite on every push and pull request.
+GitHub Actions runs three jobs on every push and PR: **lint** (ruff, blocking),
+**type-check** (mypy, advisory) and **test** (full offline suite). See
+[`SECURITY.md`](SECURITY.md) and [`CHANGELOG.md`](CHANGELOG.md).
 
 ### 🛠️ Tech stack
 
@@ -131,10 +137,14 @@ Altri valori: `APP_PASSWORD` (password dashboard), `EBAY_APP_ID` / `EBAY_CERT_ID
 ### ✅ Test e CI
 
 ```bash
-pytest tests/ -k "not playwright"     # suite unit veloce, offline
+pytest tests/ -k "not playwright"     # suite unit + feature, offline
 pytest tests/                          # suite completa con E2E Playwright
+ruff check . && ruff format --check .  # lint + formato
+mypy offerte ui                        # type-check (advisory)
 ```
-GitHub Actions esegue la suite offline a ogni push e pull request.
+GitHub Actions esegue tre job a ogni push/PR: **lint** (ruff, bloccante),
+**type-check** (mypy, advisory) e **test** (suite offline completa). Vedi
+[`SECURITY.md`](SECURITY.md) e [`CHANGELOG.md`](CHANGELOG.md).
 
 ### 🛠️ Stack
 
