@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   artifacts (`tests/probe_siti_results.json`, `report_siti.md`).
 
 ### Added
+- **Multi-provider AI in the core.** `offerte/ai.py` and the knowledge-base
+  updater now build their client via `offerte.providers` and honor
+  `AI_PROVIDER`, so the CLI and the orchestrator's AI filtering work with any
+  configured provider (Cerebras, Groq, OpenAI, OpenRouter, Anthropic, Gemini) —
+  not just Cerebras. The UI was already multi-provider; the core caught up.
+- **`--provider` flag on the CLI** (`offerte_tech.py --provider groq|openai|…`)
+  to pick the AI backend without setting an env var.
 - Code-quality tooling: **ruff** (lint + formatter, line-length 100), **mypy**
   (advisory / non-strict), and **pip-audit**, configured in `pyproject.toml`
   and pinned in `requirements-test.txt`.
@@ -36,7 +43,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed ~650 dead "preamble" imports left over from the monolith→package
   split (star-import re-exports and test-monkeypatch targets preserved),
   modernized typing via pyupgrade, and applied `ruff format` across the
-  codebase. No behavior change — full unit suite (68 tests) stays green.
+  codebase.
+- Removed the dead, copy-pasted Cerebras AI preamble (the
+  `CEREBRAS_MODEL`/`_CEREBRAS_MODEL_FALLBACK = "llama-3.3-70b"` hardcoded
+  constants — a model Cerebras dismissed — plus unused import guards) from
+  ~35 files. The model is resolved dynamically; the only fallback list lives in
+  `offerte/config.py`. A guard test asserts no hardcoded model literal remains.
+- No behavior change — full offline suite (71 tests) stays green.
 
 ## [1.1.0] - 2026-06-12
 

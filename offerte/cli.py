@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import os
+
+from offerte import providers
 from offerte.orchestrator import cerca_offerte
 
 
@@ -66,6 +69,17 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Seleziona le fonti da consultare (default: tutte)",
     )
     parser.add_argument(
+        "--provider",
+        choices=list(providers.PROVIDERS),
+        default=None,
+        metavar="NOME",
+        help=(
+            "Provider AI per filtri/specs: cerebras, groq, openai, openrouter,\n"
+            "anthropic, gemini. Default: env AI_PROVIDER o cerebras.\n"
+            "Richiede la relativa API key in ambiente."
+        ),
+    )
+    parser.add_argument(
         "--export",
         choices=["csv"],
         default=None,
@@ -84,6 +98,8 @@ def _build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
+    if args.provider:
+        os.environ["AI_PROVIDER"] = args.provider
     cerca_offerte(
         query=args.query,
         budget_max=args.budget,
