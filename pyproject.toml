@@ -7,3 +7,41 @@ readme = "README.md"
 
 # Le dipendenze sono gestite via requirements.txt / requirements-test.txt.
 # La configurazione pytest resta in pytest.ini.
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".venv", "data", "dist"]
+
+[tool.ruff.lint]
+# E/F = pycodestyle+pyflakes, I = isort, UP = pyupgrade, B = bugbear.
+select = ["E", "F", "I", "UP", "B"]
+ignore = [
+    "E501",   # line-length gestita dal formatter, non bloccare a lint
+    "B008",   # call-in-default comune con argparse/Streamlit
+    # --- Regole "architetturali" (non bug) ---
+    # Il progetto è stato splittato da due monoliti in package con re-export via
+    # star-import: offerte_tech fa `from offerte import *`, e i moduli condividono
+    # costanti con `from offerte._constants import *` / `from offerte.parsing import *`.
+    # Inoltre app.py richiede `st.set_page_config()` come prima istruzione.
+    # Queste regole confliggono con quel design e sono silenziate a livello progetto.
+    "F403",   # `from x import *`
+    "F405",   # nome forse proveniente da star-import
+    "E402",   # import non in cima al modulo (Streamlit + costante di fallback inline)
+    "I001",   # ordinamento import (blocchi spezzati da import condizionali/star)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Test e probe: ridefinizioni, asserzioni e helper liberi.
+"tests/*" = ["F401", "F811", "B011", "E741", "E731"]
+# Tool one-shot del refactor: non vale la pena irrigidirli.
+"tools/*" = ["B023", "F401"]
+
+[tool.mypy]
+# Advisory, non-strict: obiettivo segnale, non blocco della CI.
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = false
+warn_redundant_casts = true
+no_implicit_optional = true
+exclude = ['^\.venv/', '^tests/probe_', '^data/']
