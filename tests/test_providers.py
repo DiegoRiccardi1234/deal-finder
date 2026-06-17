@@ -183,3 +183,67 @@ def test_best_model_falls_back_to_largest_context_window():
     )
     # nessun candidato cerebras presente → si sceglie il context_window più ampio
     assert providers.best_model("cerebras", client) == "x-large"
+
+
+# --------------------------------------------------------------------------- #
+# Core AI provider-agnostic + niente modello hardcoded + flag CLI
+# --------------------------------------------------------------------------- #
+
+
+def test_core_get_ai_client_routes_through_active_provider(monkeypatch):
+    """offerte.ai._get_ai_client() costruisce il client del provider ATTIVO
+    (non più hardwired a Cerebras) via providers.build_client()."""
+    _clear_keys(monkeypatch)
+    monkeypatch.setenv("AI_PROVIDER", "groq")
+    from offerte import providers
+    import offerte.ai as ai
+
+    sentinel = object()
+    captured = {}
+
+    def fake_build(provider=None):
+        captured["provider"] = provider
+        return sentinel
+
+    monkeypatch.setattr(providers, "build_client", fake_build)
+    assert ai._get_ai_client() is sentinel
+    assert captured["provider"] == "groq"
+    # l'alias storico deve puntare alla stessa logica
+    assert ai._get_cerebras_client() is sentinel
+
+
+def test_no_hardcoded_model_literal_in_source():
+    """Nessun modello hardcoded come STRING LITERAL nel sorgente: la scelta è
+    dinamica via providers.best_model(). Cerca la forma quotata `"llama-3.3-70b"`
+    (il modello dismesso), che esclude sia i commenti in prosa sia il nome reale
+    di Groq `"llama-3.3-70b-versatile"`."""
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    targets = (
+        list((root / "offerte").rglob("*.py"))
+        + list((root / "ui").rglob("*.py"))
+        + [root / "app.py"]
+    )
+    needle = '"llama-3.3-70b"'
+    offenders = []
+    for f in targets:
+        for i, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+            if needle in line:
+                offenders.append(f"{f.relative_to(root)}:{i}")
+    assert not offenders, f"modello hardcoded (string literal) trovato: {offenders}"
+
+
+def test_cli_provider_flag_selects_active_provider(monkeypatch):
+    """`--provider` sulla CLI imposta il provider attivo."""
+    _clear_keys(monkeypatch)
+    from offerte import providers
+    from offerte.cli import _build_parser
+
+    ns = _build_parser().parse_args(["-q", "mouse", "--provider", "openai"])
+    assert ns.provider == "openai"
+    # le choices del flag combaciano col registry provider
+    assert set(providers.PROVIDERS).issuperset({ns.provider})
+    # main() farebbe questo: il provider attivo diventa quello scelto
+    monkeypatch.setenv("AI_PROVIDER", ns.provider)
+    assert providers.active_provider() == "openai"
