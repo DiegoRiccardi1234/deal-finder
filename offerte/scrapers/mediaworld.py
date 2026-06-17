@@ -1,18 +1,11 @@
 """offerte: offerte/scrapers/mediaworld.py"""
+
 from __future__ import annotations
 
-import base64
 import json
 import math
-import os
-import random
 import re
-import sys
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
-from typing import Callable, Optional
-from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
+from urllib.parse import quote_plus
 
 import requests
 from bs4 import BeautifulSoup
@@ -37,12 +30,12 @@ from offerte.models import Offerta
 from offerte.http import fetch_with_retry, get_headers, _random_delay
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import is_relevant
-from offerte.scrapers._base import _get_ebay_token
+
 
 def scrape_mediaworld(
     query: str,
     prezzo_min: float,
-    budget_max: Optional[float],
+    budget_max: float | None,
     query_tokens: list[str],
     condizione: str = "tutti",
 ) -> list[Offerta]:
@@ -57,10 +50,19 @@ def scrape_mediaworld(
       2. JSON-LD <script type="application/ld+json"> @type=ItemList
       3. CSS selettori generici come last-resort
     """
-    url = f"https://www.mediaworld.it/it/search.html?q={quote_plus(query)}&sortby=rating&pageNumber=0"
-    print(f"\n🔍 Cerco su MediaWorld.it: \"{query}\"")
+    url = (
+        f"https://www.mediaworld.it/it/search.html?q={quote_plus(query)}&sortby=rating&pageNumber=0"
+    )
+    print(f'\n🔍 Cerco su MediaWorld.it: "{query}"')
     risultati: list[Offerta] = []
-    _KW_USATO_MW = {"ricondizionato", "usato", "second life", "refurbished", "open box", "seconda vita"}
+    _KW_USATO_MW = {
+        "ricondizionato",
+        "usato",
+        "second life",
+        "refurbished",
+        "open box",
+        "seconda vita",
+    }
 
     def _cond_filter(r: list[Offerta]) -> list[Offerta]:
         if condizione == "tutti":
@@ -75,7 +77,9 @@ def scrape_mediaworld(
 
         resp = fetch_with_retry(url, headers)
         if resp.status_code in (401, 403, 429, 503):
-            print(f"    ⚠️  MediaWorld.it: accesso bloccato (HTTP {resp.status_code}), salto la fonte.")
+            print(
+                f"    ⚠️  MediaWorld.it: accesso bloccato (HTTP {resp.status_code}), salto la fonte."
+            )
             return risultati
         resp.raise_for_status()
 
@@ -120,15 +124,19 @@ def scrape_mediaworld(
                     # Occorre ignorare le rate e prendere il prezzo intero.
                     _RATE_KW = ("/mese", "mese", "/rata", "rata", "/mo", "mensil")
 
-                    def _strip_rate_context(raw: str, context: str) -> bool:
+                    def _strip_rate_context(
+                        raw: str, context: str, _rate_kw: tuple = _RATE_KW
+                    ) -> bool:
                         """Restituisce True se 'raw' appare vicino a keyword da rata."""
                         idx = context.find(raw)
                         if idx == -1:
                             return False
-                        window = context[idx: idx + len(raw) + 20].lower()
-                        return any(k in window for k in _RATE_KW)
+                        window = context[idx : idx + len(raw) + 20].lower()
+                        return any(k in window for k in _rate_kw)
 
-                    price_tag = art.select_one('[data-test="product-price"]') or art.select_one('[data-test*="price"]')
+                    price_tag = art.select_one('[data-test="product-price"]') or art.select_one(
+                        '[data-test*="price"]'
+                    )
                     price_text_full = art.get_text(" ", strip=True).replace("\u00a0", " ")
                     if price_tag:
                         pt_text = price_tag.get_text(" ", strip=True).replace("\u00a0", " ")
@@ -162,14 +170,25 @@ def scrape_mediaworld(
 
                     try:
                         _img_tag = art.select_one("img")
-                        _img_url = str(_img_tag.get("src", "") or _img_tag.get("data-src", "") or "") if _img_tag else ""
+                        _img_url = (
+                            str(_img_tag.get("src", "") or _img_tag.get("data-src", "") or "")
+                            if _img_tag
+                            else ""
+                        )
                     except Exception:
                         _img_url = ""
 
-                    risultati.append(Offerta(
-                        nome=nome, prezzo=prezzo, negozio="MediaWorld",
-                        link=link, fonte="mediaworld.it", spedizione="n.d.", immagine=_img_url,
-                    ))
+                    risultati.append(
+                        Offerta(
+                            nome=nome,
+                            prezzo=prezzo,
+                            negozio="MediaWorld",
+                            link=link,
+                            fonte="mediaworld.it",
+                            spedizione="n.d.",
+                            immagine=_img_url,
+                        )
+                    )
                 except (AttributeError, TypeError):
                     continue
 
@@ -201,7 +220,11 @@ def scrape_mediaworld(
                         product_url = str(product.get("url", "") or "").strip()
                         if not product_url:
                             continue
-                        link = product_url if product_url.startswith("http") else f"https://www.mediaworld.it{product_url}"
+                        link = (
+                            product_url
+                            if product_url.startswith("http")
+                            else f"https://www.mediaworld.it{product_url}"
+                        )
 
                         offers = product.get("offers", {}) or {}
                         if isinstance(offers, list):
@@ -218,18 +241,31 @@ def scrape_mediaworld(
                             continue
                         try:
                             _img_raw = product.get("image", "")
-                            _img_url = str(_img_raw[0] if isinstance(_img_raw, list) and _img_raw else _img_raw or "")
+                            _img_url = str(
+                                _img_raw[0]
+                                if isinstance(_img_raw, list) and _img_raw
+                                else _img_raw or ""
+                            )
                         except Exception:
                             _img_url = ""
-                        risultati.append(Offerta(
-                            nome=nome, prezzo=prezzo, negozio="MediaWorld",
-                            link=link, fonte="mediaworld.it", spedizione="n.d.", immagine=_img_url,
-                        ))
+                        risultati.append(
+                            Offerta(
+                                nome=nome,
+                                prezzo=prezzo,
+                                negozio="MediaWorld",
+                                link=link,
+                                fonte="mediaworld.it",
+                                spedizione="n.d.",
+                                immagine=_img_url,
+                            )
+                        )
                     except (TypeError, ValueError, KeyError):
                         continue
 
                 if risultati:
-                    print(f"    ✅ MediaWorld.it (JSON-LD ItemList): {len(risultati)} risultati validi")
+                    print(
+                        f"    ✅ MediaWorld.it (JSON-LD ItemList): {len(risultati)} risultati validi"
+                    )
                     _random_delay()
                     return _cond_filter(risultati)
 
@@ -238,11 +274,11 @@ def scrape_mediaworld(
 
         # ── Strategia 2: CSS selettori ──
         cards = (
-            soup.select(".product-grid__item") or
-            soup.select("[class*='ProductItem']") or
-            soup.select("[class*='product-item']") or
-            soup.select("[data-product-id]") or
-            soup.select(".product")
+            soup.select(".product-grid__item")
+            or soup.select("[class*='ProductItem']")
+            or soup.select("[class*='product-item']")
+            or soup.select("[data-product-id]")
+            or soup.select(".product")
         )
 
         if cards:
@@ -251,11 +287,11 @@ def scrape_mediaworld(
             for card in cards:
                 try:
                     nome_tag = (
-                        card.select_one("[class*='product-name']") or
-                        card.select_one("[class*='ProductName']") or
-                        card.select_one("h2") or
-                        card.select_one("h3") or
-                        card.select_one("a[title]")
+                        card.select_one("[class*='product-name']")
+                        or card.select_one("[class*='ProductName']")
+                        or card.select_one("h2")
+                        or card.select_one("h3")
+                        or card.select_one("a[title]")
                     )
                     if not nome_tag:
                         continue
@@ -263,9 +299,8 @@ def scrape_mediaworld(
                     if not nome:
                         continue
 
-                    prezzo_tag = (
-                        card.select_one("[class*='price']") or
-                        card.select_one("[class*='Price']")
+                    prezzo_tag = card.select_one("[class*='price']") or card.select_one(
+                        "[class*='Price']"
                     )
                     if not prezzo_tag:
                         continue
@@ -291,14 +326,25 @@ def scrape_mediaworld(
 
                     try:
                         _img_tag = card.select_one("img")
-                        _img_url = str(_img_tag.get("src", "") or _img_tag.get("data-src", "") or "") if _img_tag else ""
+                        _img_url = (
+                            str(_img_tag.get("src", "") or _img_tag.get("data-src", "") or "")
+                            if _img_tag
+                            else ""
+                        )
                     except Exception:
                         _img_url = ""
 
-                    risultati.append(Offerta(
-                        nome=nome, prezzo=prezzo, negozio="MediaWorld",
-                        link=link, fonte="mediaworld.it", spedizione="n.d.", immagine=_img_url,
-                    ))
+                    risultati.append(
+                        Offerta(
+                            nome=nome,
+                            prezzo=prezzo,
+                            negozio="MediaWorld",
+                            link=link,
+                            fonte="mediaworld.it",
+                            spedizione="n.d.",
+                            immagine=_img_url,
+                        )
+                    )
                 except (AttributeError, TypeError):
                     continue
 
@@ -331,13 +377,24 @@ def scrape_mediaworld(
                             continue
                         try:
                             _img_raw = item_data.get("image", "")
-                            _img_url = str(_img_raw[0] if isinstance(_img_raw, list) and _img_raw else _img_raw or "")
+                            _img_url = str(
+                                _img_raw[0]
+                                if isinstance(_img_raw, list) and _img_raw
+                                else _img_raw or ""
+                            )
                         except Exception:
                             _img_url = ""
-                        risultati.append(Offerta(
-                            nome=nome, prezzo=prezzo, negozio="MediaWorld",
-                            link=link, fonte="mediaworld.it", spedizione="n.d.", immagine=_img_url,
-                        ))
+                        risultati.append(
+                            Offerta(
+                                nome=nome,
+                                prezzo=prezzo,
+                                negozio="MediaWorld",
+                                link=link,
+                                fonte="mediaworld.it",
+                                spedizione="n.d.",
+                                immagine=_img_url,
+                            )
+                        )
                 except Exception:
                     continue
 
@@ -355,5 +412,3 @@ def scrape_mediaworld(
 
     _random_delay()
     return _cond_filter(risultati)
-
-

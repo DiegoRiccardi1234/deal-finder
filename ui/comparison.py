@@ -1,17 +1,11 @@
 """ui: ui/comparison.py"""
+
 from __future__ import annotations
 
 import contextlib
-import csv
-import hashlib
 import io
-import json
 import os
-import random
-import re
-import time
-from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import streamlit as st
 
@@ -36,19 +30,20 @@ try:
 except Exception:
     kb_manager = None  # type: ignore[assignment]
 
-from offerte_tech import Offerta, cerca_offerte, parse_search_intent, parse_comparison_query
+from offerte_tech import Offerta, cerca_offerte
 
 try:
     from search_history import load_history, save_search as _save_search
 except ImportError:
+
     def load_history() -> list[dict[str, Any]]:
         return []
+
     def _save_search(**kw: Any) -> None:
         return None
-from ui.cards import _render_offerta_card
-from ui.export import _specs_from_name
+
+
 from ui.state import _format_price
-from ui.recommendation import _build_comparison_payload, _call_final_recommendation
 
 
 def _extract_comparison_spec_keys(
@@ -73,7 +68,9 @@ def _extract_comparison_spec_keys(
 
     preferred = ["display", "processore", "ram", "storage", "batteria", "camera", "refresh_rate"]
     ordered = [key for key in preferred if key in counts]
-    tail = sorted([key for key in counts if key not in preferred], key=lambda item: (-counts[item], item))
+    tail = sorted(
+        [key for key in counts if key not in preferred], key=lambda item: (-counts[item], item)
+    )
     return (ordered + tail)[:max_keys]
 
 
@@ -99,7 +96,9 @@ def _render_comparison_board(cmp_results: dict[str, list[Offerta]]) -> None:
         st.warning("Nessun risultato disponibile per il confronto richiesto.")
         return
 
-    spec_keys = _extract_comparison_spec_keys({query: ordered_by_query[query] for query in valid_queries})
+    spec_keys = _extract_comparison_spec_keys(
+        {query: ordered_by_query[query] for query in valid_queries}
+    )
 
     header_cells = "".join(
         (
@@ -183,7 +182,7 @@ def _render_comparison_board(cmp_results: dict[str, list[Offerta]]) -> None:
     st.markdown(table_html, unsafe_allow_html=True)
 
     cmp_cols = st.columns(len(valid_queries), gap="medium")
-    for col, query in zip(cmp_cols, valid_queries):
+    for col, query in zip(cmp_cols, valid_queries, strict=True):
         rows = ordered_by_query[query]
         stack_items = []
         for rank, offerta in enumerate(rows[:3], start=1):
@@ -196,7 +195,11 @@ def _render_comparison_board(cmp_results: dict[str, list[Offerta]]) -> None:
                 f"<small>{_html.escape(offerta.negozio)} · {_html.escape(offerta.fonte)}</small>"
                 "</div>"
             )
-        stack_html = "".join(stack_items) if stack_items else "<p class='comparison-empty'>Nessun risultato.</p>"
+        stack_html = (
+            "".join(stack_items)
+            if stack_items
+            else "<p class='comparison-empty'>Nessun risultato.</p>"
+        )
         with col:
             st.markdown(
                 "<div class='comparison-stack'>"
@@ -223,32 +226,51 @@ def _render_manual_comparison_matrix(offerte: list[Offerta]) -> None:
         header_cells.append(f"<th class='{best_class.strip()}'>{_html.escape(name)}</th>")
 
     rows_html = ""
-    rows_html += "<tr><td>Prezzo</td>" + "".join(
-        f"<td class='num'>{_html.escape(_format_price(offerta.prezzo))}</td>" for offerta in offerte
-    ) + "</tr>"
-    rows_html += "<tr><td>Negozio</td>" + "".join(
-        f"<td>{_html.escape(offerta.negozio)}</td>" for offerta in offerte
-    ) + "</tr>"
-    rows_html += "<tr><td>Fonte</td>" + "".join(
-        f"<td>{_html.escape(offerta.fonte)}</td>" for offerta in offerte
-    ) + "</tr>"
-    rows_html += "<tr><td>Spedizione</td>" + "".join(
-        f"<td>{_html.escape(str(offerta.spedizione or 'n.d.'))}</td>" for offerta in offerte
-    ) + "</tr>"
+    rows_html += (
+        "<tr><td>Prezzo</td>"
+        + "".join(
+            f"<td class='num'>{_html.escape(_format_price(offerta.prezzo))}</td>"
+            for offerta in offerte
+        )
+        + "</tr>"
+    )
+    rows_html += (
+        "<tr><td>Negozio</td>"
+        + "".join(f"<td>{_html.escape(offerta.negozio)}</td>" for offerta in offerte)
+        + "</tr>"
+    )
+    rows_html += (
+        "<tr><td>Fonte</td>"
+        + "".join(f"<td>{_html.escape(offerta.fonte)}</td>" for offerta in offerte)
+        + "</tr>"
+    )
+    rows_html += (
+        "<tr><td>Spedizione</td>"
+        + "".join(
+            f"<td>{_html.escape(str(offerta.spedizione or 'n.d.'))}</td>" for offerta in offerte
+        )
+        + "</tr>"
+    )
 
     for key in spec_keys:
         label = _html.escape(str(key).replace("_", " ").capitalize())
-        row_values = "".join(f"<td>{_html.escape(_spec_value_for_key(offerta, key))}</td>" for offerta in offerte)
+        row_values = "".join(
+            f"<td>{_html.escape(_spec_value_for_key(offerta, key))}</td>" for offerta in offerte
+        )
         rows_html += f"<tr><td>{label}</td>{row_values}</tr>"
 
-    rows_html += "<tr><td>Link</td>" + "".join(
-        (
-            "<td>"
-            f"<a class='comp-link' href='{_html.escape(offerta.link, quote=True)}' target='_blank' rel='noopener noreferrer'>Apri offerta -></a>"
-            "</td>"
+    rows_html += (
+        "<tr><td>Link</td>"
+        + "".join(
+            (
+                "<td>"
+                f"<a class='comp-link' href='{_html.escape(offerta.link, quote=True)}' target='_blank' rel='noopener noreferrer'>Apri offerta -></a>"
+                "</td>"
+            )
+            for offerta in offerte
         )
-        for offerta in offerte
-    ) + "</tr>"
+        + "</tr>"
+    )
 
     st.markdown(
         "<div class='manual-compare-wrap'>"
@@ -273,7 +295,7 @@ def _run_comparison_search(
     top_n: int,
     condizione: str,
     fonti_backend: list[str],
-    cerebras_client: Optional[object],
+    cerebras_client: object | None,
 ) -> None:
     """Esegue ricerche separate per ciascuna query di confronto e salva i risultati."""
     st.session_state["ricerca_effettuata"] = True
@@ -298,7 +320,9 @@ def _run_comparison_search(
     all_results: dict[str, list[Offerta]] = {}
     combined_log = ""
 
-    with st.status(f"⏳ Confronto in corso per {len(queries)} prodotti...", expanded=True) as cmp_status:
+    with st.status(
+        f"⏳ Confronto in corso per {len(queries)} prodotti...", expanded=True
+    ) as cmp_status:
         for q in queries:
             st.write(f"🔍 Cercando **{q}**...")
             log_buf = io.StringIO()
@@ -338,5 +362,3 @@ def _run_comparison_search(
         flat.extend(results_list)
     flat.sort(key=lambda o: o.prezzo)
     st.session_state["risultati"] = flat
-
-
