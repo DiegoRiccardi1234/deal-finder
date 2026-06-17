@@ -66,6 +66,18 @@ Copy `.streamlit/secrets.toml.example` to `.streamlit/secrets.toml`. Everything 
 
 Other settings: `APP_PASSWORD` (dashboard login), `EBAY_APP_ID` / `EBAY_CERT_ID` (eBay Browse API).
 
+### 🖥️ CLI
+
+A command-line entry point complements the web UI:
+```bash
+python offerte_tech.py -q "notebook 14 16gb" -b 800 -n 5 --condizione nuovo
+python offerte_tech.py -q "ssd 1tb" --export csv --output deals.csv
+python offerte_tech.py -q "mouse" --provider groq        # choose the AI backend
+```
+`--provider` (or the `AI_PROVIDER` env var) selects the LLM backend for the AI
+features and drives the **whole engine** — CLI, orchestrator and UI alike, not
+just the sidebar.
+
 ### 🧱 Architecture
 
 ```
@@ -133,6 +145,17 @@ Lo script crea la virtualenv, installa le dipendenze e avvia la UI su `http://lo
 Copia `.streamlit/secrets.toml.example` in `.streamlit/secrets.toml`. Tutto è opzionale — lo scraping funziona senza chiavi (le funzioni AI restano spente). Imposta `AI_PROVIDER` e la/le chiave/i del provider che vuoi; dalla sidebar scegli tra quelli configurati. (Tabella provider sopra.)
 
 Altri valori: `APP_PASSWORD` (password dashboard), `EBAY_APP_ID` / `EBAY_CERT_ID` (eBay Browse API).
+
+### 🖥️ CLI
+
+Oltre alla UI web c'è un entry point da riga di comando:
+```bash
+python offerte_tech.py -q "notebook 14 16gb" -b 800 -n 5 --condizione nuovo
+python offerte_tech.py -q "ssd 1tb" --export csv --output deals.csv
+python offerte_tech.py -q "mouse" --provider groq        # scegli il backend AI
+```
+`--provider` (o la env `AI_PROVIDER`) sceglie il backend LLM per le funzioni AI
+e guida **tutto il motore** — CLI, orchestrator e UI, non solo la sidebar.
 
 ### ✅ Test e CI
 
