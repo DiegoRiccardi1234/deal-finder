@@ -27,8 +27,6 @@ jobs:
   typecheck:
     name: Type-check (mypy, advisory)
     runs-on: ubuntu-latest
-    # Advisory: il codice non è ancora interamente tipizzato, non bloccare la CI.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: Setup Python
@@ -39,7 +37,9 @@ jobs:
       - name: Install mypy
         run: python -m pip install mypy==2.1.0
       - name: mypy (source packages)
-        run: mypy offerte ui
+        # Advisory: il codice non è ancora interamente tipizzato. Riporta gli
+        # esiti come warning senza far fallire il job (non-blocking).
+        run: mypy offerte ui || echo "::warning::mypy ha segnalato problemi (advisory, non bloccante)"
 
   test:
     name: Tests (unit + feature, no E2E)
