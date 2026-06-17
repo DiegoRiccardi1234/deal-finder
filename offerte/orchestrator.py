@@ -6,22 +6,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections.abc import Callable
 
-
-try:
-    from cerebras.cloud.sdk import Cerebras
-except Exception:
-    Cerebras = None
-
-try:
-    from offerte.ai import (
-        get_best_model as _get_best_model,
-        cerebras_chat_with_retry as _cerebras_chat_lib,
-    )
-except Exception:
-    _get_best_model = None  # type: ignore[assignment]
-    _cerebras_chat_lib = None  # type: ignore[assignment]
-
-_CEREBRAS_MODEL_FALLBACK = "llama-3.3-70b"
 from offerte._constants import *  # noqa: F401,F403
 from offerte.models import Offerta
 from offerte.parsing import *  # noqa: F401,F403

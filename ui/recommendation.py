@@ -8,22 +8,6 @@ from typing import Any
 import streamlit as st
 
 try:
-    from cerebras.cloud.sdk import Cerebras
-except Exception:
-    Cerebras = None
-
-try:
-    from offerte.ai import (
-        get_best_model as _get_best_model,
-        cerebras_chat_with_retry as _cerebras_chat_lib,
-    )
-except Exception:
-    _get_best_model = None  # type: ignore[assignment]
-    _cerebras_chat_lib = None  # type: ignore[assignment]
-
-CEREBRAS_MODEL = "llama-3.3-70b"
-
-try:
     import knowledge_base as kb_manager
 except Exception:
     kb_manager = None  # type: ignore[assignment]

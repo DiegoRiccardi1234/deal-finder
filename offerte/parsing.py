@@ -33,7 +33,6 @@ except Exception:
     _get_best_model = None  # type: ignore[assignment]
     _cerebras_chat_lib = None  # type: ignore[assignment]
 
-_CEREBRAS_MODEL_FALLBACK = "llama-3.3-70b"
 from offerte._constants import *  # noqa: F401,F403
 
 
@@ -332,7 +331,6 @@ __all__ = [
     "Cerebras",
     "_get_best_model",
     "_cerebras_chat_lib",
-    "_CEREBRAS_MODEL_FALLBACK",
     "parse_price",
     "_within_price_range",
     "_normalize_category",

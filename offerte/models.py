@@ -5,23 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 
-try:
-    from cerebras.cloud.sdk import Cerebras
-except Exception:
-    Cerebras = None
-
-try:
-    from offerte.ai import (
-        get_best_model as _get_best_model,
-        cerebras_chat_with_retry as _cerebras_chat_lib,
-    )
-except Exception:
-    _get_best_model = None  # type: ignore[assignment]
-    _cerebras_chat_lib = None  # type: ignore[assignment]
-
-_CEREBRAS_MODEL_FALLBACK = "llama-3.3-70b"
-
-
 @dataclass(order=False)
 class Offerta:
     """Rappresenta un'offerta raccolta da una fonte."""
