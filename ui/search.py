@@ -61,6 +61,7 @@ def _run_search(
     st.session_state["auto_recommend_tried"] = False
     st.session_state["risultati"] = []
     st.session_state["log_ricerca"] = ""
+    st.session_state["prezzo_nuovo_minimo"] = False
 
     categoria = str(st.session_state.get("categoria", "altro") or "altro")
     if not categoria:
@@ -202,6 +203,14 @@ def _run_search(
             try:
                 _min_price = min((o.prezzo for o in risultati if o.prezzo), default=None)
                 if _min_price is not None:
+                    # Rileva il nuovo minimo PRIMA di registrarlo (altrimenti
+                    # sarebbe già nello storico e non risulterebbe più "nuovo").
+                    _prev_low = price_history.lowest_ever(query)
+                    st.session_state["prezzo_nuovo_minimo"] = _prev_low is not None and float(
+                        _min_price
+                    ) < float(_prev_low)
+                    st.session_state["prezzo_minimo_prec"] = _prev_low
+                    st.session_state["prezzo_minimo_corrente"] = float(_min_price)
                     price_history.record(query, _min_price)
             except Exception:
                 pass

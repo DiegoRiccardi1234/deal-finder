@@ -1,5 +1,5 @@
 """
-probe_scrapers.py — Sonda real HTTP per tutti gli scraper di Trova Prezzi Mio.
+probe_scrapers.py — Sonda real HTTP per tutti gli scraper di Trova Prezzi.
 
 Esegue ricerche reali (senza mock) su ogni sito configurato e stampa:
   - quante offerte ha restituito

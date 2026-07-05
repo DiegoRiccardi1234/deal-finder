@@ -20,7 +20,7 @@ Usa il tool ctx_index sulla directory del progetto come prima operazione di ogni
 
 ## Project Overview
 
-**Trova Prezzi Mio** (aka "Offerte Tech Italia") is a Python price-comparison tool that scrapes tech product deals from multiple Italian e-commerce sites (trovaprezzi.it, amazon.it, ebay.it, vinted.it, euronics.it, unieuro.it, mediaworld.it) and surfaces results via a Streamlit web UI with AI-powered chat recommendations.
+**Trova Prezzi** is a Python price-comparison tool that scrapes tech product deals from multiple Italian e-commerce sites (trovaprezzi.it, amazon.it, ebay.it, vinted.it, euronics.it, unieuro.it, mediaworld.it) and surfaces results via a Streamlit web UI with AI-powered chat recommendations.
 
 ## Commands
 

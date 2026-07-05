@@ -43,6 +43,7 @@ data/price_history.json
 
 # Handoff di sessione (locale, mai committato)
 HANDOFF.md
+APPUNTI.md
 
 # Artefatto Windows (nome device riservato)
 nul

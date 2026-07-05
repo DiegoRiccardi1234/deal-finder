@@ -40,8 +40,8 @@ except ImportError:
 
 # Helper modulari
 from ui.ai_client import (
-    _get_cerebras_api_key,
-    _get_cerebras_client,
+    _get_ai_api_key,
+    _get_ai_client,
 )
 from ui.auth import (
     _get_client_fingerprint,
@@ -119,7 +119,7 @@ if _APP_PASSWORD and not _APP_TEST_MODE:
             st.markdown(
                 "<div class='auth-gate-card'>"
                 "<p class='auth-kicker'>Accesso riservato</p>"
-                "<h2>Trova Prezzi Mio</h2>"
+                "<h2>Trova Prezzi</h2>"
                 "<p class='auth-sub'>Inserisci la password per aprire la dashboard.</p>",
                 unsafe_allow_html=True,
             )
@@ -138,7 +138,7 @@ if _APP_PASSWORD and not _APP_TEST_MODE:
         st.stop()
 render_nav(active_page="tool")
 _init_state()
-_get_cerebras_api_key()  # bootstrap secret provider → env var
+_get_ai_api_key()  # bootstrap secret provider → env var
 # Selettore provider AI: solo tra quelli con API key configurata
 from offerte import providers as _providers
 
@@ -159,18 +159,10 @@ if _configured_ai:
         from offerte.ai import invalidate_model
 
         invalidate_model()
-api_key = _get_cerebras_api_key()
-cerebras_client = _get_cerebras_client(api_key)
+api_key = _get_ai_api_key()
+cerebras_client = _get_ai_client(api_key)
 if kb_manager is not None:
     kb_manager.init_kb_on_startup(api_key)
-st.markdown(
-    "<div class='cockpit-top-strip'>"
-    "<span class='label'>System health</span>"
-    "<span class='uptime'>Uptime: 99.9%</span>"
-    "</div>",
-    unsafe_allow_html=True,
-)
-st.write("")
 _presearch_done = st.session_state.get("presearch_ready", False)
 query_input: str = ""
 top_n_input: int = int(st.session_state.get("ultimo_top_n", 10))
@@ -284,6 +276,19 @@ if not _presearch_done:
             _role = "assistant" if _msg.get("role") == "assistant" else "user"
             with st.chat_message(_role):
                 st.write(_msg.get("content", ""))
+
+        # Chip esempio: solo al primo messaggio (chat ancora vuota lato utente)
+        if len(st.session_state.get("presearch_messages", [])) <= 1:
+            _examples = [
+                'notebook 14" 16GB sotto 800€',
+                "felpa Nike taglia M",
+                "iPhone usato 300-500€",
+            ]
+            _chip_cols = st.columns(len(_examples))
+            for _i, _ex in enumerate(_examples):
+                if _chip_cols[_i].button(_ex, key=f"presearch_chip_{_i}", use_container_width=True):
+                    _run_presearch_step(_ex, api_key)
+                    st.rerun()
 
     st.divider()
 
@@ -605,6 +610,16 @@ if st.session_state.get("ricerca_effettuata", False):
         st.subheader(
             f"{_label_count} offerte trovate per \u201c{st.session_state.get('ultima_query', '')}\u201d"
         )
+        if st.session_state.get("prezzo_nuovo_minimo"):
+            _pmc = st.session_state.get("prezzo_minimo_corrente")
+            _pmp = st.session_state.get("prezzo_minimo_prec")
+            _msg_low = (
+                f"\ud83d\udd3b Nuovo minimo storico per \u201c{st.session_state.get('ultima_query', '')}\u201d: "
+                f"{_format_price(_pmc)}"
+            )
+            if _pmp is not None:
+                _msg_low += f" \u2014 prima era {_format_price(_pmp)}"
+            st.success(_msg_low)
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Risultati", _label_count)
         m2.metric("Prezzo piu basso", _format_price(prezzo_min_ris))

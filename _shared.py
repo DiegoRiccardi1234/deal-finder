@@ -35,19 +35,7 @@ def load_css(theme_mode: str = "light") -> None:
 def render_nav(active_page: str = "tool") -> None:
     """Renderizza la navigazione laterale."""
     with st.sidebar:
-        st.markdown("<div class='sidebar-brand'>Trova Prezzi Mio</div>", unsafe_allow_html=True)
-        st.markdown(
-            "<div class='sidebar-health'>"
-            "<span class='dot'></span>"
-            "<span>System health</span>"
-            "<strong>99.9%</strong>"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-        st.caption("Presets")
-        st.caption("History")
-        st.caption("Preferiti")
-        st.caption("Fast / Advanced")
+        st.markdown("<div class='sidebar-brand'>Trova Prezzi</div>", unsafe_allow_html=True)
         st.markdown("---")
         render_theme_toggle()
         _render_update_control()

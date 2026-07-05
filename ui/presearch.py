@@ -13,7 +13,11 @@ try:
 except Exception:
     kb_manager = None  # type: ignore[assignment]
 
-from offerte_tech import parse_search_intent, parse_comparison_query
+from offerte_tech import (
+    parse_search_intent,
+    parse_comparison_query,
+    detect_category_and_questions,
+)
 
 try:
     from search_history import load_history, save_search as _save_search
@@ -27,9 +31,10 @@ except ImportError:
 
 
 from ui.ai_client import (
-    _cerebras_chat_with_retry,
+    _ai_chat_with_retry,
     _extract_json_object,
-    _get_cerebras_client,
+    _get_ai_client,
+    _is_test_mode,
 )
 from ui.state import _queue_price_sync
 
@@ -135,11 +140,14 @@ def _reset_presearch_chat() -> None:
     st.session_state["presearch_messages"] = [
         {
             "role": "assistant",
-            "content": "Raccontami cosa cerchi — tipo prodotto, budget, uso e preferenze. "
-            "Se mi dai già abbastanza informazioni, preparo la query in un colpo solo senza fare altre domande.",
+            "content": "Ciao! Dimmi cosa cerchi e ti trovo le migliori offerte. "
+            "Più dettagli mi dai (tipo prodotto, budget, uso, e se serve taglia/numero/colore) "
+            "meno domande ti faccio.\n\n"
+            'Esempi: «notebook 14" 16GB sotto 800€» · «felpa Nike taglia M» · «iPhone usato 300-500€».',
         }
     ]
     st.session_state["presearch_question_count"] = 0
+    st.session_state["presearch_asked_questions"] = []
     st.session_state["presearch_ready"] = False
     st.session_state["query_ottimizzata"] = ""
     st.session_state["categoria"] = "altro"
@@ -353,6 +361,23 @@ def _presearch_fallback() -> dict[str, Any]:
     }
 
 
+def _pick_clarifying_question(transcript: str, asked: set[str]) -> str | None:
+    """Domanda di chiarimento adattiva alla categoria (taglia, numero, uso, diagonale…),
+    presa da detect_category_and_questions. None se le preferenze sono già chiare o se
+    tutte le domande pertinenti sono già state poste."""
+    try:
+        info = detect_category_and_questions(transcript)
+    except Exception:
+        return None
+    if info.get("preferenze_chiare"):
+        return None
+    for q in info.get("domande") or []:
+        q = str(q or "").strip()
+        if q and q not in asked:
+            return q
+    return None
+
+
 def _run_presearch_step(user_message: str, api_key: str) -> None:
     cleaned = str(user_message or "").strip()
     if not cleaned:
@@ -425,7 +450,7 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
         ]
     )
 
-    client = _get_cerebras_client(api_key)
+    client = _get_ai_client(api_key)
     result: dict[str, Any]
 
     if client is None:
@@ -490,7 +515,7 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
             "forza_chiusura": int(st.session_state.get("presearch_question_count", 0)) >= 3,
         }
         try:
-            raw = _cerebras_chat_with_retry(
+            raw = _ai_chat_with_retry(
                 client,
                 [
                     {"role": "system", "content": system_prompt},
@@ -549,8 +574,15 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
         )
         return
 
+    asked = set(st.session_state.get("presearch_asked_questions", []))
+    # In test/mock mode il flusso domande è guidato dal mock deterministico:
+    # non sovrapporre la domanda category-aware (che si appoggia all'AI reale).
+    cat_q = None if _is_test_mode() else _pick_clarifying_question(transcript, asked)
     domanda = (
-        sanitized.get("domanda")
-        or "Qual e il dettaglio piu importante che vuoi fissare prima di cercare?"
+        cat_q
+        or sanitized.get("domanda")
+        or "Dimmi un dettaglio in più: uso, taglia/numero, o marca preferita?"
     )
+    asked.add(str(domanda))
+    st.session_state["presearch_asked_questions"] = list(asked)
     st.session_state["presearch_messages"].append({"role": "assistant", "content": str(domanda)})

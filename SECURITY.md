@@ -16,7 +16,7 @@ be released and credited (unless you prefer to stay anonymous).
 
 ## Threat model
 
-Trova Prezzi Mio is a personal price-comparison tool. It runs in two modes:
+Trova Prezzi is a personal price-comparison tool. It runs in two modes:
 
 | Mode | Surface |
 |------|---------|

@@ -1,4 +1,4 @@
-# TODO — Trova Prezzi Mio
+# TODO — Trova Prezzi
 
 ## Nuovi siti da aggiungere
 

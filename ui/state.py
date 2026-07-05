@@ -52,9 +52,10 @@ def _init_state() -> None:
         "presearch_messages": [
             {
                 "role": "assistant",
-                "content": "Raccontami la richiesta del tuo amico su Trova Prezzi — qualsiasi tipo di prodotto "
-                "(tech, abbigliamento, elettrodomestici, sport, libri...). "
-                "Ti faccio al massimo 2 domande e poi avvio lo scraping.",
+                "content": "Ciao! Dimmi cosa cerchi e ti trovo le migliori offerte. "
+                "Più dettagli mi dai (tipo prodotto, budget, uso, e se serve taglia/numero/colore) "
+                "meno domande ti faccio.\n\n"
+                'Esempi: «notebook 14" 16GB sotto 800€» · «felpa Nike taglia M» · «iPhone usato 300-500€».',
             }
         ],
         "presearch_question_count": 0,

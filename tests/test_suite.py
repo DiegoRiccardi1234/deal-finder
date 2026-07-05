@@ -671,25 +671,55 @@ def _assistant_messages(page: Page):
     return page.locator("[data-testid='stChatMessage']")
 
 
-def _complete_presearch(page: Page) -> None:
-    """Completa la chat pre-ricerca per raggiungere STATE 2 (3 scambi nel mock mode)."""
+def _drive_presearch_once(page: Page) -> bool:
+    """Un tentativo di guidare la chat fino a STATE 2. True se raggiunto.
+
+    Sincronizza su eventi reali (comparsa messaggi / bottone STATE 2) invece di
+    dormire a tempo fisso: il doppio-rerun di Streamlit rende i wait fissi flaky.
+    """
     placeholder = "Descrivi prodotto, uso, vincoli e preferenze"
-    msgs = ["cerco uno smartphone", "massimo 800 euro", "nuovo"]
+    msgs = ["cerco uno smartphone", "massimo 800 euro"]
+    js_ready = (
+        "(n) => {"
+        " const m = document.querySelectorAll(\"[data-testid='stChatMessage']\").length;"
+        " const ready = [...document.querySelectorAll('button')]"
+        ".some(b => (b.textContent || '').includes('Cerca offerte'));"
+        " return m >= n || ready;"
+        "}"
+    )
     for msg in msgs:
-        # Già in STATE 2?
+        if page.locator("button", has_text="Cerca offerte").count() > 0:
+            return True
+        chat = page.get_by_placeholder(placeholder)
         try:
-            page.locator("button", has_text="Cerca offerte").wait_for(state="visible", timeout=2000)
-            return
+            chat.first.wait_for(state="visible", timeout=15000)
+        except Exception:
+            break  # input sparito stabilmente → verosimilmente già in STATE 2
+        before = page.locator("[data-testid='stChatMessage']").count()
+        chat.first.fill(msg)
+        chat.first.press("Enter")
+        # Attendi la risposta reale (utente + assistente = +2) OPPURE STATE 2.
+        try:
+            page.wait_for_function(js_ready, arg=before + 2, timeout=30000)
         except Exception:
             pass
-        # Chat input ancora visibile?
-        chat = page.get_by_placeholder(placeholder)
-        if chat.count() == 0:
-            break
-        chat.fill(msg)
-        chat.press("Enter")
         page.wait_for_load_state("networkidle")
-        page.wait_for_timeout(3000)
+    return page.locator("button", has_text="Cerca offerte").count() > 0
+
+
+def _complete_presearch(page: Page) -> None:
+    """Completa la chat pre-ricerca fino a STATE 2, con retry via reload.
+
+    L'harness E2E su Streamlit è intrinsecamente flaky (un messaggio può perdersi
+    nel doppio-rerun): se il primo drive non arriva a STATE 2, si ricarica la
+    pagina (stato pulito) e si ritenta una volta.
+    """
+    for _ in range(2):
+        if _drive_presearch_once(page):
+            return
+        page.reload()
+        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(1500)
     expect(page.locator("button", has_text="Cerca offerte")).to_be_visible(timeout=30000)
 
 

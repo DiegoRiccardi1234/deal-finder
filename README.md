@@ -1,11 +1,11 @@
-# 🛒 Trova Prezzi Mio
+# 🛒 Trova Prezzi
 
 > AI-assisted price-comparison tool that scrapes Italian e-commerce sites in parallel and recommends the best deal through a conversational interface — with a **pluggable AI backend** (Cerebras, Groq, OpenAI, OpenRouter, Anthropic, Google Gemini).
 
 [![CI](https://github.com/DiegoRiccardi1234/trova-prezzi/actions/workflows/ci.yml/badge.svg)](https://github.com/DiegoRiccardi1234/trova-prezzi/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11-blue)
 ![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B)
-![Version](https://img.shields.io/badge/version-1.1.0-blue)
+![Version](https://img.shields.io/badge/version-2.0.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 [![Ruff](https://img.shields.io/badge/lint-ruff-261230?logo=ruff&logoColor=white)](https://github.com/astral-sh/ruff)
 ![AI providers](https://img.shields.io/badge/AI-6%20providers-blueviolet)
@@ -14,7 +14,19 @@
 
 **[🇬🇧 English](#-english) · [🇮🇹 Italiano](#-italiano)**
 
-![Screenshot](docs/screenshot.png)
+<p align="center">
+  <img src="docs/demo.gif" alt="Demo — dalla chat conversazionale ai risultati ordinati per prezzo" width="880">
+</p>
+
+<p align="center">
+  <img src="docs/chat-light.png" alt="Chat assistita — tema chiaro" width="49%">
+  &nbsp;
+  <img src="docs/chat-dark.png" alt="Chat assistita — tema scuro" width="49%">
+</p>
+
+<p align="center">
+  <img src="docs/results.png" alt="Risultati aggregati, deduplicati e ordinati per prezzo" width="620">
+</p>
 
 ---
 

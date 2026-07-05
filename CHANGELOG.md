@@ -4,7 +4,7 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.0.0] - 2026-07-05
 
 ### Security
 - **Purged a leaked Google Maps API key from the entire git history.** It had
@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   artifacts (`tests/probe_siti_results.json`, `report_siti.md`).
 
 ### Added
+- **Adaptive, category-aware pre-search chat.** The assistant now asks the
+  right follow-up for the detected category — size for clothing, shoe size,
+  main use for laptops, diagonal for TVs — via `detect_category_and_questions`,
+  and offers clickable example chips. The brittle regex fallback was dropped
+  from the conversation flow.
+- **New all-time-low price alert.** Flags "🔻 nuovo minimo storico" when the
+  current cheapest result beats the recorded price history for that query.
 - **Multi-provider AI in the core.** `offerte/ai.py` and the knowledge-base
   updater now build their client via `offerte.providers` and honor
   `AI_PROVIDER`, so the CLI and the orchestrator's AI filtering work with any
@@ -40,6 +47,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ui/comparison.py`: `zip(..., strict=True)` on equal-length columns (ruff B905).
 
 ### Changed
+- **Rebrand: "Trova Prezzi Mio" → "Trova Prezzi".**
+- **UI redesign — a single "editorial terracotta" design system.** Collapsed a
+  stylesheet made of three competing, `!important`-fighting layers (~2050 lines,
+  ~900 of them dead) into one variable-driven theme (~650 lines) with a
+  **coherent dark mode** — previously light was terracotta while dark fell back
+  to a leftover neon-lime theme.
+- Removed fake telemetry ("System health / Uptime 99.9%") and the
+  non-functional sidebar captions.
+- Renamed the UI AI-client helpers `_get_cerebras_*` → `_get_ai_*`
+  (provider-agnostic; historical aliases kept for compatibility).
+- README: added a demo GIF plus light/dark/results screenshots. Hardened the
+  flaky Playwright chat driver (event-synced + retry-on-reload); the full suite
+  (78 tests, incl. E2E) is green.
 - Removed ~650 dead "preamble" imports left over from the monolith→package
   split (star-import re-exports and test-monkeypatch targets preserved),
   modernized typing via pyupgrade, and applied `ruff format` across the

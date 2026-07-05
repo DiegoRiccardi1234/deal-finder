@@ -25,7 +25,7 @@ except ImportError:
         return None
 
 
-from ui.ai_client import _cerebras_chat_with_retry
+from ui.ai_client import _ai_chat_with_retry
 
 
 def _build_products_payload(offerte: list[Offerta]) -> list[dict[str, Any]]:
@@ -122,4 +122,4 @@ def _call_final_recommendation(
         "Sii diretto e concreto."
     )
     payload = [{"role": "system", "content": system_prompt}] + messages
-    return _cerebras_chat_with_retry(cerebras_client, payload, temperature=0.2)
+    return _ai_chat_with_retry(cerebras_client, payload, temperature=0.2)

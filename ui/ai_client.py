@@ -44,7 +44,7 @@ except ImportError:
         return None
 
 
-def _get_cerebras_api_key() -> str:
+def _get_ai_api_key() -> str:
     """Bootstrap dei secret Streamlit nelle env var e ritorna la API key del
     provider AI attivo (multi-provider via offerte.providers)."""
     from offerte import providers
@@ -99,10 +99,6 @@ class _MockChatCompletions:
                 content = json.dumps(
                     {"domanda": "Qual e il tuo budget massimo?", "pronto": False},
                     ensure_ascii=False,
-                )
-            elif domande_fatte == 1:
-                content = json.dumps(
-                    {"domanda": "Preferisci nuovo o usato?", "pronto": False}, ensure_ascii=False
                 )
             else:
                 categoria = (
@@ -173,7 +169,7 @@ class _MockCerebrasClient:
         self.chat = _MockChat()
 
 
-def _get_cerebras_client(api_key: str) -> object | None:
+def _get_ai_client(api_key: str) -> object | None:
     if _is_test_mode():
         return _MockCerebrasClient()
     from offerte import providers
@@ -181,13 +177,13 @@ def _get_cerebras_client(api_key: str) -> object | None:
     return providers.build_client(providers.active_provider())
 
 
-def _cerebras_chat_with_retry(
+def _ai_chat_with_retry(
     client: object,
     messages: list[dict[str, str]],
     temperature: float = 0.1,
     max_retries: int = 4,
 ) -> str:
-    """Chiama Cerebras con retry automatico.
+    """Chiama il provider AI attivo con retry automatico.
     - 404 (modello non trovato): invalida cache, sceglie nuovo modello, riprova.
     - 429 (rate limit): backoff esponenziale fino a max_retries volte.
     """
@@ -228,6 +224,12 @@ def _cerebras_chat_with_retry(
     if last_exc is not None:
         raise last_exc
     return ""
+
+
+# Alias storici provider-agnostici → i nomi *_cerebras_* restano per retro-compat.
+_get_cerebras_api_key = _get_ai_api_key
+_get_cerebras_client = _get_ai_client
+_cerebras_chat_with_retry = _ai_chat_with_retry
 
 
 def _extract_json_object(raw: str) -> dict[str, Any]:
