@@ -6,6 +6,7 @@ import argparse
 import os
 
 from offerte import providers
+from offerte.log import configure_logging
 from offerte.orchestrator import cerca_offerte
 
 
@@ -103,6 +104,9 @@ def _build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
+    # Diagnostica su stderr, così stdout resta pulito per i risultati e per
+    # `--export csv`. Alzabile con LOG_LEVEL=DEBUG.
+    configure_logging()
     if args.provider:
         os.environ["AI_PROVIDER"] = args.provider
     cerca_offerte(

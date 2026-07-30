@@ -11,6 +11,10 @@ from offerte._constants import *  # noqa: F401,F403
 from offerte.models import Offerta
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import is_relevant
+from offerte.log import get_logger
+from offerte.source_status import report_blocked, report_error
+
+log = get_logger(__name__)
 
 # SCRAPER — comet.it  (Algolia API)
 # ===========================================================================
@@ -100,7 +104,9 @@ def scrape_comet(
                 continue
     except requests.HTTPError as exc:
         status = exc.response.status_code if exc.response is not None else "?"
-        print(f"    ⚠️  Comet.it: errore HTTP {status}.")
+        log.warning("Comet.it: errore HTTP %s.", status)
+        report_blocked("comet", status)
     except Exception as exc:
-        print(f"    ❌ Comet.it: errore inatteso → {exc}")
+        log.error("Comet.it: errore inatteso → %s", exc)
+        report_error("comet", exc)
     return risultati

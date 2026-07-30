@@ -37,3 +37,22 @@ DEFAULT_CEREBRAS_MODEL: str = CEREBRAS_FALLBACK_MODELS[0]
 
 # Modelli da escludere dal resolver (troppo piccoli / deprecati).
 CEREBRAS_MODEL_BLACKLIST: frozenset[str] = frozenset({"llama3.1-8b"})
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        val = float(os.environ.get(name, "") or default)
+    except ValueError:
+        return default
+    return val if val > 0 else default
+
+
+# Timeout (secondi) delle richieste ai provider AI. Senza questo gli SDK usano
+# il proprio default (o nessuno): l'updater della knowledge base gira in un
+# thread daemon e poteva restare appeso per sempre, e in Streamlit una chiamata
+# lenta blocca il rerun.
+AI_REQUEST_TIMEOUT: float = _env_float("AI_REQUEST_TIMEOUT", 60.0)
+
+# Tetto (secondi) al tempo totale di una ricerca: oltre questo l'orchestrator
+# smette di attendere gli scraper ancora in corso e restituisce i parziali.
+SEARCH_TOTAL_TIMEOUT: float = _env_float("SEARCH_TOTAL_TIMEOUT", 90.0)

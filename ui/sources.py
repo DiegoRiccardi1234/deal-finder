@@ -11,6 +11,7 @@ try:
 except Exception:
     kb_manager = None  # type: ignore[assignment]
 
+from offerte import source_status
 from offerte_tech import Offerta
 
 try:
@@ -44,13 +45,23 @@ def _status_rows_for_sources(
     fonti_backend: list[str],
     log_text: str,
 ) -> list[dict[str, str]]:
-    """Costruisce righe stato fonti per pannello monitor."""
+    """Costruisce righe stato fonti per pannello monitor.
+
+    Lo stato arriva da `offerte.source_status`, popolato dagli scraper durante la
+    ricerca. Prima veniva *dedotto* cercando nel testo del log stringhe come
+    `f"{key} -> errore"` o `f"{key} 403"`: un formato che nessuno stampava, quindi
+    lo stato "BLOCCATA" era irraggiungibile e una fonte che ci aveva rifiutati
+    risultava indistinguibile da una senza risultati.
+
+    `log_text` resta nella firma per retrocompatibilità con i chiamanti, ma non è
+    più la fonte di verità.
+    """
     counts_by_source: dict[str, int] = {}
     for o in offerte:
         fonte = str(o.fonte or "").lower()
         counts_by_source[fonte] = counts_by_source.get(fonte, 0) + 1
 
-    log_lower = str(log_text or "").lower()
+    statuses = source_status.snapshot()
     rows: list[dict[str, str]] = []
     for key in fonti_backend:
         label = _FONTE_LABELS.get(key, key.title())
@@ -60,29 +71,27 @@ def _status_rows_for_sources(
             if key in fonte_name or domain_hint.split(".")[0] in fonte_name:
                 found += c
 
-        source_error = any(
-            token in log_lower
-            for token in [
-                f"{key} -> errore",
-                f"errore {key}",
-                f"{key} timeout",
-                f"{key} 403",
-                f"{key} 429",
-            ]
-        )
+        st_entry = statuses.get(key)
+        state = st_entry.state if st_entry else None
 
-        if source_error:
-            status = "BLOCCATA"
-            dot_class = "is-error"
-            detail = "Errore o blocco"
+        if state == source_status.BLOCKED:
+            status, dot_class = "BLOCCATA", "is-error"
+            detail = st_entry.describe()
+        elif state == source_status.ERROR:
+            status, dot_class = "ERRORE", "is-error"
+            detail = st_entry.describe()
+        elif state == source_status.DISABLED:
+            status, dot_class = "DISATTIVATA", "is-warn"
+            detail = st_entry.describe()
         elif found > 0:
-            status = "ONLINE"
-            dot_class = "is-ok"
+            status, dot_class = "ONLINE", "is-ok"
             detail = f"{found} risultati"
+        elif state == source_status.EMPTY:
+            status, dot_class = "ONLINE", "is-ok"
+            detail = "nessun risultato per questa ricerca"
         else:
-            status = "IN ATTESA"
-            dot_class = "is-warn"
-            detail = "0 risultati"
+            status, dot_class = "IN ATTESA", "is-warn"
+            detail = "in corso"
 
         rows.append(
             {

@@ -71,14 +71,24 @@ def is_relevant(nome: str, query_tokens: list[str], strict_specs: bool = True) -
 
     Per query corte (<=2 token), basta che almeno 1 token sia presente (OR logic)
     per supportare query generiche tipo 'scarpe', 'libro', ecc.
+
+    Se TUTTI i token sono di specifica, saltarli non lascerebbe nulla da
+    valutare: in quel caso si valutano comunque, invece di saltarli. Senza questa
+    regola i due rami si comportavano in modo opposto e sbagliato — una query di
+    due soli token-spec ("ssd 1tb") cadeva sul `return False` finale e scartava il
+    100% dei prodotti da ogni fonte, mentre con tre token-spec il ramo AND
+    accettava qualunque cosa per verità vacua, perfino un frullatore.
     """
     nome_lower = nome.lower()
     brand_tokens = [token for token in query_tokens if token in _TECH_BRANDS]
+    # Se non resta nessun token da valutare, i token-spec tornano significativi:
+    # "ssd 1tb" deve pur cercare "ssd" e "1tb" nel nome.
+    skip_specs = not strict_specs and not all(_is_spec_token(t) for t in query_tokens)
     # Per query corte senza brand tech specifico, applica logica OR:
     # basta un token per considerare rilevante (supporta query generiche come "scarpe", "libro")
     if len(query_tokens) <= 2 and not brand_tokens:
         for token in query_tokens:
-            if not strict_specs and _is_spec_token(token):
+            if skip_specs and _is_spec_token(token):
                 continue
             varianti = _ALIASES.get(token, {token})
             varianti.add(token)
@@ -86,7 +96,7 @@ def is_relevant(nome: str, query_tokens: list[str], strict_specs: bool = True) -
                 return True
         return False
     for token in query_tokens:
-        if not strict_specs and _is_spec_token(token):
+        if skip_specs and _is_spec_token(token):
             continue
         if token.isdigit() and len(token) <= 2 and brand_tokens:
             if not any(

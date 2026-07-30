@@ -12,6 +12,11 @@ import time
 from typing import Any
 import streamlit as st
 from _shared import load_css, render_nav
+from offerte.log import configure_logging
+
+# Idempotente: Streamlit ri-esegue lo script a ogni interazione, e senza la
+# guardia interna ogni rerun aggiungerebbe un handler duplicando le righe.
+configure_logging()
 
 try:
     import knowledge_base as kb_manager

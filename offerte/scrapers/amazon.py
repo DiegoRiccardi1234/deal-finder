@@ -16,6 +16,10 @@ from offerte.models import Offerta
 from offerte.http import fetch_with_retry, get_headers, _random_delay
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import is_relevant
+from offerte.log import get_logger
+from offerte.source_status import report_blocked, report_error
+
+log = get_logger(__name__)
 
 
 def scrape_amazon(
@@ -119,7 +123,8 @@ def scrape_amazon(
                     "unusual traffic",
                 )
             ):
-                print("    ❌ Amazon.it ha restituito una pagina anti-bot.")
+                log.warning("Amazon.it ha restituito una pagina anti-bot.")
+                report_blocked("amazon", "anti-bot")
                 return risultati
 
             # ---------------------------------------------------------------
@@ -147,10 +152,10 @@ def scrape_amazon(
                     pass
 
         if not cards:
-            print("    ⚠️  Nessun prodotto trovato su Amazon — selettore cambiato o CAPTCHA.")
+            log.warning("Amazon.it: nessun prodotto trovato — selettore cambiato o CAPTCHA.")
             return risultati
 
-        print(f"    ✅ Trovate {len(cards)} card grezze su Amazon.it")
+        log.info("Amazon.it: %d card grezze trovate", len(cards))
 
         _KW_RICONDIZIONATO = {
             "ricondizionato",
@@ -272,12 +277,15 @@ def scrape_amazon(
                 continue
 
     except requests.Timeout:
-        print("    ❌ Amazon.it: timeout raggiunto anche dopo i retry.")
+        log.error("Amazon.it: timeout raggiunto anche dopo i retry.")
+        report_error("amazon", "timeout")
     except requests.ConnectionError:
-        print("    ❌ Amazon.it: impossibile connettersi al sito.")
+        log.error("Amazon.it: impossibile connettersi al sito.")
+        report_error("amazon", "connessione")
     except requests.HTTPError as exc:
         status = exc.response.status_code if exc.response is not None else 0
-        print(f"    ❌ Amazon.it: errore HTTP {status}.")
+        log.error("Amazon.it: errore HTTP %s.", status)
+        report_blocked("amazon", status)
         if status == 503 and st is not None:
             try:
                 st.warning(
@@ -289,9 +297,10 @@ def scrape_amazon(
             except Exception:
                 pass
         if status == 503:
-            print("    ❌ Amazon.it: bloccato da cloud (HTTP 503) — funziona solo in locale.")
+            log.error("Amazon.it: bloccato da cloud (HTTP 503) — funziona solo in locale.")
     except Exception as exc:
-        print(f"    ❌ Amazon.it: errore inatteso → {exc}")
+        log.error("Amazon.it: errore inatteso → %s", exc)
+        report_error("amazon", exc)
 
     _random_delay()
     return risultati

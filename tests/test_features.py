@@ -339,3 +339,169 @@ def test_update_flag_is_claimed_atomically() -> None:
     kb._release_update()
     assert kb._try_claim_update() is True, "il flag non è stato rilasciato"
     kb._release_update()
+
+
+# ===========================================================================
+# Stato per-fonte — offerte/source_status.py
+# ===========================================================================
+
+
+def test_source_status_keeps_the_reason_instead_of_downgrading_to_empty() -> None:
+    """Il difetto che questo meccanismo esiste per risolvere.
+
+    Gli scraper ritornano `[]` anche quando la fonte li ha rifiutati, e chi li
+    avvolge riporta l'esito dalla lista: senza questa regola un `report_empty`
+    successivo cancellerebbe il motivo, e l'utente rivedrebbe «0 risultati» al
+    posto di «bloccata (HTTP 403)».
+    """
+    from offerte import source_status as ss
+
+    ss.reset()
+
+    ss.report_blocked("euronics", 403)
+    ss.report_empty("euronics")  # è ciò che fa il wrapper dopo il `return []`
+    assert ss.get("euronics").state == ss.BLOCKED
+    assert "403" in ss.get("euronics").describe()
+
+    ss.report_error("amazon", TimeoutError("lento"))
+    ss.report_empty("amazon")
+    assert ss.get("amazon").state == ss.ERROR
+
+    ss.report_disabled("temu", "CAPTCHA")
+    ss.report_empty("temu")
+    assert ss.get("temu").state == ss.DISABLED
+
+    # Una fonte che poi produce risultati invece deve poter passare a ok.
+    ss.report_ok("euronics", 12)
+    assert ss.get("euronics").state == ss.OK
+    assert ss.get("euronics").results == 12
+
+
+def test_source_status_distinguishes_problems_from_no_matches() -> None:
+    from offerte import source_status as ss
+
+    ss.reset()
+    ss.report_ok("comet", 5)
+    ss.report_empty("unieuro")
+    ss.report_blocked("trovaprezzi", 403)
+    ss.report_error("vinted", "timeout")
+    ss.report_disabled("subito", "Akamai")
+
+    problemi = {s.fonte for s in ss.problems()}
+    # `empty` e `disabled` NON sono problemi: la prima è una risposta valida,
+    # la seconda una scelta nostra.
+    assert problemi == {"trovaprezzi", "vinted"}
+
+
+def test_source_status_reset_clears_previous_search() -> None:
+    """Senza il reset la UI mostrerebbe il blocco della ricerca precedente."""
+    from offerte import source_status as ss
+
+    ss.reset()
+    ss.report_blocked("euronics", 403)
+    assert ss.snapshot()
+    ss.reset()
+    assert ss.snapshot() == {}
+
+
+def test_orchestrator_label_map_covers_every_scraper() -> None:
+    """Un'etichetta non mappata farebbe sparire lo stato della fonte dalla UI."""
+    from offerte import orchestrator
+    from offerte.scrapers import SCRAPERS
+
+    mapped = set(orchestrator._LABEL_TO_KEY.values())
+    assert mapped == set(SCRAPERS), (
+        f"mancanti: {set(SCRAPERS) - mapped}, in eccesso: {mapped - set(SCRAPERS)}"
+    )
+
+
+# ===========================================================================
+# Filtro di rilevanza — offerte/filters.py
+# ===========================================================================
+
+
+@pytest.mark.parametrize(
+    ("query", "nome", "atteso"),
+    [
+        # Query composte SOLO da token di specifica: con `strict_specs=False`
+        # venivano tutti saltati, il ramo OR cadeva sul `return False` finale e
+        # ogni fonte scartava il 100% dei prodotti. "ssd 1tb" dava 0 risultati
+        # da tutte e 10 le fonti pur avendone trovati a decine.
+        ("ssd 1tb", "Crucial P3 1TB PCIe M.2 2280 SSD", True),
+        ("ssd 1tb", "Samsung SSD 990 EVO Plus 1 TB M.2 NVMe", True),
+        ("ssd 1tb", "Frullatore Moulinex", False),
+        ("16gb ram", "Corsair Vengeance 16GB DDR5", True),
+        ("16gb ram", "Frullatore Moulinex", False),
+        # Il ramo AND (>2 token) accettava invece QUALUNQUE nome per verità
+        # vacua, perché anche lì ogni token veniva saltato.
+        ("ssd 1tb 512gb", "Frullatore Moulinex", False),
+        # Nessuna regressione sulle query normali.
+        ("scarpe", "Scarpe Nike Air Max", True),
+        ("scarpe", "Frullatore Moulinex", False),
+        ("iphone 15", "Apple iPhone 15 128GB", True),
+        ("iphone 15", "Samsung Galaxy S25 256GB", False),
+        ("notebook 16gb", "Notebook Lenovo IdeaPad 16GB", True),
+        ("notebook 16gb", "Frullatore Moulinex", False),
+        ("notebook 14 pollici 16gb", "Lenovo Notebook 14 IdeaPad 16GB", True),
+    ],
+)
+def test_is_relevant_handles_spec_only_queries(query: str, nome: str, atteso: bool) -> None:
+    from offerte.filters import is_relevant
+    from offerte.parsing import tokenize_query
+
+    assert is_relevant(nome, tokenize_query(query), strict_specs=False) is atteso
+
+
+# ===========================================================================
+# Tetto al tempo totale di ricerca — offerte/orchestrator.py
+# ===========================================================================
+
+
+def test_search_returns_partials_without_waiting_for_a_hung_source(monkeypatch) -> None:
+    """Una fonte appesa non deve trattenere l'intera ricerca.
+
+    Due difetti in uno: senza tetto l'attesa durava finché non scadevano i retry
+    di `requests`, e con il solo `as_completed(timeout=…)` il tempo *percepito*
+    restava invariato perché `with ThreadPoolExecutor(...)` fa join dei thread
+    all'uscita. Misurato: 60s prima, ~1s dopo.
+    """
+    import time
+
+    from offerte import orchestrator as orch
+    from offerte import source_status as ss
+    from offerte.models import Offerta
+
+    def _appeso(*a, **k):
+        time.sleep(30)
+        return []
+
+    def _veloce(*a, **k):
+        return [
+            Offerta(
+                nome="Prodotto veloce",
+                prezzo=50.0,
+                negozio="X",
+                link="http://x",
+                fonte="comet.it",
+            )
+        ]
+
+    monkeypatch.setattr(orch, "scrape_euronics", _appeso)
+    monkeypatch.setattr(orch, "scrape_comet", _veloce)
+    monkeypatch.setattr(orch, "SEARCH_TOTAL_TIMEOUT", 1.0)
+
+    t0 = time.perf_counter()
+    results = orch.cerca_offerte(
+        "test", budget_max=100.0, prezzo_min=0.0, top_n=5, fonti=["euronics", "comet"]
+    )
+    elapsed = time.perf_counter() - t0
+
+    assert elapsed < 10, f"la ricerca ha atteso la fonte appesa ({elapsed:.1f}s)"
+    assert len(results) == 1, "i risultati parziali della fonte veloce sono andati persi"
+
+    stato = ss.snapshot()
+    assert stato["comet"].state == ss.OK
+    # La fonte scaduta va segnalata come problema, non come "nessun risultato":
+    # il `report_empty` tardivo del thread ancora in corso non deve sovrascriverlo.
+    assert stato["euronics"].state == ss.ERROR
+    assert "timeout" in stato["euronics"].describe()

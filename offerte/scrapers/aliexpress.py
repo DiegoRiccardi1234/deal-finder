@@ -9,6 +9,10 @@ from offerte._constants import *  # noqa: F401,F403
 from offerte.models import Offerta
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import is_relevant
+from offerte.log import get_logger
+from offerte.source_status import report_error
+
+log = get_logger(__name__)
 
 
 def scrape_aliexpress(
@@ -121,7 +125,8 @@ def scrape_aliexpress(
                 browser.close()
 
     except Exception as exc:
-        print(f"    ❌ AliExpress: errore Playwright → {exc}")
+        log.error("AliExpress: errore Playwright → %s", exc)
+        report_error("aliexpress", exc)
 
     print(f"    → {len(risultati)} risultati AliExpress")
     return risultati

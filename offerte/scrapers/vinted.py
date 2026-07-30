@@ -8,6 +8,10 @@ from offerte._constants import *  # noqa: F401,F403
 from offerte.models import Offerta
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import is_relevant
+from offerte.log import get_logger
+from offerte.source_status import report_error
+
+log = get_logger(__name__)
 
 
 def scrape_vinted(
@@ -59,5 +63,6 @@ def scrape_vinted(
             except (AttributeError, TypeError, ValueError):
                 continue
     except Exception as exc:
-        print(f"    ❌ Vinted.it: errore → {exc}")
+        log.error("Vinted.it: errore → %s", exc)
+        report_error("vinted", exc)
     return risultati

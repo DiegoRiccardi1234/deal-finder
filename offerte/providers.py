@@ -220,6 +220,30 @@ class _GeminiAdapter:
 # --------------------------------------------------------------------------- #
 
 
+def _construct(factory, **kwargs):
+    """Istanzia un client SDK con timeout e retry interno disattivato.
+
+    `max_retries=0` è deliberato: il retry vive in `offerte.ai`
+    (`cerebras_chat_with_retry`), che sa classificare gli errori e rinegoziare il
+    modello su 404. Lasciando anche quello dell'SDK i due si moltiplicano — 4
+    tentativi nostri × 2 dell'SDK = 8 chiamate per una singola richiesta, con
+    l'attesa che ne consegue.
+
+    Gli SDK che non accettano questi kwarg vengono costruiti senza: meglio un
+    client senza timeout che nessun client.
+    """
+    from offerte.config import AI_REQUEST_TIMEOUT
+
+    try:
+        return factory(timeout=AI_REQUEST_TIMEOUT, max_retries=0, **kwargs)
+    except TypeError:
+        pass
+    try:
+        return factory(timeout=AI_REQUEST_TIMEOUT, **kwargs)
+    except TypeError:
+        return factory(**kwargs)
+
+
 def build_client(provider: str | None = None):
     """Costruisce il client per `provider` (default = attivo). None se non
     configurato o SDK mancante."""
@@ -237,7 +261,7 @@ def build_client(provider: str | None = None):
             try:
                 from cerebras.cloud.sdk import Cerebras
 
-                return Cerebras(api_key=key)
+                return _construct(Cerebras, api_key=key)
             except Exception:
                 pass
         try:
@@ -247,14 +271,14 @@ def build_client(provider: str | None = None):
         kwargs = {"api_key": key}
         if cfg.base_url:
             kwargs["base_url"] = cfg.base_url
-        return OpenAI(**kwargs)
+        return _construct(OpenAI, **kwargs)
 
     if cfg.kind == "anthropic":
         try:
             import anthropic
         except Exception:
             return None
-        return _AnthropicAdapter(anthropic.Anthropic(api_key=key))
+        return _AnthropicAdapter(_construct(anthropic.Anthropic, api_key=key))
 
     if cfg.kind == "gemini":
         try:

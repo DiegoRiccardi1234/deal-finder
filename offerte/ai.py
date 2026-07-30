@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import random
 import re
 import time
 
@@ -16,8 +17,11 @@ except Exception:
 from offerte._constants import *  # noqa: F401,F403
 from offerte.models import Offerta
 from offerte.config import CEREBRAS_FALLBACK_MODELS, CEREBRAS_MODEL_BLACKLIST
+from offerte.log import get_logger
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import _hard_spec_mismatch_reasons
+
+log = get_logger(__name__)
 
 
 def _cerebras_model(client=None) -> str:
@@ -894,6 +898,80 @@ def invalidate_model() -> None:
     _cached_model = None
 
 
+#: Esiti della classificazione di un errore del provider AI.
+AI_ERROR_MODEL_NOT_FOUND = "model_not_found"
+AI_ERROR_RATE_LIMIT = "rate_limit"
+AI_ERROR_TRANSIENT = "transient"
+AI_ERROR_FATAL = "fatal"
+
+
+def _status_code_of(exc: BaseException) -> int | None:
+    """Status HTTP dell'eccezione, se l'SDK lo espone.
+
+    Preferito allo string-matching: gli SDK OpenAI-compatibili e Anthropic
+    portano `status_code` (o `response.status_code`), che è un dato strutturato
+    invece di una sottostringa che può comparire in un messaggio per caso — un
+    prompt che contiene "429" non è un rate limit.
+    """
+    for attr in ("status_code", "http_status", "code"):
+        val = getattr(exc, attr, None)
+        if isinstance(val, int):
+            return val
+    resp = getattr(exc, "response", None)
+    val = getattr(resp, "status_code", None)
+    return val if isinstance(val, int) else None
+
+
+def classify_ai_error(exc: BaseException) -> str:
+    """Classifica un errore del provider per decidere se ritentare.
+
+    Il vecchio comportamento era `except Exception` con string-matching solo su
+    404 e 429: ogni altro errore — chiave non valida (401), richiesta malformata
+    (400), DNS — veniva ritentato quattro volte con attesa fissa, quindi un
+    errore di configurazione costava quattro chiamate e ~8 secondi prima di
+    arrivare all'utente identico a com'era.
+    """
+    status = _status_code_of(exc)
+    if status == 404:
+        return AI_ERROR_MODEL_NOT_FOUND
+    if status == 429:
+        return AI_ERROR_RATE_LIMIT
+    if status is not None:
+        if status in (408, 409, 425):
+            return AI_ERROR_TRANSIENT
+        if 500 <= status < 600:
+            return AI_ERROR_TRANSIENT
+        if 400 <= status < 500:
+            # 401/403 (auth), 400/422 (richiesta invalida): ritentare non aiuta.
+            return AI_ERROR_FATAL
+
+    # Nessuno status utilizzabile: errori di rete/timeout sono ritentabili,
+    # il resto lo si riconosce dal testo come ultima risorsa.
+    if isinstance(exc, TimeoutError | ConnectionError):
+        return AI_ERROR_TRANSIENT
+    text = str(exc).lower()
+    if "model_not_found" in text or "does not exist" in text or "no such model" in text:
+        return AI_ERROR_MODEL_NOT_FOUND
+    if "rate_limit" in text or "rate limit" in text or "too many requests" in text:
+        return AI_ERROR_RATE_LIMIT
+    if any(w in text for w in ("timeout", "timed out", "connection", "temporarily", "unavailable")):
+        return AI_ERROR_TRANSIENT
+    if any(w in text for w in ("api key", "unauthorized", "forbidden", "invalid_request")):
+        return AI_ERROR_FATAL
+    # Sconosciuto: concedere un retry è meno grave che fallire su un blip.
+    return AI_ERROR_TRANSIENT
+
+
+def _backoff_delay(base_delay: float, attempt: int) -> float:
+    """Attesa esponenziale con jitter.
+
+    Il jitter evita che più worker che hanno preso 429 insieme (i 14 scraper e la
+    UI condividono lo stesso provider) ritentino tutti nello stesso istante e si
+    facciano rate-limitare di nuovo in blocco.
+    """
+    return base_delay * (2**attempt) * (0.5 + random.random())
+
+
 def cerebras_chat_with_retry(
     client,
     messages: list,
@@ -902,31 +980,55 @@ def cerebras_chat_with_retry(
     base_delay: float = 2.0,
     **kwargs,
 ):
-    """Chiama client.chat.completions.create() con retry su 404/429."""
+    """Chiama `client.chat.completions.create()` con retry classificato.
+
+    Ritenta rate limit e errori transitori con backoff esponenziale + jitter,
+    rinegozia il modello su 404 senza consumare un tentativo, e propaga subito
+    gli errori fatali (auth, richiesta invalida).
+    """
     if model is None:
         model = get_best_model(client=client)
-    last_exc = None
-    for attempt in range(max_retries):
+
+    last_exc: BaseException | None = None
+    attempt = 0
+    model_refreshes = 0
+    # Il 404 non consuma un tentativo, ma il numero di rinegoziazioni va limitato
+    # per non ciclare se il resolver continua a proporre un modello inesistente.
+    max_model_refreshes = 2
+
+    while attempt < max_retries:
         try:
-            return client.chat.completions.create(
-                model=model,
-                messages=messages,
-                **kwargs,
-            )
+            return client.chat.completions.create(model=model, messages=messages, **kwargs)
         except Exception as exc:
             last_exc = exc
-            exc_str = str(exc)
-            if "404" in exc_str or "model_not_found" in exc_str or "does not exist" in exc_str:
+            kind = classify_ai_error(exc)
+
+            if kind == AI_ERROR_FATAL:
+                log.warning("Chiamata AI non ritentabile (%s): %s", type(exc).__name__, exc)
+                raise
+
+            if kind == AI_ERROR_MODEL_NOT_FOUND and model_refreshes < max_model_refreshes:
+                model_refreshes += 1
+                log.info("Modello '%s' non disponibile: rinegozio (%d).", model, model_refreshes)
                 invalidate_model()
                 model = get_best_model(client=client, force_refresh=True)
-                time.sleep(1.0)
                 continue
-            if "429" in exc_str or "rate_limit" in exc_str or "too many" in exc_str.lower():
-                wait = base_delay * (2**attempt)
-                time.sleep(wait)
-                continue
-            if attempt < max_retries - 1:
-                time.sleep(base_delay)
+
+            attempt += 1
+            if attempt >= max_retries:
+                break
+            wait = _backoff_delay(base_delay, attempt - 1)
+            log.info(
+                "Chiamata AI fallita (%s), tentativo %d/%d fra %.1fs: %s",
+                kind,
+                attempt,
+                max_retries,
+                wait,
+                exc,
+            )
+            time.sleep(wait)
+
+    log.warning("Chiamata AI fallita dopo %d tentativi: %s", max_retries, last_exc)
     raise last_exc  # type: ignore[misc]
 
 

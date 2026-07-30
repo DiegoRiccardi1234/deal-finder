@@ -12,8 +12,12 @@ from bs4 import BeautifulSoup
 from offerte._constants import *  # noqa: F401,F403
 from offerte.models import Offerta
 from offerte.http import fetch_with_retry, get_headers, _random_delay
+from offerte.log import get_logger
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import is_relevant
+from offerte.source_status import report_blocked, report_error
+
+log = get_logger(__name__)
 
 
 def scrape_trovaprezzi(
@@ -41,7 +45,7 @@ def scrape_trovaprezzi(
     (solo pagine categoria, con `.name` e `.price_range`) e infine JSON-LD.
     """
     url = f"https://www.trovaprezzi.it/categoria.aspx?libera={quote_plus(query)}"
-    print(f'\n🔍 Cerco su Trovaprezzi.it: "{query}"')
+    log.info('Cerco su Trovaprezzi.it: "%s"', query)
 
     risultati: list[Offerta] = []
 
@@ -51,9 +55,10 @@ def scrape_trovaprezzi(
 
         resp = fetch_with_retry(url, headers)
         if resp.status_code in (401, 403, 429, 503):
-            print(
-                f"    ⚠️  Trovaprezzi.it: accesso bloccato (HTTP {resp.status_code}), salto la fonte."
+            log.warning(
+                "Trovaprezzi.it: accesso bloccato (HTTP %s), salto la fonte.", resp.status_code
             )
+            report_blocked("trovaprezzi", resp.status_code)
             return risultati
 
         resp.raise_for_status()
@@ -265,11 +270,9 @@ def scrape_trovaprezzi(
 
         p1 = _parse_page_tp(resp.text)
         if not p1:
-            print(
-                "    ⚠️  Trovaprezzi.it: nessun risultato parsabile (selettori cambiati o blocco)."
-            )
+            log.warning("Trovaprezzi.it: nessun risultato parsabile (selettori cambiati o blocco).")
         else:
-            print(f"    ✅ Trovate {len(risultati)} card su Trovaprezzi.it")
+            log.info("Trovaprezzi.it: %d card trovate", len(risultati))
             # Paginazione: prova pagina 2 (stop se vuota o errore)
             for _pn in range(2, 3):
                 _sep = "&" if "?" in base_url else "?"
@@ -281,22 +284,27 @@ def scrape_trovaprezzi(
                     _added = _parse_page_tp(_pr.text)
                     if not _added:
                         break
-                    print(f"    ✅ Trovaprezzi.it p.{_pn}: +{_added} offerte")
+                    log.info("Trovaprezzi.it p.%d: +%d offerte", _pn, _added)
                     _random_delay()
                 except Exception:
                     break
 
         if not risultati:
-            print("    ⚠️  Trovaprezzi.it: risultati vuoti dopo parsing.")
+            log.warning("Trovaprezzi.it: risultati vuoti dopo parsing.")
 
     except requests.Timeout:
-        print("    ❌ Trovaprezzi.it: timeout raggiunto anche dopo i retry.")
+        log.error("Trovaprezzi.it: timeout raggiunto anche dopo i retry.")
+        report_error("trovaprezzi", "timeout")
     except requests.ConnectionError:
-        print("    ❌ Trovaprezzi.it: impossibile connettersi al sito.")
+        log.error("Trovaprezzi.it: impossibile connettersi al sito.")
+        report_error("trovaprezzi", "connessione")
     except requests.HTTPError as exc:
-        print(f"    ❌ Trovaprezzi.it: errore HTTP {exc.response.status_code}.")
+        status = exc.response.status_code if exc.response is not None else "?"
+        log.error("Trovaprezzi.it: errore HTTP %s.", status)
+        report_blocked("trovaprezzi", status)
     except Exception as exc:
-        print(f"    ❌ Trovaprezzi.it: errore inatteso → {exc}")
+        log.error("Trovaprezzi.it: errore inatteso → %s", exc)
+        report_error("trovaprezzi", exc)
 
     _random_delay()
     return risultati

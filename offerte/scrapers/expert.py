@@ -14,6 +14,10 @@ from offerte.models import Offerta
 from offerte.http import fetch_with_retry, get_headers
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import is_relevant
+from offerte.log import get_logger
+from offerte.source_status import report_blocked, report_error
+
+log = get_logger(__name__)
 
 
 def scrape_expert(
@@ -38,7 +42,8 @@ def scrape_expert(
         headers["Referer"] = "https://www.expert.it/"
         resp = fetch_with_retry(url, headers)
         if resp.status_code in (401, 403, 429, 503):
-            print(f"    ⚠️  Expert.it: accesso bloccato (HTTP {resp.status_code}).")
+            log.warning("Expert.it: accesso bloccato (HTTP %s).", resp.status_code)
+            report_blocked("expert", resp.status_code)
             return risultati
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
@@ -91,7 +96,9 @@ def scrape_expert(
                 continue
     except requests.HTTPError as exc:
         status = exc.response.status_code if exc.response is not None else "?"
-        print(f"    ⚠️  Expert.it: errore HTTP {status}.")
+        log.warning("Expert.it: errore HTTP %s.", status)
+        report_blocked("expert", status)
     except Exception as exc:
-        print(f"    ❌ Expert.it: errore inatteso → {exc}")
+        log.error("Expert.it: errore inatteso → %s", exc)
+        report_error("expert", exc)
     return risultati

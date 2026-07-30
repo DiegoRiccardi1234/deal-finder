@@ -15,6 +15,10 @@ from offerte.models import Offerta
 from offerte.http import fetch_with_retry, get_headers, _random_delay
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import is_relevant
+from offerte.log import get_logger
+from offerte.source_status import report_blocked, report_error
+
+log = get_logger(__name__)
 
 
 def scrape_mediaworld(
@@ -62,9 +66,10 @@ def scrape_mediaworld(
 
         resp = fetch_with_retry(url, headers)
         if resp.status_code in (401, 403, 429, 503):
-            print(
-                f"    ⚠️  MediaWorld.it: accesso bloccato (HTTP {resp.status_code}), salto la fonte."
+            log.warning(
+                "MediaWorld.it: accesso bloccato (HTTP %s), salto la fonte.", resp.status_code
             )
+            report_blocked("mediaworld", resp.status_code)
             return risultati
         resp.raise_for_status()
 
@@ -72,7 +77,8 @@ def scrape_mediaworld(
 
         page_title = str((soup.title.string or "") if soup.title else "")
         if any(kw in page_title.lower() for kw in ("captcha", "robot", "sorry", "access denied")):
-            print("    ⚠️  MediaWorld.it: blocco anti-bot, salto la fonte.")
+            log.warning("MediaWorld.it: blocco anti-bot, salto la fonte.")
+            report_blocked("mediaworld", "challenge")
             return risultati
 
         # ── Strategia 1: article[data-test="mms-product-card"] ──
@@ -384,16 +390,21 @@ def scrape_mediaworld(
                     continue
 
         if not risultati:
-            print("    ⚠️  MediaWorld.it: nessun risultato parsabile (selettori cambiati o blocco).")
+            log.warning("MediaWorld.it: nessun risultato parsabile (selettori cambiati o blocco).")
 
     except requests.Timeout:
-        print("    ❌ MediaWorld.it: timeout raggiunto anche dopo i retry.")
+        log.error("MediaWorld.it: timeout raggiunto anche dopo i retry.")
+        report_error("mediaworld", "timeout")
     except requests.ConnectionError:
-        print("    ❌ MediaWorld.it: impossibile connettersi al sito.")
+        log.error("MediaWorld.it: impossibile connettersi al sito.")
+        report_error("mediaworld", "connessione")
     except requests.HTTPError as exc:
-        print(f"    ❌ MediaWorld.it: errore HTTP {exc.response.status_code}.")
+        status = exc.response.status_code if exc.response is not None else "?"
+        log.error("MediaWorld.it: errore HTTP %s.", status)
+        report_blocked("mediaworld", status)
     except Exception as exc:
-        print(f"    ❌ MediaWorld.it: errore inatteso → {exc}")
+        log.error("MediaWorld.it: errore inatteso → %s", exc)
+        report_error("mediaworld", exc)
 
     _random_delay()
     return _cond_filter(risultati)

@@ -13,6 +13,10 @@ from offerte.models import Offerta
 from offerte.http import fetch_with_retry, get_headers, _random_delay
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import is_relevant
+from offerte.log import get_logger
+from offerte.source_status import report_disabled
+
+log = get_logger(__name__)
 
 
 def scrape_alibaba(
@@ -22,10 +26,8 @@ def scrape_alibaba(
     query_tokens: list[str],
 ) -> list[Offerta]:
     """Scraper per Alibaba.com — DOM vuoto (89KB ma nessun testo estraibile, JS-rendered)."""
-    print(f'\n🔍 Cerco su Alibaba.com: "{query}"')
-    print(
-        "    ⚠️  Alibaba.com: pagina JS-rendered (89KB senza testo/prezzi estraibili). Fonte non disponibile senza browser headless."
-    )
+    log.info("Alibaba.com: fonte disattivata (DOM JS-rendered, nessun prezzo estraibile)")
+    report_disabled("alibaba", "pagina JS-rendered con CAPTCHA, serve un browser headless")
     return []
     # Implementazione HTML conservata per riferimento futuro:
     url = f"https://www.alibaba.com/trade/search?SearchText={quote_plus(query)}&SortType=price_asc"

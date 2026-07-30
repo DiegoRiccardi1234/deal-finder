@@ -12,8 +12,12 @@ from bs4 import BeautifulSoup
 from offerte._constants import *  # noqa: F401,F403
 from offerte.models import Offerta
 from offerte.http import fetch_with_retry, get_headers, _random_delay
+from offerte.log import get_logger
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import is_relevant
+from offerte.source_status import report_blocked, report_error
+
+log = get_logger(__name__)
 
 
 def scrape_euronics(
@@ -51,7 +55,7 @@ def scrape_euronics(
         "https://www.euronics.it/on/demandware.store/Sites-euronics-Site/it_IT/"
         f"Search-UpdateGrid?q={quote_plus(query)}&sz=48"
     )
-    print(f'\n🔍 Cerco su Euronics.it: "{query}"')
+    log.info('Cerco su Euronics.it: "%s"', query)
     risultati: list[Offerta] = []
 
     try:
@@ -62,9 +66,10 @@ def scrape_euronics(
 
         resp = fetch_with_retry(url, headers)
         if resp.status_code in (401, 403, 429, 503):
-            print(
-                f"    ⚠️  Euronics.it: accesso bloccato (HTTP {resp.status_code}), salto la fonte."
+            log.warning(
+                "Euronics.it: accesso bloccato (HTTP %s), salto la fonte.", resp.status_code
             )
+            report_blocked("euronics", resp.status_code)
             return risultati
         resp.raise_for_status()
 
@@ -74,7 +79,8 @@ def scrape_euronics(
         if any(
             kw in page_title.lower() for kw in ("captcha", "robot", "sorry", "access denied", "404")
         ):
-            print("    ⚠️  Euronics.it: blocco anti-bot o pagina non trovata, salto la fonte.")
+            log.warning("Euronics.it: blocco anti-bot o pagina non trovata, salto la fonte.")
+            report_blocked("euronics", "challenge")
             return risultati
 
         # ── Strategia 1: CSS selettori div.new-product-tile.flex-fill ──
@@ -89,7 +95,7 @@ def scrape_euronics(
             ]
 
         if cards:
-            print(f"    ✅ Trovate {len(cards)} card su Euronics.it")
+            log.info("Euronics.it: %d card trovate", len(cards))
             seen_links: set[str] = set()
             # Token senza parole-categoria: Euronics filtra già per notebook/laptop.
             # Manteniamo solo token di dimensione/brand (es. "14") per is_relevant.
@@ -240,16 +246,21 @@ def scrape_euronics(
                     continue
 
         if not risultati:
-            print("    ⚠️  Euronics.it: nessun risultato parsabile (selettori cambiati o blocco).")
+            log.warning("Euronics.it: nessun risultato parsabile (selettori cambiati o blocco).")
 
     except requests.Timeout:
-        print("    ❌ Euronics.it: timeout raggiunto anche dopo i retry.")
+        log.error("Euronics.it: timeout raggiunto anche dopo i retry.")
+        report_error("euronics", "timeout")
     except requests.ConnectionError:
-        print("    ❌ Euronics.it: impossibile connettersi al sito.")
+        log.error("Euronics.it: impossibile connettersi al sito.")
+        report_error("euronics", "connessione")
     except requests.HTTPError as exc:
-        print(f"    ❌ Euronics.it: errore HTTP {exc.response.status_code}.")
+        status = exc.response.status_code if exc.response is not None else "?"
+        log.error("Euronics.it: errore HTTP %s.", status)
+        report_blocked("euronics", status)
     except Exception as exc:
-        print(f"    ❌ Euronics.it: errore inatteso → {exc}")
+        log.error("Euronics.it: errore inatteso → %s", exc)
+        report_error("euronics", exc)
 
     _random_delay()
     return risultati

@@ -56,18 +56,21 @@ Scraping public sites is not a stable contract: markup changes and bot protectio
 | eBay | ✅ 40 | Browse API when `EBAY_APP_ID`/`EBAY_CERT_ID` are set; the HTML fallback gets 403 |
 | Trovaprezzi | ✅ 40 | Merchant-level offers, so the shop shown is the actual seller |
 | Comet | ✅ 40 | Public Algolia endpoint |
-| Vinted | ✅ 40 | Second-hand only |
+| Vinted | ✅ 38 | Second-hand only |
 | Wallapop | ✅ 39 | Second-hand only |
 | Euronics | ✅ 36 | Cloudflare blocks `/search`; uses the SFCC AJAX grid endpoint instead |
+| Amazon | ✅ 28 | Throttles to HTTP 503 under burst — best-effort, not guaranteed |
 | Unieuro | ✅ 16 | Public Algolia endpoint |
-| Amazon | ⚠️ 18 | Throttles to HTTP 503 under burst — best-effort, not reliable |
-| MediaWorld | ⚠️ 4 | Answers, but returns few matches |
-| Expert | ⚠️ 3 | JSON-LD `ItemList`, thin catalogue coverage |
-| AliExpress | ⚠️ intermittent | Plain HTTP works some runs, 0 on others. Off by default |
+| MediaWorld | ⚠️ 1–4 | Answers, but its catalogue matches few queries |
+| Expert | ⚠️ 2–10 | JSON-LD `ItemList`, thin catalogue coverage |
+| AliExpress | ⚠️ 0–11 | Plain HTTP works on some runs. Off by default |
 | Subito | ❌ blocked | Akamai returns 403 even under headless Playwright |
 | Temu · Alibaba | ❌ blocked | Interactive CAPTCHA — no HTTP path |
 
-The four disabled sources return early with an explicit message rather than pretending to be empty.
+Sources that cannot answer say so rather than looking empty: each search records
+one of `ok` / `empty` / `blocked` / `error` / `disabled` per source, shown in the
+UI's source panel. "0 results because Amazon throttled us" and "0 results because
+nothing matched" are different answers, and the app now tells them apart.
 
 ### 🚀 Quickstart
 

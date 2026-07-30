@@ -15,6 +15,10 @@ from offerte.models import Offerta
 from offerte.http import fetch_with_retry, get_headers, _random_delay
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import is_relevant
+from offerte.log import get_logger
+from offerte.source_status import report_disabled
+
+log = get_logger(__name__)
 
 
 def scrape_temu(
@@ -24,10 +28,8 @@ def scrape_temu(
     query_tokens: list[str],
 ) -> list[Offerta]:
     """Scraper per Temu — SPA vuota (2.9KB, nessun dato nel DOM)."""
-    print(f'\n🔍 Cerco su Temu.com: "{query}"')
-    print(
-        "    ⚠️  Temu.com: SPA completamente client-side (pagina HTML vuota 2.9KB). Fonte non disponibile senza browser headless."
-    )
+    log.info("Temu.com: fonte disattivata (SPA client-side, HTML vuoto + CAPTCHA)")
+    report_disabled("temu", "SPA con CAPTCHA, serve un browser headless")
     return []
     # Implementazione JSON conservata per riferimento futuro:
     url = f"https://www.temu.com/it/search_result.html?search_key={quote_plus(query)}&sort_type=6"

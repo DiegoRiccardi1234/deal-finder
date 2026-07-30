@@ -3,13 +3,39 @@
 from __future__ import annotations
 
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout, as_completed
 from collections.abc import Callable
 
 from offerte._constants import *  # noqa: F401,F403
 from offerte.models import Offerta
+from offerte import source_status
+from offerte.config import SEARCH_TOTAL_TIMEOUT
+from offerte.log import get_logger
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.dedup import _deduplica
+
+log = get_logger(__name__)
+
+#: Etichetta mostrata all'utente → chiave del registry `SCRAPERS`. Esplicita
+#: invece di derivata: "MediaWorld.it" → "mediaworld" funzionerebbe, ma
+#: "Trovaprezzi.it" → "trovaprezzi" e "eBay.it" → "ebay" no, e uno sbaglio qui
+#: si vedrebbe solo come uno stato fonte mancante nella UI.
+_LABEL_TO_KEY: dict[str, str] = {
+    "Amazon.it": "amazon",
+    "eBay.it": "ebay",
+    "Trovaprezzi.it": "trovaprezzi",
+    "Vinted.it": "vinted",
+    "Euronics.it": "euronics",
+    "Unieuro.it": "unieuro",
+    "MediaWorld.it": "mediaworld",
+    "Wallapop": "wallapop",
+    "Comet.it": "comet",
+    "Expert.it": "expert",
+    "Subito.it": "subito",
+    "AliExpress.com": "aliexpress",
+    "Temu.com": "temu",
+    "Alibaba.com": "alibaba",
+}
 from offerte.ai import (
     fetch_specs_ai,
     filtra_risultati_con_ai,
@@ -26,6 +52,7 @@ from offerte.scrapers import (
     scrape_mediaworld,
     scrape_subito,
     scrape_temu,
+    scrape_trovaprezzi,
     scrape_unieuro,
     scrape_vinted,
     scrape_wallapop,
@@ -94,6 +121,7 @@ def cerca_offerte(
         fonti_norm = {
             "amazon",
             "ebay",
+            "trovaprezzi",
             "vinted",
             "euronics",
             "unieuro",
@@ -102,23 +130,48 @@ def cerca_offerte(
             "comet",
             "expert",
         }
-    print(f"  🌐 Fonti attive: {', '.join(sorted(fonti_norm))}")
+    log.info("Fonti attive: %s", ", ".join(sorted(fonti_norm)))
+
+    # Lo stato per-fonte è per-ricerca: azzerarlo qui evita che la UI mostri il
+    # blocco rimediato nella ricerca precedente.
+    source_status.reset()
 
     # Lancio scraper in parallelo sulle fonti selezionate
     offerte: list[Offerta] = []
     future_to_label: dict = {}
 
     def _timed_call(fn: Callable, label: str, *args, **kwargs):
+        """Cronometra lo scraper e registra l'esito della fonte.
+
+        Qui si sa distinguere "è esploso" da "ha risposto": il caso *bloccato* lo
+        segnala lo scraper stesso, che è l'unico a vedere lo status HTTP, e
+        `source_status.report` non lo declassa a `empty`.
+        """
+        key = _LABEL_TO_KEY.get(label, label.split(".")[0].lower())
         t0 = time.perf_counter()
         try:
             res = fn(*args, **kwargs)
+        except BaseException as exc:
+            source_status.report_error(key, exc)
+            raise
         finally:
             elapsed = time.perf_counter() - t0
-            # Solo print: il thread non può accedere a st.session_state (ScriptRunContext warning)
-            print(f"[scrape] {label}: {elapsed:.2f}s")
+            # Logging, non st.*: il thread non ha ScriptRunContext e Streamlit
+            # emetterebbe un warning per ogni chiamata.
+            log.debug("scrape %s: %.2fs", label, elapsed)
+        n = len(res or [])
+        if n:
+            source_status.report_ok(key, n)
+        else:
+            source_status.report_empty(key)
         return res
 
-    with ThreadPoolExecutor(max_workers=10) as executor:
+    # NB: executor esplicito, non `with`. Il context manager fa join di tutti i
+    # thread all'uscita, quindi una fonte appesa bloccherebbe la ricerca per il
+    # suo intero timeout anche dopo che abbiamo smesso di attenderne il risultato:
+    # il tetto sul tempo totale non avrebbe effetto sul tempo percepito.
+    executor = ThreadPoolExecutor(max_workers=10)
+    try:
         if "amazon" in fonti_norm:
             future_to_label[
                 executor.submit(
@@ -177,6 +230,18 @@ def cerca_offerte(
                     query_tokens,
                 )
             ] = "Euronics.it"
+        if "trovaprezzi" in fonti_norm:
+            future_to_label[
+                executor.submit(
+                    _timed_call,
+                    scrape_trovaprezzi,
+                    "Trovaprezzi.it",
+                    query,
+                    prezzo_min,
+                    budget_max,
+                    query_tokens,
+                )
+            ] = "Trovaprezzi.it"
         if "unieuro" in fonti_norm:
             future_to_label[
                 executor.submit(
@@ -292,20 +357,50 @@ def cerca_offerte(
         # Cap per-source: evita che una singola fonte (es. eBay con 50 risultati) soffochi le altre.
         # Distribuiamo top_n diviso per numer fonti per non avere un dominio assoluto, + extra safety margin
         _per_source_cap = max((top_n // max(1, len(fonti_norm))) + 5, 10)
-        for future in as_completed(future_to_label):
-            label = future_to_label[future]
-            try:
-                new_results = future.result()
-                new_results = new_results[:_per_source_cap]
-                offerte += new_results
+        # Tetto al tempo totale: prima non c'era, quindi una fonte appesa
+        # trascinava l'intera ricerca finché non scadevano i retry di `requests`
+        # (TIMEOUT × (1+MAX_RETRIES)) — e il `with` non poteva chiudersi.
+        _deadline = time.monotonic() + SEARCH_TOTAL_TIMEOUT
+        try:
+            for future in as_completed(
+                future_to_label, timeout=max(1.0, _deadline - time.monotonic())
+            ):
+                label = future_to_label[future]
+                try:
+                    new_results = future.result()
+                    new_results = new_results[:_per_source_cap]
+                    offerte += new_results
+                    if progress_callback:
+                        progress_callback(label, len(new_results))
+                except Exception as exc:
+                    log.warning("%s: errore inatteso: %s", label, exc)
+                    if progress_callback:
+                        progress_callback(label, -1)
+        except FutureTimeout:
+            # Restituire i parziali è meglio che restituire niente: le fonti che
+            # hanno risposto sono già in `offerte`.
+            _pendenti = [lbl for fut, lbl in future_to_label.items() if not fut.done()]
+            log.warning(
+                "Ricerca interrotta dopo %.0fs: %d fonti ancora in corso (%s). "
+                "Restituisco i risultati parziali.",
+                SEARCH_TOTAL_TIMEOUT,
+                len(_pendenti),
+                ", ".join(_pendenti) or "-",
+            )
+            for lbl in _pendenti:
+                # Va registrato come errore, non lasciato a `empty`: la fonte non
+                # ha risposto in tempo, e `report()` impedisce che il `report_empty`
+                # tardivo del thread ancora in corso sovrascriva questo motivo.
+                source_status.report_error(_LABEL_TO_KEY.get(lbl, lbl.lower()), "timeout ricerca")
                 if progress_callback:
-                    progress_callback(label, len(new_results))
-            except Exception as exc:
-                print(f"    ⚠️  {label}: errore inatteso: {exc}")
-                if progress_callback:
-                    progress_callback(label, -1)
+                    progress_callback(lbl, -1)
+    finally:
+        # `wait=False` è il punto: i thread I/O-bound non sono interrompibili, ma
+        # non li aspettiamo. Quelli non ancora partiti vengono annullati; quelli in
+        # corso muoiono da soli allo scadere del timeout di `requests`.
+        executor.shutdown(wait=False, cancel_futures=True)
 
-    print(f"\n  📥 Totale risultati grezzi (post-filtro): {len(offerte)}")
+    log.info("Totale risultati grezzi (post-filtro): %d", len(offerte))
 
     # Filtro finale range prezzo
     offerte = [

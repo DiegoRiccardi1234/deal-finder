@@ -11,6 +11,10 @@ from offerte.models import Offerta
 from offerte.http import get_headers
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import is_relevant
+from offerte.log import get_logger
+from offerte.source_status import report_blocked, report_error
+
+log = get_logger(__name__)
 
 # SCRAPER — wallapop.com
 # ===========================================================================
@@ -133,7 +137,9 @@ def scrape_wallapop(
                 continue
     except requests.HTTPError as exc:
         status = exc.response.status_code if exc.response is not None else "?"
-        print(f"    ⚠️  Wallapop: errore HTTP {status}.")
+        log.warning("Wallapop: errore HTTP %s.", status)
+        report_blocked("wallapop", status)
     except Exception as exc:
-        print(f"    ❌ Wallapop: errore inatteso → {exc}")
+        log.error("Wallapop: errore inatteso → %s", exc)
+        report_error("wallapop", exc)
     return risultati

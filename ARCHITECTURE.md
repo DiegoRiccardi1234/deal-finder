@@ -40,6 +40,8 @@ do not re-scrape and do not burn through rate limits.
 | `cache.py` | Search cache with TTL, persisted in SQLite |
 | `db.py` | Shared SQLite connection, WAL, writer lock — see [Persistence](#persistence) |
 | `migrations.py` | Schema versions plus the one-time import of legacy JSON stores |
+| `log.py` | `configure_logging()` / `get_logger()` — see [Observability](#observability) |
+| `source_status.py` | Per-search outcome of every source — see [Observability](#observability) |
 | `config.py` | Tunable constants. Holds `VERSION`, the single source of truth also read by `pyproject.toml` |
 | `export.py` | `print_results`, `export_to_csv` |
 | `cli.py` | `argparse` entry point — installed as the `deal-finder` command |
@@ -94,6 +96,41 @@ navigation, theme toggle).
 same variables. Component rules never hardcode colours — they read `var(...)`,
 so dark mode follows automatically. `_shared.load_css(theme)` swaps which block
 is active. Adding a second `:root` or a literal colour breaks dark mode.
+
+## Observability
+
+Two modules exist because a scraper returning an empty list is ambiguous, and
+that ambiguity reached the user as a bare "0 results".
+
+**`offerte/log.py`** — `configure_logging()` (called once by `app.py` and
+`offerte/cli.py`, idempotent because Streamlit re-runs the script on every
+interaction) plus `get_logger(__name__)` per module. Output goes to stderr, so
+stdout stays clean for CLI results and `--export csv`; `LOG_LEVEL` tunes it.
+Chatty third-party loggers are pinned to WARNING.
+
+**`offerte/source_status.py`** — a lock-protected registry, reset at the start of
+each search, recording one of five outcomes per source: `ok`, `empty` (responded,
+nothing matched), `blocked` (403/429/503, CAPTCHA, JS challenge), `error`
+(exception or search timeout), `disabled` (deliberately off). Scrapers report the
+blocked/disabled cases, since only they see the HTTP status; the orchestrator's
+wrapper fills in ok/empty/error from the result. A state that *explains* the
+absence of results is never downgraded to `empty` — otherwise the `return []`
+that follows a 403 would erase the reason.
+
+It is a side registry rather than a return value because the 14 scrapers have six
+different signatures across as many orchestrator branches; changing every return
+type for an accessory piece of information would be a far more invasive refactor.
+`ui/sources.py` renders it. It used to *infer* blockage by grepping captured log
+text for strings like `f"{key} -> errore"` — a format nothing ever printed, so
+the "blocked" state was unreachable.
+
+Bounding the work: `AI_REQUEST_TIMEOUT` (default 60s) is applied when the
+provider client is constructed, together with `max_retries=0` so the SDK's own
+retries don't multiply with ours. `SEARCH_TOTAL_TIMEOUT` (default 90s) caps a
+whole search; past it the orchestrator returns partial results and shuts the
+executor down with `wait=False`, because `with ThreadPoolExecutor(...)` joins its
+threads on exit and a hung source would otherwise still block the caller for its
+full request timeout.
 
 ## Persistence
 

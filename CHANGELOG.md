@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Structured logging replaces `print`** across the engine (`offerte/log.py`,
+  `get_logger(__name__)` per module, configured once by `app.py` and
+  `offerte/cli.py`). Output goes to stderr so stdout stays clean for CLI results
+  and `--export csv`; `LOG_LEVEL` tunes verbosity.
+- **A source's outcome is now recorded, not guessed** (`offerte/source_status.py`).
+  Every search reports one of `ok` / `empty` / `blocked` / `error` / `disabled`
+  per source, and `ui/sources.py` renders it. Previously an empty result list
+  meant three different things and the user saw a bare "0 results" whether Amazon
+  had throttled us, the markup had changed, or nothing simply matched.
+- Provider clients are built with an explicit `AI_REQUEST_TIMEOUT` (60s default)
+  and `max_retries=0`. The timeout was missing entirely — the knowledge-base
+  updater runs in a daemon thread and could hang forever — and leaving the SDK's
+  own retries on multiplied them with ours: 4 × 2 = 8 calls per request.
+- A whole search is now capped by `SEARCH_TOTAL_TIMEOUT` (90s default), returning
+  partial results instead of nothing.
+
+### Fixed
+- **Trovaprezzi was never called by the application.** `scrape_trovaprezzi` was
+  neither imported nor submitted by `offerte/orchestrator.py` and was absent from
+  the default source set, so the source the project is named after was dead code
+  as far as the app was concerned — only the probe script exercised it. Now wired
+  in, and it contributes ~40 offers per search.
+- **A query made only of spec tokens returned zero results from every source.**
+  With `strict_specs=False`, `is_relevant` skipped every technical token; for a
+  two-token query like `ssd 1tb` that left the OR branch with nothing to check, so
+  it fell through to `return False` and rejected 100% of products — the sources
+  had found dozens. With three or more such tokens the AND branch did the
+  opposite, accepting anything by vacuous truth, a blender included. Spec tokens
+  are now evaluated when they are all there is. Measured: `deal-finder -q "ssd 1tb"
+  -b 120` went from 0 results to 5.
+- **The search timeout did not bound the perceived time.** Adding
+  `as_completed(timeout=…)` stopped the *waiting* but `with ThreadPoolExecutor(...)`
+  joins its threads on exit, so a hung source still blocked the caller for its
+  full request timeout: measured 60s against a 4s budget. The executor is now shut
+  down with `wait=False, cancel_futures=True`, and a source that misses the
+  deadline is recorded as an error rather than left looking empty.
+- Errors from AI providers are classified before retrying (`classify_ai_error`),
+  preferring the SDK's `status_code` over substring matching — a prompt containing
+  "429" is not a rate limit. Non-retryable failures (401/403 auth, 400/422 bad
+  request) now fail fast: measured, an invalid API key previously cost 4 calls and
+  6 seconds of fixed sleeps before surfacing unchanged. Retries use exponential
+  backoff with jitter, and a 404 renegotiates the model without consuming an
+  attempt (bounded, so a resolver stuck on a dead model cannot loop).
+
+### Changed — persistence, packaging and rebrand
 - **All mutable state moved from six JSON files to one SQLite database**
   (`data/deal_finder.db`, via the new `offerte/db.py` and `offerte/migrations.py`),
   following the same approach as the sibling `job-finder` project: WAL journalling,
@@ -55,7 +100,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The public architecture reference is the new
   [`ARCHITECTURE.md`](ARCHITECTURE.md), which the README links instead.
 
-### Fixed
+### Fixed — persistence, sources and UI
 - `knowledge_base.track_unknown` read outside the lock and wrote inside it, so two
   items recorded concurrently for the same category overwrote each other. It is
   now a single `INSERT OR IGNORE` against a composite primary key.
@@ -97,8 +142,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A stray second module docstring in `app.py`, left over from the monolith split,
   was rendered by Streamlit's "magic" as visible body text at the top of every
   page. The heading also claimed "7 siti" next to 9 rendered chips; the count is
-  now derived from the source list, and Trovaprezzi was missing from both that
-  list and `ui/sources.py`'s labels.
+  now derived from the source list, and Trovaprezzi was missing from that list
+  too.
 - The card CTA rendered as a blue underlined link inside the terracotta button:
   Streamlit styles links in markdown containers with `.st-emotion-cache-<hash> a`,
   specificity (0,1,1), which beats `.card-cta` (0,1,0). Fixed by raising

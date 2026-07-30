@@ -247,3 +247,146 @@ def test_cli_provider_flag_selects_active_provider(monkeypatch):
     # main() farebbe questo: il provider attivo diventa quello scelto
     monkeypatch.setenv("AI_PROVIDER", ns.provider)
     assert providers.active_provider() == "openai"
+
+
+# ===========================================================================
+# Classificazione errori AI e retry — offerte/ai.py
+# ===========================================================================
+
+
+class _HttpErr(Exception):
+    """Imita un'eccezione SDK che espone `status_code`."""
+
+    def __init__(self, status_code: int, message: str = "boom") -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def test_classify_ai_error_uses_status_code_not_substrings() -> None:
+    """Lo status strutturato batte lo string-matching.
+
+    Il codice precedente cercava "404"/"429" nel testo dell'eccezione: un
+    messaggio che contiene "429" per altri motivi (un prompt, un id) veniva letto
+    come rate limit.
+    """
+    from offerte import ai
+
+    assert ai.classify_ai_error(_HttpErr(404)) == ai.AI_ERROR_MODEL_NOT_FOUND
+    assert ai.classify_ai_error(_HttpErr(429)) == ai.AI_ERROR_RATE_LIMIT
+    assert ai.classify_ai_error(_HttpErr(500)) == ai.AI_ERROR_TRANSIENT
+    assert ai.classify_ai_error(_HttpErr(503)) == ai.AI_ERROR_TRANSIENT
+    # 4xx che non sono 404/429: ritentare non serve.
+    for status in (400, 401, 403, 422):
+        assert ai.classify_ai_error(_HttpErr(status)) == ai.AI_ERROR_FATAL, status
+    # Uno status esplicito vince sul testo fuorviante.
+    assert ai.classify_ai_error(_HttpErr(401, "rate limit 429")) == ai.AI_ERROR_FATAL
+    # Errori di rete senza status restano ritentabili.
+    assert ai.classify_ai_error(TimeoutError("timed out")) == ai.AI_ERROR_TRANSIENT
+    assert ai.classify_ai_error(ConnectionError("reset")) == ai.AI_ERROR_TRANSIENT
+
+
+def test_retry_does_not_retry_fatal_errors(monkeypatch) -> None:
+    """Regressione: una chiave non valida costava 4 chiamate e ~8s di attese."""
+    from offerte import ai
+
+    chiamate = {"n": 0}
+    dormite: list[float] = []
+
+    class _Client:
+        class chat:  # noqa: N801
+            class completions:  # noqa: N801
+                @staticmethod
+                def create(**kwargs):
+                    chiamate["n"] += 1
+                    raise _HttpErr(401, "invalid api key")
+
+    monkeypatch.setattr(ai.time, "sleep", lambda s: dormite.append(s))
+
+    with pytest.raises(_HttpErr):
+        ai.cerebras_chat_with_retry(_Client(), [{"role": "user", "content": "x"}], model="m")
+
+    assert chiamate["n"] == 1, "un errore fatale non deve essere ritentato"
+    assert dormite == [], "nessuna attesa su errore fatale"
+
+
+def test_retry_backs_off_exponentially_on_rate_limit(monkeypatch) -> None:
+    from offerte import ai
+
+    dormite: list[float] = []
+
+    class _Client:
+        class chat:  # noqa: N801
+            class completions:  # noqa: N801
+                @staticmethod
+                def create(**kwargs):
+                    raise _HttpErr(429, "slow down")
+
+    monkeypatch.setattr(ai.time, "sleep", lambda s: dormite.append(s))
+    # Jitter deterministico per poter asserire sui valori.
+    monkeypatch.setattr(ai.random, "random", lambda: 0.5)
+
+    with pytest.raises(_HttpErr):
+        ai.cerebras_chat_with_retry(
+            _Client(), [{"role": "user", "content": "x"}], model="m", max_retries=4, base_delay=2.0
+        )
+
+    # 3 attese fra 4 tentativi, ognuna il doppio della precedente.
+    assert len(dormite) == 3
+    assert dormite == [2.0, 4.0, 8.0]
+
+
+def test_retry_renegotiates_model_on_404_without_burning_an_attempt(monkeypatch) -> None:
+    """Un 404 significa "modello sbagliato", non "riprova identico"."""
+    from offerte import ai
+
+    tentativi = {"n": 0}
+    modelli_usati: list[str] = []
+
+    class _Client:
+        class chat:  # noqa: N801
+            class completions:  # noqa: N801
+                @staticmethod
+                def create(model=None, **kwargs):
+                    modelli_usati.append(model)
+                    tentativi["n"] += 1
+                    if tentativi["n"] == 1:
+                        raise _HttpErr(404, "model_not_found")
+                    return "ok"
+
+    monkeypatch.setattr(ai.time, "sleep", lambda s: None)
+    monkeypatch.setattr(ai, "invalidate_model", lambda: None)
+    monkeypatch.setattr(ai, "get_best_model", lambda **kw: "modello-nuovo")
+
+    out = ai.cerebras_chat_with_retry(
+        _Client(), [{"role": "user", "content": "x"}], model="modello-morto", max_retries=2
+    )
+
+    assert out == "ok"
+    assert modelli_usati == ["modello-morto", "modello-nuovo"]
+
+
+def test_retry_stops_renegotiating_after_a_few_404s(monkeypatch) -> None:
+    """Il 404 non consuma tentativi: senza un tetto si ciclerebbe all'infinito."""
+    from offerte import ai
+
+    chiamate = {"n": 0}
+
+    class _Client:
+        class chat:  # noqa: N801
+            class completions:  # noqa: N801
+                @staticmethod
+                def create(**kwargs):
+                    chiamate["n"] += 1
+                    raise _HttpErr(404, "model_not_found")
+
+    monkeypatch.setattr(ai.time, "sleep", lambda s: None)
+    monkeypatch.setattr(ai, "invalidate_model", lambda: None)
+    monkeypatch.setattr(ai, "get_best_model", lambda **kw: "sempre-lo-stesso")
+
+    with pytest.raises(_HttpErr):
+        ai.cerebras_chat_with_retry(
+            _Client(), [{"role": "user", "content": "x"}], model="m", max_retries=3
+        )
+
+    # Limitato: 2 rinegoziazioni + i tentativi normali, non un ciclo infinito.
+    assert chiamate["n"] <= 6

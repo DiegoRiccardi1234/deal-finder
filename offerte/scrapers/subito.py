@@ -13,6 +13,10 @@ from offerte.models import Offerta
 from offerte.http import fetch_with_retry, get_headers, _random_delay
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import is_relevant
+from offerte.log import get_logger
+from offerte.source_status import report_disabled
+
+log = get_logger(__name__)
 
 
 def scrape_subito(
@@ -24,12 +28,11 @@ def scrape_subito(
 ) -> list[Offerta]:
     """Scraper per Subito.it — bloccato da Akamai CDN (HTTP 403 con qualsiasi UA)."""
     if condizione == "nuovo":
-        print("\nℹ️ Subito.it: skip (solo usato/privati)")
+        log.info("Subito.it: skip (solo usato/privati)")
+        report_disabled("subito", "solo usato: esclusa con condizione=nuovo")
         return []
-    print(f'\n🔍 Cerco su Subito.it: "{query}"')
-    print(
-        "    ⚠️  Subito.it: protetto da Akamai CDN (HTTP 403). Fonte non disponibile senza browser headless."
-    )
+    log.info("Subito.it: fonte disattivata (Akamai CDN, HTTP 403 con qualsiasi UA)")
+    report_disabled("subito", "bloccata da Akamai, serve un browser headless")
     return []
     # Implementazione HTML conservata per riferimento futuro:
 

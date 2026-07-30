@@ -12,6 +12,10 @@ from offerte.models import Offerta
 from offerte.http import _random_delay
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import is_relevant
+from offerte.log import get_logger
+from offerte.source_status import report_blocked, report_error
+
+log = get_logger(__name__)
 
 # Unieuro usa Algolia come motore di ricerca prodotti. Non serve Playwright né
 # OAuth token.
@@ -110,9 +114,11 @@ def scrape_unieuro(
                 continue
     except requests.HTTPError as exc:
         status = exc.response.status_code if exc.response is not None else "?"
-        print(f"    ⚠️  Unieuro.it: errore HTTP {status}.")
+        log.warning("Unieuro.it: errore HTTP %s.", status)
+        report_blocked("unieuro", status)
     except Exception as exc:
-        print(f"    ❌ Unieuro.it: errore inatteso → {exc}")
+        log.error("Unieuro.it: errore inatteso → %s", exc)
+        report_error("unieuro", exc)
 
     _random_delay()
     return risultati

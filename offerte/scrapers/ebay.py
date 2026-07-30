@@ -11,6 +11,10 @@ from offerte.models import Offerta
 from offerte.http import _random_delay
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import is_relevant
+from offerte.log import get_logger
+from offerte.source_status import report_blocked, report_error
+
+log = get_logger(__name__)
 from offerte.scrapers._base import _get_ebay_token
 
 
@@ -118,19 +122,23 @@ def scrape_ebay(
                 except (TypeError, ValueError):
                     continue
 
-            print(f"    ✅ eBay Browse API: {len(risultati)} risultati validi")
+            log.info("eBay Browse API: %d risultati validi", len(risultati))
             _random_delay()
             return risultati
 
         except requests.Timeout:
-            print("    ❌ eBay Browse API: timeout.")
+            log.error("eBay Browse API: timeout.")
+            report_error("ebay", "timeout")
         except requests.HTTPError as exc:
             status = exc.response.status_code if exc.response is not None else "sconosciuto"
-            print(f"    ❌ eBay Browse API: errore HTTP {status}.")
+            log.error("eBay Browse API: errore HTTP %s.", status)
+            report_blocked("ebay", status)
         except requests.ConnectionError:
-            print("    ❌ eBay Browse API: errore di connessione.")
+            log.error("eBay Browse API: errore di connessione.")
+            report_error("ebay", "connessione")
         except Exception as exc:
-            print(f"    ❌ eBay Browse API: errore inatteso → {exc}")
+            log.error("eBay Browse API: errore inatteso → %s", exc)
+            report_error("ebay", exc)
 
         if attempt == 0:
             time.sleep(1.0)
