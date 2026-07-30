@@ -124,6 +124,37 @@ type for an accessory piece of information would be a far more invasive refactor
 text for strings like `f"{key} -> errore"` — a format nothing ever printed, so
 the "blocked" state was unreachable.
 
+### The sources canary
+
+The test suite mocks every HTTP call, which is right — otherwise CI would be
+flaky — but it means the suite can never notice a site changing its markup. That
+gap is not theoretical: two sources sat at zero for weeks while CI stayed green.
+
+`.github/workflows/sources-canary.yml` is the only thing that touches the real
+network. It runs weekly, outside `ci.yml` so push/PR stays deterministic, and
+reports through a GitHub issue rather than a red job — a job that goes red every
+time a site throttles stops meaning anything within a month.
+
+It compares against a versioned baseline, `tests/sources_baseline.json`, rather
+than asserting that everything answers, because **several sources behave
+differently from a CI runner than from a residential connection**: Amazon and
+MediaWorld return 403 to cloud IPs by design, Expert comes back empty (likely
+geo-restricted), and eBay without repo secrets falls back to HTML scraping and
+gets 403. Only regressions are reported — a source expected `ok` that stops
+answering — and `expected: "any"` silences the ones known to be intermittent.
+One live issue, commented rather than duplicated, closed automatically on
+recovery.
+
+Reproduce it locally with:
+
+```bash
+python tests/probe_scrapers.py --query "iphone 15" --budget 900 --check-baseline
+```
+
+Expect deviations locally: the baseline describes the *runner*, and from an
+Italian machine Amazon, MediaWorld and Expert all work. That asymmetry is the
+reason the file exists.
+
 Bounding the work: `AI_REQUEST_TIMEOUT` (default 60s) is applied when the
 provider client is constructed, together with `max_retries=0` so the SDK's own
 retries don't multiply with ours. `SEARCH_TOTAL_TIMEOUT` (default 90s) caps a
