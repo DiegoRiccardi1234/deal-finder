@@ -24,6 +24,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   partial results instead of nothing.
 
 ### Fixed
+- **Accessories dominated the results for a device search.** Results are sorted
+  by ascending price and an accessory costs a fraction of the device, so a search
+  for `iphone 15` returned a €7.55 camera-lens cover, a screen protector and a
+  protection kit as its top hits — all of which carry the model name and so passed
+  the relevance filter. `looks_like_accessory` now drops covers, screen
+  protectors, cables, chargers, accessory-only brands (Cellularline, SBS,
+  OtterBox, …) and second-hand spare parts, unless the query itself asks for one:
+  `custodia iphone 15` still returns cases. `display` and `batteria` are
+  deliberately excluded from the list — they are also products in their own right,
+  and filtering them would break a monitor or power-bank search.
 - **Trovaprezzi was never called by the application.** `scrape_trovaprezzi` was
   neither imported nor submitted by `offerte/orchestrator.py` and was absent from
   the default source set, so the source the project is named after was dead code

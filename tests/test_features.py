@@ -452,6 +452,60 @@ def test_is_relevant_handles_spec_only_queries(query: str, nome: str, atteso: bo
     assert is_relevant(nome, tokenize_query(query), strict_specs=False) is atteso
 
 
+@pytest.mark.parametrize(
+    ("query", "nome", "atteso"),
+    [
+        # Nomi reali osservati nei probe. I risultati sono ordinati per prezzo
+        # crescente e un accessorio costa una frazione del dispositivo, quindi
+        # senza questo filtro la testa della classifica per "iphone 15" era un
+        # copriobiettivo da 4,95 € e una custodia da 59 €.
+        ("iphone 15", "CAMERALENS - APPLE IPHONE 15 PRO / IPHONE 15 PRO MAX", False),
+        ("iphone 15", "APPLE - Custodia MagSafe iPhone 15-Trasparente", False),
+        ("iphone 15", "Cellular Line Tempered Glass iPhone 15 Plus", False),
+        ("iphone 15", "Cavo USB-C per iPhone 15", False),
+        # Il dispositivo deve passare.
+        ("iphone 15", "Apple iPhone 15 128GB Nero", True),
+        ("iphone 15", "APPLE - iPhone 15 Plus 128GB-Nero", True),
+        # Se la query nomina l'accessorio, l'accessorio è il risultato voluto.
+        ("custodia iphone 15", "APPLE - Custodia MagSafe iPhone 15-Trasparente", True),
+        ("cover iphone 15", "Cover silicone iPhone 15 nera", True),
+        # Marchi di soli accessori: il nome non sempre dice cosa sia il prodotto
+        # ("SBS TESINCAMGLIP15"), quindi il marchio è il segnale.
+        ("iphone 15", "Cellularline Protection Kit iPhone 15 Pro Max", False),
+        ("iphone 15", "SBS - Camera glass TESINCAMGLIP15 iPhone 15/15 Plus", False),
+        # Pezzi di ricambio dai marketplace dell'usato.
+        ("iphone 15", "Scheda madre iPhone 15 256gb", False),
+        ("iphone 15", "Chassis iPhone 15 Originale Apple", False),
+        # Nessuna regressione su query non-accessorio.
+        ("notebook 14 pollici 16gb", "Lenovo Notebook 14 IdeaPad 16GB", True),
+        ("ssd 1tb", "Crucial P3 1TB PCIe M.2 SSD", True),
+        ("scarpe", "Scarpe Nike Air Max", True),
+        # "display" e "batteria" sono esclusi dalla lista di proposito: sono anche
+        # prodotti a sé, e filtrarli romperebbe queste ricerche.
+        ("monitor 27 pollici", "MONITOR SB243YG0BI - 23.8 POLLICI - NERO", True),
+        ("powerbank 20000", "Batteria esterna powerbank 20000mAh", True),
+    ],
+)
+def test_is_relevant_drops_accessories_unless_requested(
+    query: str, nome: str, atteso: bool
+) -> None:
+    from offerte.filters import is_relevant
+    from offerte.parsing import tokenize_query
+
+    assert is_relevant(nome, tokenize_query(query), strict_specs=False) is atteso
+
+
+def test_accessory_filter_is_disabled_when_the_query_asks_for_one() -> None:
+    """Il filtro guarda la query, non solo il nome del prodotto."""
+    from offerte.filters import looks_like_accessory
+
+    assert looks_like_accessory("Custodia MagSafe iPhone 15", ["iphone", "15"]) is True
+    assert looks_like_accessory("Custodia MagSafe iPhone 15", ["custodia", "iphone"]) is False
+    # Match su parola intera: "casena" o "docker" non devono attivare "case"/"dock".
+    assert looks_like_accessory("Nokia Casena 3310", ["nokia"]) is False
+    assert looks_like_accessory("Docker Book", ["libro"]) is False
+
+
 # ===========================================================================
 # Tetto al tempo totale di ricerca — offerte/orchestrator.py
 # ===========================================================================
@@ -505,3 +559,52 @@ def test_search_returns_partials_without_waiting_for_a_hung_source(monkeypatch) 
     # il `report_empty` tardivo del thread ancora in corso non deve sovrascriverlo.
     assert stato["euronics"].state == ss.ERROR
     assert "timeout" in stato["euronics"].describe()
+
+
+# ===========================================================================
+# Pannello stato fonti nella UI — ui/sources.py
+# ===========================================================================
+
+
+def test_ui_source_rows_reflect_the_real_status() -> None:
+    """La UI deve leggere il registro, non dedurre il blocco dal testo del log.
+
+    Prima cercava nel log stringhe come `f"{key} -> errore"`, un formato che
+    nessuno stampava: lo stato "BLOCCATA" era irraggiungibile e una fonte che ci
+    aveva rifiutati appariva identica a una senza risultati.
+    """
+    from offerte import source_status as ss
+    from offerte.models import Offerta
+    from ui.sources import _status_rows_for_sources
+
+    ss.reset()
+    ss.report_ok("comet", 2)
+    ss.report_blocked("euronics", 403)
+    ss.report_error("amazon", "timeout")
+    ss.report_empty("unieuro")
+    ss.report_disabled("temu", "CAPTCHA")
+
+    offerte = [
+        Offerta(nome="A", prezzo=10.0, negozio="Comet", link="http://a", fonte="comet.it"),
+        Offerta(nome="B", prezzo=20.0, negozio="Comet", link="http://b", fonte="comet.it"),
+    ]
+    fonti = ["comet", "euronics", "amazon", "unieuro", "temu"]
+
+    # `log_text` deliberatamente vuoto: se la UI dipendesse ancora da lui, gli
+    # stati problematici sparirebbero.
+    rows = _status_rows_for_sources(offerte, fonti, log_text="")
+    by_label = {r["label"]: r for r in rows}
+
+    assert by_label["Comet.it"]["status"] == "ONLINE"
+    assert "2 risultati" in by_label["Comet.it"]["detail"]
+
+    assert by_label["Euronics.it"]["status"] == "BLOCCATA"
+    assert "403" in by_label["Euronics.it"]["detail"]
+
+    assert by_label["Amazon.it"]["status"] == "ERRORE"
+
+    # Ha risposto, semplicemente non c'era nulla: non è un problema della fonte.
+    assert by_label["Unieuro.it"]["status"] == "ONLINE"
+
+    assert by_label["Temu"]["status"] == "DISATTIVATA"
+    assert "CAPTCHA" in by_label["Temu"]["detail"]

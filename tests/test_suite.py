@@ -1172,10 +1172,10 @@ _EURONICS_TILE_HTML = """
 </div>
 <div class="product" data-pid="242014238">
   <div class="new-product-tile flex-fill available">
-    <a class="link-pdp" href="/telefonia/accessori/custodia-magsafe/242014238.html"></a>
-    <div class="pdp-link"><span class="tile-name">APPLE - Custodia MagSafe iPhone 15-Trasparente</span></div>
+    <a class="link-pdp" href="https://www.euronics.it/telefonia/iphone/apple-iphone-15-256gb/242014238.html"></a>
+    <div class="pdp-link"><span class="tile-name">APPLE - iPhone 15 256GB-Azzurro</span></div>
     <div class="price-container-new">
-      <div class="discount"><span class="price-formatted">&euro; 59,90</span></div>
+      <div class="discount"><span class="price-formatted">&euro; 749,00</span></div>
     </div>
   </div>
 </div>
@@ -1205,7 +1205,7 @@ def test_scrape_euronics_prefers_sale_price_over_consigliato(
 
     assert len(results) == 2
     assert results[0].prezzo == 699.0, "preso il consigliato invece del prezzo di vendita"
-    assert results[1].prezzo == 59.90
+    assert results[1].prezzo == 749.0
     assert results[0].negozio == "Euronics"
     assert results[0].link == (
         "https://www.euronics.it/telefonia/iphone/apple-iphone-15-128gb/232010290.html"

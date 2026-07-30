@@ -9,6 +9,123 @@ from offerte.models import Offerta
 from offerte.parsing import *  # noqa: F401,F403
 
 
+#: Parole che identificano un ACCESSORIO per un dispositivo, non il dispositivo.
+#: Servono perché i risultati sono ordinati per prezzo crescente e un accessorio
+#: costa una frazione del prodotto: cercando "iphone 15" la testa della classifica
+#: era occupata da copriobiettivi e custodie da pochi euro, che contengono il nome
+#: del modello e quindi passavano il filtro di rilevanza.
+_ACCESSORY_WORDS: frozenset[str] = frozenset(
+    {
+        "custodia",
+        "custodie",
+        "cover",
+        "case",
+        "bumper",
+        "pellicola",
+        "pellicole",
+        "vetro",
+        "tempered",
+        "screen protector",
+        "salvaschermo",
+        "cavo",
+        "cavetto",
+        "cable",
+        "caricatore",
+        "caricabatterie",
+        "charger",
+        "alimentatore",
+        "adattatore",
+        "adapter",
+        "supporto",
+        "stand",
+        "cavalletto",
+        "treppiede",
+        "borsa",
+        "custodia rigida",
+        "sleeve",
+        "zaino",
+        "tracolla",
+        "copriobiettivo",
+        "cameralens",
+        "camera lens",
+        "camera glass",
+        "lens protector",
+        "protezione schermo",
+        "protezione display",
+        "protection kit",
+        "screen glass",
+        "glass",
+        "powerbank",
+        "power bank",
+        "stilo",
+        "stylus",
+        "docking",
+        "dock",
+        "hub usb",
+        "ricambio",
+        "ricambi",
+        "kit riparazione",
+        "vetrino",
+        "paraurti",
+        # Pezzi di ricambio: frequenti sui marketplace dell'usato (Vinted,
+        # Wallapop), dove costano una frazione del dispositivo e ne occupavano la
+        # testa. NB: "display" e "batteria" sono deliberatamente ESCLUSI — sono
+        # anche prodotti a sé (un monitor, una batteria esterna) e filtrarli
+        # romperebbe quelle ricerche.
+        "scheda madre",
+        "motherboard",
+        "logic board",
+        "chassis",
+        "telaio",
+        "vetro posteriore",
+        "back cover",
+        "modulo fotocamera",
+        "flat cable",
+    }
+)
+
+#: Marchi che producono ESCLUSIVAMENTE accessori di protezione: se compaiono nel
+#: nome, il prodotto non è il dispositivo cercato. Tenuti separati dalle parole
+#: perché il nome dell'accessorio non sempre dice cosa sia ("SBS TESINCAMGLIP15").
+#: Volutamente esclusi i marchi che fanno anche prodotti veri (Trust, Hama).
+_ACCESSORY_BRANDS: frozenset[str] = frozenset(
+    {
+        "cellularline",
+        "cellular line",
+        "otterbox",
+        "spigen",
+        "panzerglass",
+        "nillkin",
+        "ringke",
+        "supcase",
+        "sbs",
+        "puro",
+        "tucano",
+        "uag",
+        "urban armor gear",
+    }
+)
+
+
+def looks_like_accessory(nome: str, query_tokens: list[str]) -> bool:
+    """True se `nome` è un accessorio ma la query cercava il dispositivo.
+
+    Se la query nomina già un accessorio ("custodia iphone 15") il filtro non
+    scatta: in quel caso gli accessori sono il risultato voluto.
+    """
+    query_text = " ".join(str(t).lower() for t in (query_tokens or []))
+    if any(w in query_text for w in _ACCESSORY_WORDS):
+        return False
+    nome_lower = str(nome or "").lower()
+    for word in (*_ACCESSORY_WORDS, *_ACCESSORY_BRANDS):
+        if " " in word:
+            if word in nome_lower:
+                return True
+        elif re.search(rf"\b{re.escape(word)}\b", nome_lower):
+            return True
+    return False
+
+
 def _passes_hard_spec_filters(offerta: Offerta, filtri: dict[str, str]) -> bool:
     """Applica vincoli tecnici hard per ridurre falsi positivi su notebook/smartphone."""
     return len(_hard_spec_mismatch_reasons(offerta, filtri)) == 0
@@ -80,6 +197,10 @@ def is_relevant(nome: str, query_tokens: list[str], strict_specs: bool = True) -
     accettava qualunque cosa per verità vacua, perfino un frullatore.
     """
     nome_lower = nome.lower()
+    # Un accessorio che nomina il modello passerebbe qualunque controllo sui token:
+    # va escluso prima, altrimenti domina l'ordinamento per prezzo crescente.
+    if looks_like_accessory(nome, query_tokens):
+        return False
     brand_tokens = [token for token in query_tokens if token in _TECH_BRANDS]
     # Se non resta nessun token da valutare, i token-spec tornano significativi:
     # "ssd 1tb" deve pur cercare "ssd" e "1tb" nel nome.
