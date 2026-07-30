@@ -1,4 +1,4 @@
-"""app.py — Streamlit Tool per Trova Prezzi.
+"""app.py — Streamlit Tool per Deal Finder.
 
 Le funzioni helper sono nel package `ui/`. Questo file contiene:
 - import + page config
@@ -6,7 +6,6 @@ Le funzioni helper sono nel package `ui/`. Questo file contiene:
 - orchestrazione top-level del rendering (presearch, search, comparison)
 """
 
-"""Pagina Tool Streamlit per Trova Prezzi."""
 import os
 import re
 import time
@@ -84,7 +83,7 @@ from ui.state import (
 
 
 st.set_page_config(
-    page_title="Trova Prezzi",
+    page_title="Deal Finder",
     page_icon="🔍",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -119,7 +118,7 @@ if _APP_PASSWORD and not _APP_TEST_MODE:
             st.markdown(
                 "<div class='auth-gate-card'>"
                 "<p class='auth-kicker'>Accesso riservato</p>"
-                "<h2>Trova Prezzi</h2>"
+                "<h2>Deal Finder</h2>"
                 "<p class='auth-sub'>Inserisci la password per aprire la dashboard.</p>",
                 unsafe_allow_html=True,
             )
@@ -231,9 +230,12 @@ if _history:
                 _queue_price_sync(int(entry.get("budget_min", 0)), int(bmax or 800))
                 st.rerun()
 if not _presearch_done:
+    # Unica sorgente delle fonti mostrate, così il conteggio nel testo sotto non
+    # può divergere dai chip (diceva "7 siti" mentre i chip erano 9).
     sources = [
         "Amazon",
         "eBay",
+        "Trovaprezzi",
         "Vinted",
         "Euronics",
         "Unieuro",
@@ -257,7 +259,7 @@ if not _presearch_done:
         st.markdown(
             "<div class='section-heading'><h3>Trova le migliori offerte</h3>"
             "<p>Descrivi cosa cerchi: la AI genera query ottimizzata, budget e filtri tecnici. "
-            "Dettagli completi al primo messaggio? Avviamo subito lo scraping su 7 siti.</p></div>",
+            f"Dettagli completi al primo messaggio? Avviamo subito lo scraping su {len(sources)} siti.</p></div>",
             unsafe_allow_html=True,
         )
     with _chat_hdr[1]:

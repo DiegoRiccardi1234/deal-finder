@@ -1,5 +1,5 @@
 """
-knowledge_base.py — Gestione knowledge base prodotti per Trova Prezzi.
+knowledge_base.py — Gestione knowledge base prodotti per Deal Finder.
 
 - Si aggiorna automaticamente via Cerebras ogni 7 giorni (thread background).
 - Se il JSON non esiste o è scaduto viene rigenerato al primo accesso al sito.

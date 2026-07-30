@@ -1,7 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&family=Space+Grotesk:wght@300..700&display=swap');
 
 /* ══════════════════════════════════════════════════════════════════
-   Trova Prezzi — design system unico "Editoriale terracotta"
+   Deal Finder — design system unico "Editoriale terracotta"
    Light = crema/terracotta · Dark = bruno caldo/terracotta chiara.
    Un solo :root (light) + un solo blocco [data-theme="dark"] (variabili).
    _shared.load_css() in dark disabilita :root e promuove il blocco dark.
@@ -481,6 +481,23 @@ div[data-baseweb="base-input"] > div,
     width: calc(100% - 2rem);
     margin: auto 1rem 1rem 1rem;
     min-height: 44px;
+    text-decoration: none;
+}
+
+/* Il CTA della card è un <a> dentro un markdown container, e Streamlit stila
+   quei link con una regola tipo `.st-emotion-cache-<hash> a` — specificità
+   (0,1,1), che batte `.card-cta` (0,1,0): il testo veniva reso blu e
+   sottolineato dentro il bottone terracotta.
+   Si alza la specificità con selettori NOSTRI — `.offerta-card a.card-cta` è
+   (0,2,1) — invece di inseguire l'hash emotion (che cambia a ogni versione di
+   Streamlit) e invece di usare `!important`, da cui questo CSS è stato appena
+   bonificato. */
+.offerta-card a.card-cta,
+.offerta-card a.card-cta:link,
+.offerta-card a.card-cta:visited,
+.offerta-card a.card-cta:hover,
+.offerta-card a.card-cta:active {
+    color: var(--on-primary);
     text-decoration: none;
 }
 

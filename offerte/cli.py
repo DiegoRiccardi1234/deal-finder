@@ -11,12 +11,17 @@ from offerte.orchestrator import cerca_offerte
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="offerte_tech",
-        description="🛒 Cerca offerte tech su amazon.it, ebay.it ed altri",
+        prog="deal-finder",
+        # Niente emoji nel testo di help: su console Windows (cp1252) argparse
+        # va in UnicodeEncodeError e `--help` esce con un traceback.
+        description="Cerca offerte tech su amazon.it, ebay.it ed altri",
         formatter_class=argparse.RawTextHelpFormatter,
         epilog=(
             "Esempi:\n"
-            '  python offerte_tech.py -q "notebook 14 pollici 16gb" -b 800 -n 10\n'
+            '  deal-finder -q "notebook 14 pollici 16gb" -b 800 -n 10\n'
+            '  deal-finder -q "ssd 1tb" --export csv\n'
+            "\n"
+            "Senza installazione (dal checkout):\n"
             '  python offerte_tech.py -q "ssd 1tb" --export csv\n'
         ),
     )

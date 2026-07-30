@@ -28,6 +28,12 @@ except ImportError:
 
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 _DATA_DIR.mkdir(exist_ok=True)
+
+# Salt del fingerprint di sessione. NON è il nome del prodotto: cambiarlo
+# invalida tutti i token già in `data/auth_sessions.json` e obbliga a rifare il
+# login. Tenuto come costante separata proprio per non farlo seguire un rebrand
+# per sbaglio.
+_FINGERPRINT_SALT = "deal-finder-session-v1"
 _AUTH_SESSIONS_PATH = _DATA_DIR / "auth_sessions.json"
 
 
@@ -64,7 +70,7 @@ def _get_client_fingerprint() -> str:
     except Exception:
         pass
 
-    raw = f"{ua}|{ip_addr}|trova-prezzi-mio"
+    raw = f"{ua}|{ip_addr}|{_FINGERPRINT_SALT}"
     return hashlib.sha256(raw.encode("utf-8", errors="ignore")).hexdigest()
 
 

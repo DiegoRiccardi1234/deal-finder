@@ -35,7 +35,7 @@ def load_css(theme_mode: str = "light") -> None:
 def render_nav(active_page: str = "tool") -> None:
     """Renderizza la navigazione laterale."""
     with st.sidebar:
-        st.markdown("<div class='sidebar-brand'>Trova Prezzi</div>", unsafe_allow_html=True)
+        st.markdown("<div class='sidebar-brand'>Deal Finder</div>", unsafe_allow_html=True)
         st.markdown("---")
         render_theme_toggle()
         _render_update_control()

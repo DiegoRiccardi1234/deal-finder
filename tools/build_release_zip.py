@@ -2,7 +2,7 @@
 
 Usato sia in locale sia dalla GitHub Action `release-asset.yml`.
 Esclude file di sviluppo/runtime e mette tutto sotto una cartella radice
-`trova-prezzi-<versione>/` così che estraendo si ottenga una cartella pulita.
+`deal-finder-<versione>/` così che estraendo si ottenga una cartella pulita.
 
 Uso: python tools/build_release_zip.py <versione>   (es. v1.1.0)
 """
@@ -14,7 +14,7 @@ import sys
 import zipfile
 
 VERSION = sys.argv[1] if len(sys.argv) > 1 else "dev"
-NAME = f"trova-prezzi-{VERSION}"
+NAME = f"deal-finder-{VERSION}"
 
 EXCLUDE_DIRS = {
     ".git",

@@ -17,7 +17,7 @@ from collections.abc import Callable
 
 from offerte.config import VERSION
 
-_REPO = "DiegoRiccardi1234/trova-prezzi"
+_REPO = "DiegoRiccardi1234/deal-finder"
 GITHUB_API = f"https://api.github.com/repos/{_REPO}/releases/latest"
 RELEASES_URL = f"https://github.com/{_REPO}/releases/latest"
 

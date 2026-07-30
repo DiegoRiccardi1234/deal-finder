@@ -1,5 +1,5 @@
 ============================================================
- TROVA PREZZI MIO  -  Guida rapida / Quick start
+ DEAL FINDER  -  Guida rapida / Quick start
 ============================================================
 
 Hai scaricato il progetto? Per avviarlo bastano 2 passi.
@@ -17,6 +17,8 @@ REQUISITI: Python 3.11+ installato (https://www.python.org/downloads).
    - Apri il nuovo file e incolla almeno una API key di un
      provider AI (es. Cerebras gratis su https://cloud.cerebras.ai).
    - Senza chiavi l'app funziona lo stesso: solo la chat AI resta spenta.
+   - Con EBAY_APP_ID / EBAY_CERT_ID, eBay usa la Browse API e rende
+     molti piu' risultati; senza, ripiega sull'HTML e prende spesso 403.
 
 2) AVVIO
    - Windows: fai doppio clic su  run.bat
@@ -25,13 +27,23 @@ REQUISITI: Python 3.11+ installato (https://www.python.org/downloads).
    http://localhost:8501
 
    In alternativa, con Docker installato:
+       copia  .env.example  in  .env  e compila le chiavi
        docker compose up --build
+   ATTENZIONE: con Docker le chiavi vanno in .env, NON in
+   .streamlit/secrets.toml (quel file e' escluso dall'immagine).
+
+FONTI
+   Alcuni siti bloccano lo scraping e possono rendere zero risultati:
+   e' previsto, e l'app lo dichiara invece di fallire in silenzio.
+   Per vedere quali rispondono oggi:
+       python tests/probe_scrapers.py --query "iphone 15" --budget 900
+   La tabella aggiornata e' nel README, sezione "Sources".
 
 AGGIORNAMENTI
    Se hai clonato il repo con git, l'app ti avvisa quando esce una
    versione nuova e la installa con un clic. Se hai scaricato lo ZIP,
    scarica l'ultima release da:
-   https://github.com/DiegoRiccardi1234/trova-prezzi/releases/latest
+   https://github.com/DiegoRiccardi1234/deal-finder/releases/latest
 
 ------------------------------------------------------------
  ENGLISH
@@ -45,6 +57,9 @@ REQUIREMENTS: Python 3.11+ (https://www.python.org/downloads).
    - Open the new file and paste at least one AI provider API key
      (e.g. Cerebras, free at https://cloud.cerebras.ai).
    - Without keys the app still works; only the AI chat stays off.
+   - With EBAY_APP_ID / EBAY_CERT_ID, eBay uses the Browse API and
+     returns far more results; without them it falls back to HTML
+     scraping, which usually gets a 403.
 
 2) RUN
    - Windows: double-click  run.bat
@@ -53,13 +68,23 @@ REQUIREMENTS: Python 3.11+ (https://www.python.org/downloads).
    http://localhost:8501
 
    Or, with Docker:
+       copy  .env.example  to  .env  and fill in your keys
        docker compose up --build
+   NOTE: with Docker the keys go in .env, NOT in
+   .streamlit/secrets.toml (that file is excluded from the image).
+
+SOURCES
+   Some sites block scraping and may return zero results: that is
+   expected, and the app says so instead of failing silently. To see
+   which ones answer today:
+       python tests/probe_scrapers.py --query "iphone 15" --budget 900
+   The up-to-date table lives in README.md, section "Sources".
 
 UPDATES
    If you cloned the repo with git, the app notifies you of a new
    release and updates in one click. If you downloaded the ZIP, get
    the latest release from:
-   https://github.com/DiegoRiccardi1234/trova-prezzi/releases/latest
+   https://github.com/DiegoRiccardi1234/deal-finder/releases/latest
 
 ============================================================
  Full docs: README.md   -   License: MIT
