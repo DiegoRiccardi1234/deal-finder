@@ -1,0 +1,28 @@
+version: 2
+
+updates:
+  # Le dipendenze sono pinnate con `==`: senza qualcosa che le muova restano
+  # ferme finché non si rompe qualcosa. Cadenza settimanale e un tetto basso di
+  # PR aperte, per non trasformare il repo in una bacheca di aggiornamenti.
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      # Un'unica PR per gli aggiornamenti di manutenzione: sono quelli che si
+      # possono valutare in blocco.
+      patch-and-minor:
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(ci)"

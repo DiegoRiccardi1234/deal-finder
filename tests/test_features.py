@@ -495,6 +495,70 @@ def test_is_relevant_drops_accessories_unless_requested(
     assert is_relevant(nome, tokenize_query(query), strict_specs=False) is atteso
 
 
+def test_baseline_covers_every_source() -> None:
+    """Una fonte fuori dalla baseline non verrebbe mai sorvegliata dal canary."""
+    from offerte.scrapers import SCRAPERS
+    from tests.probe_scrapers import load_baseline
+
+    baseline = {k: v for k, v in load_baseline().items() if not k.startswith("_")}
+    assert set(baseline) == set(SCRAPERS), (
+        f"mancanti: {set(SCRAPERS) - set(baseline)}, in eccesso: {set(baseline) - set(SCRAPERS)}"
+    )
+    for fonte, cfg in baseline.items():
+        assert cfg.get("expected") in {"ok", "blocked", "disabled", "any"}, fonte
+
+
+def test_canary_alerts_only_on_regressions() -> None:
+    """Il canary deve suonare quando una fonte 'ok' cade, e stare zitto altrimenti.
+
+    Se allertasse anche sui miglioramenti o sulle fonti intermittenti, suonerebbe
+    ogni settimana e verrebbe ignorato — che è come non averlo.
+    """
+    from tests.probe_scrapers import compare_with_baseline
+
+    baseline = {
+        "euronics": {"expected": "ok"},
+        "comet": {"expected": "ok"},
+        "amazon": {"expected": "blocked"},
+        "aliexpress": {"expected": "any"},
+        "subito": {"expected": "disabled"},
+    }
+    results = [
+        # Regressione vera: attesa ok, ora bloccata.
+        {"fonte": "euronics", "state": "blocked", "detail": "HTTP 403", "results": 0},
+        # Va bene.
+        {"fonte": "comet", "state": "ok", "detail": "", "results": 40},
+        # Miglioramento: attesa bloccata, oggi funziona. Non è un guasto.
+        {"fonte": "amazon", "state": "ok", "detail": "", "results": 28},
+        # Intermittente dichiarata: silenziata.
+        {"fonte": "aliexpress", "state": "empty", "detail": "", "results": 0},
+        # Disattivata per scelta: nessun allarme.
+        {"fonte": "subito", "state": "disabled", "detail": "Akamai", "results": 0},
+    ]
+
+    deviations = compare_with_baseline(results, baseline)
+
+    assert [d["fonte"] for d in deviations] == ["euronics"]
+    assert deviations[0]["osservato"] == "blocked"
+    assert "403" in deviations[0]["detail"]
+
+
+def test_canary_flags_a_source_that_went_silent() -> None:
+    """Anche `empty` è una regressione per una fonte attesa `ok`.
+
+    È il caso che è davvero successo: Trovaprezzi rispondeva 200 ma i selettori
+    erano cambiati, quindi zero risultati senza alcun errore.
+    """
+    from tests.probe_scrapers import compare_with_baseline
+
+    deviations = compare_with_baseline(
+        [{"fonte": "trovaprezzi", "state": "empty", "detail": "", "results": 0}],
+        {"trovaprezzi": {"expected": "ok"}},
+    )
+    assert len(deviations) == 1
+    assert deviations[0]["osservato"] == "empty"
+
+
 def test_accessory_filter_is_disabled_when_the_query_asks_for_one() -> None:
     """Il filtro guarda la query, non solo il nome del prodotto."""
     from offerte.filters import looks_like_accessory

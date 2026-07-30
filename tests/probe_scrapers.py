@@ -19,10 +19,13 @@ Uso:
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import sys
 import time
 import tomllib
 from pathlib import Path
+from typing import Any
 
 # Aggiungi la root del progetto al path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -32,6 +35,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import quote_plus, urlsplit
 
 import offerte_tech as ot
+from offerte import source_status
 
 # ---------------------------------------------------------------------------
 # Configurazione probe
@@ -44,22 +48,32 @@ DEFAULT_PREZZO_MIN = 0.0
 SECRETS_PATH = Path(__file__).parent.parent / ".streamlit" / "secrets.toml"
 
 
+_SECRET_KEYS = ("EBAY_APP_ID", "EBAY_CERT_ID", "CEREBRAS_API_KEY", "APP_PASSWORD")
+
+
 def _load_secrets() -> dict[str, str]:
-    """Legge `.streamlit/secrets.toml` se presente.
+    """Chiavi opzionali, da `.streamlit/secrets.toml` o dall'ambiente.
 
     Il probe gira fuori da Streamlit, quindi `st.secrets` non esiste: senza
     questa lettura eBay cadrebbe sempre sul fallback HTML (403) e il probe
     riporterebbe la fonte come rotta pur essendo funzionante via Browse API.
+
+    L'ambiente ha la precedenza sul file: in CI il canary passa i secret del repo
+    come variabili d'ambiente e lì `.streamlit/secrets.toml` non esiste.
     """
-    if not SECRETS_PATH.is_file():
-        return {}
-    try:
-        with SECRETS_PATH.open("rb") as fh:
-            raw = tomllib.load(fh)
-    except (OSError, tomllib.TOMLDecodeError) as exc:
-        print(f"  ⚠️  secrets.toml illeggibile ({exc}); proseguo senza chiavi.")
-        return {}
-    return {k: v for k, v in raw.items() if isinstance(v, str)}
+    secrets: dict[str, str] = {}
+    if SECRETS_PATH.is_file():
+        try:
+            with SECRETS_PATH.open("rb") as fh:
+                raw = tomllib.load(fh)
+            secrets.update({k: v for k, v in raw.items() if isinstance(v, str)})
+        except (OSError, tomllib.TOMLDecodeError) as exc:
+            print(f"  ⚠️  secrets.toml illeggibile ({exc}); proseguo senza chiavi.")
+    for key in _SECRET_KEYS:
+        val = os.environ.get(key, "").strip()
+        if val:
+            secrets[key] = val
+    return secrets
 
 
 SECRETS = _load_secrets()
@@ -74,9 +88,9 @@ SITES: dict[str, dict] = {
         "fn": lambda q, pmin, pmax, tokens, cond: _scrape_ebay(q, pmin, pmax, tokens, cond),
         "args": ["query", "prezzo_min", "budget_max", "tokens", "condizione"],
         "note": (
-            "Browse API (chiavi da secrets.toml)"
+            "Browse API (chiavi trovate)"
             if SECRETS.get("EBAY_APP_ID") and SECRETS.get("EBAY_CERT_ID")
-            else "HTML fallback — EBAY_APP_ID/EBAY_CERT_ID assenti in secrets.toml"
+            else "HTML fallback — EBAY_APP_ID/EBAY_CERT_ID assenti (secrets.toml o env)"
         ),
         "supports_condizione": True,
     },
@@ -278,7 +292,15 @@ def _diagnose_site(site_name: str, query: str) -> None:
 
 def run_probe(
     query: str, budget_max: float, prezzo_min: float, sites: list[str], condizione: str
-) -> None:
+) -> list[dict[str, Any]]:
+    """Sonda ogni fonte e restituisce l'esito strutturato.
+
+    Lo *stato* (non solo il conteggio) viene da `offerte.source_status`: gli
+    scraper vi segnalano già da sé i casi `blocked` e `disabled`, che sono l'unica
+    informazione che il chiamante non può dedurre da una lista vuota. Qui si
+    aggiunge `ok`/`empty` in base al risultato, come fa `_timed_call` in
+    `offerte.orchestrator`.
+    """
     tokens = ot.tokenize_query(query)
     print(f"\n{'=' * 70}")
     print(f"  PROBE SCRAPERS — query: '{query}'")
@@ -287,7 +309,8 @@ def run_probe(
     print(f"  Fonti da testare: {', '.join(sites)}")
     print(f"{'=' * 70}\n")
 
-    results_summary: list[tuple[str, int, float]] = []
+    source_status.reset()
+    results_summary: list[dict[str, Any]] = []
 
     for site_name in sites:
         if site_name not in SITES:
@@ -305,11 +328,26 @@ def run_probe(
             offerte = cfg["fn"](query, prezzo_min, budget_max, tokens, condizione)
         except Exception as exc:
             print(f"  ❌ Eccezione: {exc}")
+            source_status.report_error(site_name, exc)
             offerte = []
         elapsed = time.perf_counter() - t0
 
         n = len(offerte)
-        results_summary.append((site_name, n, elapsed))
+        if n:
+            source_status.report_ok(site_name, n)
+        else:
+            source_status.report_empty(site_name)
+
+        entry = source_status.get(site_name)
+        results_summary.append(
+            {
+                "fonte": site_name,
+                "state": entry.state if entry else source_status.EMPTY,
+                "detail": entry.detail if entry else "",
+                "results": n,
+                "seconds": round(elapsed, 2),
+            }
+        )
 
         print(f"\n  Risultati: {n}  |  Tempo: {elapsed:.2f}s")
 
@@ -325,12 +363,66 @@ def run_probe(
     print(f"\n{'=' * 70}")
     print("  RIEPILOGO")
     print(f"{'=' * 70}")
-    print(f"  {'Sito':<15} {'Risultati':>10} {'Tempo':>8}")
-    print(f"  {'─' * 15} {'─' * 10} {'─' * 8}")
-    for site_name, n, elapsed in results_summary:
-        status = "✅" if n > 0 else "❌"
-        print(f"  {status} {site_name:<13} {n:>10} {elapsed:>7.2f}s")
+    print(f"  {'Sito':<15} {'Stato':<10} {'Risultati':>10} {'Tempo':>8}")
+    print(f"  {'─' * 15} {'─' * 10} {'─' * 10} {'─' * 8}")
+    for row in results_summary:
+        icon = "✅" if row["state"] == source_status.OK else "❌"
+        if row["state"] in (source_status.DISABLED, source_status.EMPTY):
+            icon = "⏸" if row["state"] == source_status.DISABLED else "➖"
+        print(
+            f"  {icon} {row['fonte']:<13} {row['state']:<10} "
+            f"{row['results']:>10} {row['seconds']:>7.2f}s"
+        )
     print()
+    return results_summary
+
+
+# ---------------------------------------------------------------------------
+# Confronto con la baseline (usato dal canary in CI)
+# ---------------------------------------------------------------------------
+
+BASELINE_PATH = Path(__file__).parent / "sources_baseline.json"
+
+
+def load_baseline(path: Path = BASELINE_PATH) -> dict[str, dict[str, str]]:
+    """Stato atteso per fonte. Dizionario vuoto se il file manca."""
+    try:
+        with path.open(encoding="utf-8") as fh:
+            raw = json.load(fh)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+    return {k: v for k, v in raw.items() if isinstance(v, dict)}
+
+
+def compare_with_baseline(
+    results: list[dict[str, Any]], baseline: dict[str, dict[str, str]]
+) -> list[dict[str, str]]:
+    """Scostamenti fra esito osservato e stato atteso.
+
+    Segnala SOLO i peggioramenti: una fonte attesa `ok` che non risponde più. Non
+    segnala il contrario (una fonte attesa bloccata che oggi funziona) perché non
+    è un guasto, e non segnala `expected: "any"`, riservato alle fonti note come
+    intermittenti — altrimenti l'allerta suonerebbe ogni settimana e verrebbe
+    ignorata.
+    """
+    deviations: list[dict[str, str]] = []
+    for row in results:
+        fonte = row["fonte"]
+        atteso = (baseline.get(fonte) or {}).get("expected")
+        if not atteso or atteso == "any":
+            continue
+        osservato = row["state"]
+        if atteso == "ok" and osservato != source_status.OK:
+            deviations.append(
+                {
+                    "fonte": fonte,
+                    "atteso": atteso,
+                    "osservato": osservato,
+                    "detail": str(row.get("detail") or ""),
+                    "results": str(row.get("results", 0)),
+                }
+            )
+    return deviations
 
 
 def main() -> None:
@@ -359,15 +451,62 @@ def main() -> None:
         choices=list(SITES.keys()),
         help="Siti da testare (default: tutti)",
     )
+    parser.add_argument(
+        "--json",
+        dest="json_path",
+        metavar="FILE",
+        help="Scrive l'esito per fonte in JSON (usato dal canary in CI)",
+    )
+    parser.add_argument(
+        "--check-baseline",
+        action="store_true",
+        help=(
+            "Confronta con tests/sources_baseline.json ed esce con codice 1 se una "
+            "fonte attesa 'ok' non risponde più. Senza questo flag l'uscita è sempre 0."
+        ),
+    )
     args = parser.parse_args()
 
-    run_probe(
+    results = run_probe(
         query=args.query,
         budget_max=args.budget,
         prezzo_min=args.prezzo_min,
         sites=args.sites,
         condizione=args.condizione,
     )
+
+    if args.json_path:
+        payload = {
+            "query": args.query,
+            "budget_max": args.budget,
+            "prezzo_min": args.prezzo_min,
+            "condizione": args.condizione,
+            "sources": results,
+        }
+        Path(args.json_path).write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        print(f"  Esito JSON scritto in: {args.json_path}")
+
+    if not args.check_baseline:
+        return
+
+    baseline = load_baseline()
+    if not baseline:
+        print("  ⚠️  Baseline assente o illeggibile: nessun confronto eseguito.")
+        return
+
+    deviations = compare_with_baseline(results, baseline)
+    if not deviations:
+        print("  ✅ Tutte le fonti combaciano con la baseline.")
+        return
+
+    print(f"\n  ❌ {len(deviations)} fonti si discostano dalla baseline:")
+    for d in deviations:
+        print(
+            f"     - {d['fonte']}: atteso '{d['atteso']}', osservato '{d['osservato']}' {d['detail']}"
+        )
+    sys.exit(1)
 
 
 if __name__ == "__main__":

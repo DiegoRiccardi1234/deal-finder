@@ -1,0 +1,120 @@
+name: Sources canary
+
+# Gli scraper si rompono da soli quando i siti cambiano, e la suite non può
+# accorgersene: mocka tutta la rete, correttamente, altrimenti la CI sarebbe
+# flaky. È già successo — due fonti sono rimaste a zero per settimane con la CI
+# verde. Questo workflow è l'unico posto in cui la rete vera viene toccata.
+#
+# Vive FUORI da ci.yml di proposito: la CI di push/PR deve restare deterministica.
+
+on:
+  schedule:
+    # Lunedì alle 06:17 UTC. Minuto non tondo per non finire nel picco in cui
+    # GitHub accoda tutti i cron a :00.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: sources-canary
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    name: Probe fonti reali
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Probe (rete reale) e confronto con la baseline
+        id: probe
+        # `|| true`: il segnale è la issue, non il colore del job. Un rosso
+        # ricorrente sulla tab Actions per una fonte che throttla perderebbe
+        # significato in due settimane.
+        run: |
+          set -o pipefail
+          python tests/probe_scrapers.py \
+            --query "iphone 15" --budget 900 \
+            --json probe-result.json --check-baseline \
+            2>&1 | tee probe-output.txt || echo "deviations=true" >> "$GITHUB_OUTPUT"
+        env:
+          LOG_LEVEL: WARNING
+          PYTHONIOENCODING: utf-8
+          # Se un giorno aggiungi i secret al repo, eBay passa dal fallback HTML
+          # alla Browse API e va portato a `expected: "ok"` nella baseline.
+          EBAY_APP_ID: ${{ secrets.EBAY_APP_ID }}
+          EBAY_CERT_ID: ${{ secrets.EBAY_CERT_ID }}
+
+      - name: Allega l'esito come artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: probe-result
+          path: |
+            probe-result.json
+            probe-output.txt
+          retention-days: 30
+
+      - name: Apri o aggiorna la issue quando una fonte si rompe
+        if: steps.probe.outputs.deviations == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TITLE="Fonti fuori baseline"
+          BODY_FILE=issue-body.md
+          {
+            echo "Il canary ha rilevato fonti che non rispondono più come atteso."
+            echo
+            echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo
+            echo '```'
+            sed -n '/RIEPILOGO/,$p' probe-output.txt || cat probe-output.txt
+            echo '```'
+            echo
+            echo "Se lo scostamento è definitivo (il sito ha chiuso, non è più raggiungibile"
+            echo "via HTTP), aggiorna \`tests/sources_baseline.json\` invece di lasciare la"
+            echo "issue aperta: la baseline è il posto dove si dichiara cosa aspettarsi."
+          } > "$BODY_FILE"
+
+          # Una sola issue viva: se ce n'è già una aperta la si commenta,
+          # altrimenti la si crea. Niente una-issue-a-settimana.
+          EXISTING=$(gh issue list --label sources-canary --state open \
+                       --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body-file "$BODY_FILE"
+          else
+            gh label create sources-canary \
+              --description "Segnalazioni automatiche del canary sulle fonti" \
+              --color B60205 2>/dev/null || true
+            gh issue create --title "$TITLE" --label sources-canary --body-file "$BODY_FILE"
+          fi
+
+      - name: Chiudi la issue quando tutto torna a posto
+        if: steps.probe.outputs.deviations != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          EXISTING=$(gh issue list --label sources-canary --state open \
+                       --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body \
+              "Tutte le fonti sono tornate in linea con la baseline. Chiudo."
+            gh issue close "$EXISTING"
+          fi

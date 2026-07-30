@@ -72,24 +72,32 @@ one of `ok` / `empty` / `blocked` / `error` / `disabled` per source, shown in th
 UI's source panel. "0 results because Amazon throttled us" and "0 results because
 nothing matched" are different answers, and the app now tells them apart.
 
+A **weekly canary** ([`sources-canary.yml`](.github/workflows/sources-canary.yml))
+probes the real network and opens an issue when a source stops answering. It
+compares against a versioned baseline ([`tests/sources_baseline.json`](tests/sources_baseline.json))
+instead of expecting everything to work, because Amazon rejects CI cloud IPs by
+design and eBay needs API keys — a canary that cried wolf weekly would be ignored.
+The test suite deliberately mocks the whole network, so this is the only thing
+that can catch a site changing its markup.
+
 ### 🚀 Quickstart
 
-**A. Hosted demo** — deploy `app.py` from the repo on [share.streamlit.io](https://share.streamlit.io), then add your keys under *Settings → Secrets* (template in [`.streamlit/secrets.toml.example`](.streamlit/secrets.toml.example)).
+**A. Local** — the exercised path:
+```bash
+run.bat          # Windows
+./run.sh         # macOS / Linux
+```
+The script creates a virtualenv, installs dependencies and launches the UI on `http://localhost:8501`.
 
-**B. Docker** (recommended for local real use):
+**B. Hosted** — deploy `app.py` from the repo on [share.streamlit.io](https://share.streamlit.io), then add your keys under *Settings → Secrets* (template in [`.streamlit/secrets.toml.example`](.streamlit/secrets.toml.example)).
+
+**C. Docker** — provided, but **not exercised in CI**:
 ```bash
 cp .env.example .env                 # then fill in your keys
 docker compose up --build
 # open http://localhost:8501
 ```
 Docker reads the keys from `.env`, **not** from `.streamlit/secrets.toml`: that path is excluded from the build context in `.dockerignore`, so the container never sees it.
-
-**C. Local (no Docker):**
-```bash
-run.bat          # Windows
-./run.sh         # macOS / Linux
-```
-The script creates a virtualenv, installs dependencies and launches the UI on `http://localhost:8501`.
 
 ### 🔑 Configuration
 
@@ -165,22 +173,22 @@ Descrivi cosa cerchi in linguaggio naturale — l'AI lo trasforma in query ottim
 
 ### 🚀 Avvio rapido
 
-**A. Demo online** — fai il deploy di `app.py` dal repo su [share.streamlit.io](https://share.streamlit.io), poi aggiungi le chiavi in *Settings → Secrets* (template in [`.streamlit/secrets.toml.example`](.streamlit/secrets.toml.example)).
+**A. Locale** — il percorso testato:
+```bash
+run.bat          # Windows
+./run.sh         # macOS / Linux
+```
+Lo script crea la virtualenv, installa le dipendenze e avvia la UI su `http://localhost:8501`.
 
-**B. Docker** (consigliato per uso reale in locale):
+**B. Demo online** — fai il deploy di `app.py` dal repo su [share.streamlit.io](https://share.streamlit.io), poi aggiungi le chiavi in *Settings → Secrets* (template in [`.streamlit/secrets.toml.example`](.streamlit/secrets.toml.example)).
+
+**C. Docker** — presente, ma **non verificato in CI**:
 ```bash
 cp .env.example .env                 # poi compila le chiavi
 docker compose up --build
 # apri http://localhost:8501
 ```
 Docker legge le chiavi da `.env`, **non** da `.streamlit/secrets.toml`: quel path è escluso dal build context in `.dockerignore`, quindi il container non lo vede.
-
-**C. Locale (senza Docker):**
-```bash
-run.bat          # Windows
-./run.sh         # macOS / Linux
-```
-Lo script crea la virtualenv, installa le dipendenze e avvia la UI su `http://localhost:8501`.
 
 ### 🔑 Configurazione
 

@@ -6,7 +6,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Weekly sources canary** (`.github/workflows/sources-canary.yml`). The scrapers
+  break on their own when sites change, and the test suite cannot notice: it mocks
+  the whole network — correctly, or CI would be flaky. This is the only place that
+  touches the real network, and it lives outside `ci.yml` so push/PR stays
+  deterministic.
+
+  It compares against a versioned baseline (`tests/sources_baseline.json`) rather
+  than asserting "everything answers", because two sources *cannot* work from a CI
+  runner: Amazon rejects cloud IPs with 503, and eBay without repo secrets falls
+  back to HTML scraping and gets 403. A naive canary would cry wolf every week and
+  be ignored within a month. Only regressions are reported — a source expected
+  `ok` that stops answering — and `expected: "any"` silences the ones known to be
+  intermittent. One live issue, updated rather than duplicated, closed
+  automatically when things recover.
+- `tests/probe_scrapers.py` gained `--json` and `--check-baseline`. It previously
+  printed text and **always exited 0**, so nothing could act on its result. It now
+  reports per-source state by reusing `offerte/source_status.py` instead of
+  inventing a second vocabulary, and reads its optional keys from the environment
+  as well as `.streamlit/secrets.toml` — the latter does not exist on a runner.
+- CI: `pip-audit` step (it was pinned in `requirements-test.txt` but never
+  invoked), a **Python 3.11 / 3.12 / 3.13 matrix** on the test job — `pyproject`
+  declares `>=3.11` while only 3.11 was verified — a separate **non-blocking E2E
+  job** that installs Chromium and runs the 7 Playwright tests, and coverage
+  reporting.
+- `.github/dependabot.yml` — weekly `pip` and `github-actions` updates, grouped so
+  maintenance lands in one reviewable PR.
+
 ### Changed
+- **Docker is documented but no longer recommended.** The image has never been
+  built and is not exercised in CI; the tested path is `run.bat` / `run.sh`. The
+  instructions themselves were fixed earlier in this release and verified with
+  `docker compose config`, but a verified *config* is not a verified *build*, and
+  the repo should not recommend what it does not check.
+- Coverage is measured on `offerte/` only. Including `ui/` would report ~0% for
+  it, which reads as "untested" and is wrong: the tests that exercise the UI are
+  the E2E ones, and they launch Streamlit as a **subprocess** that `coverage`
+  cannot instrument. Measured at the time of writing: `offerte/` 58%, with
+  `db.py` 97%, `filters.py` 96%, `source_status.py` 94%; the scrapers pull the
+  average down. No badge until the number means something.
 - **Structured logging replaces `print`** across the engine (`offerte/log.py`,
   `get_logger(__name__)` per module, configured once by `app.py` and
   `offerte/cli.py`). Output goes to stderr so stdout stays clean for CLI results

@@ -44,6 +44,67 @@ jobs:
   test:
     name: Tests (unit + feature, no E2E)
     runs-on: ubuntu-latest
+    strategy:
+      # Un fallimento su una versione non deve nascondere l'esito sulle altre:
+      # serve sapere se è un problema di 3.13 soltanto o di tutte.
+      fail-fast: false
+      matrix:
+        # `pyproject.toml` dichiara `requires-python = ">=3.11"`. Testarne una
+        # sola significherebbe promettere più di quanto si verifica: se una di
+        # queste cade in fase di install è un pin da rilassare, oppure la
+        # dichiarazione da stringere.
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-test.txt
+      - name: Run test suite (Playwright/E2E excluded)
+        # Coverage misurata sul solo `offerte/`: è l'unica parte che lo strumento
+        # riesce davvero a vedere. I test che esercitano `ui/` sono gli E2E, che
+        # avviano Streamlit come SUBPROCESS — coverage non lo strumenta, quindi
+        # includere `ui/` produrrebbe uno 0% che sembra "non testato" e non lo è.
+        # Misurato al momento della scrittura: offerte/ 58%, con db 97%,
+        # filters 96%, source_status 94%; gli scraper abbassano la media.
+        run: |
+          pytest tests -k "not playwright" -q \
+            --cov=offerte --cov-report=term-missing:skip-covered
+
+  audit:
+    name: Dependency audit (pip-audit, advisory)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install pip-audit
+        run: python -m pip install pip-audit==2.10.1
+      - name: Audit delle dipendenze dichiarate
+        # Advisory come mypy: una CVE su una dipendenza transitiva è da sapere,
+        # non da far bloccare un push. Diventerà bloccante quando il rumore di
+        # fondo sarà noto.
+        run: |
+          pip-audit -r requirements.txt -r requirements-test.txt \
+            || echo "::warning::pip-audit ha segnalato vulnerabilità (advisory, non bloccante)"
+
+  e2e:
+    name: E2E (Playwright, advisory)
+    runs-on: ubuntu-latest
+    # Misurato in locale: ~1 fallimento su 6 run. I test guidano un vero server
+    # Streamlit e sono sensibili al timing; su un runner, più lento della
+    # macchina di sviluppo, l'incidenza può salire. Bloccante darebbe rossi senza
+    # colpa, che è peggio che non averli in CI.
+    continue-on-error: true
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Setup Python
@@ -55,5 +116,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-test.txt
-      - name: Run test suite (Playwright/E2E excluded)
-        run: pytest tests -k "not playwright" -q
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+      - name: Run E2E suite
+        env:
+          APP_TEST_MODE: "1"
+        run: pytest tests -k "playwright" -q
