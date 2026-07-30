@@ -4,9 +4,27 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.0.0] - 2026-07-30
+
+Major because two things break compatibility: the distributed package is renamed
+from `trova-prezzi-mio` to `deal-finder`, and all persistent state moves from six
+JSON files to a SQLite database. The migration is automatic and non-destructive —
+existing watchlists and price histories are imported on first start and the old
+files kept as `*.json.migrated` — but the on-disk format is no longer the same.
 
 ### Fixed
+- **The release ZIP shipped the internal notes and 8 MB of cache.** The builder
+  walked the filesystem instead of asking git, so it packaged everything the
+  repository ignores: `.mypy_cache/` and — the part that matters —
+  `HANDOFF.md`, `APPUNTI.md` and the `CLAUDE.md` files, the working notes
+  deliberately untracked earlier in this release. They would have gone out in a
+  public artifact. It now builds from `git ls-files`, so the archive contains by
+  construction exactly what is versioned. Same change removes a crash on the
+  Windows reserved device `nul`, which sits ignored in the repo root and made
+  `os.path.relpath` abort mid-walk, silently truncating the archive to 51 KB.
+  Added a floor check that refuses to produce an archive with too few files.
+  Result: 182 KB and 75 files, verified to contain no secret, no internal note
+  and every file needed to run.
 - **Accessories in other languages slipped through the relevance filter.** Vinted
   and Wallapop are pan-European and listings arrive in the seller's language, so
   the Italian/English word list caught nothing: a search for `iphone 15` returned
