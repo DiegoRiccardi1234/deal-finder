@@ -1,6 +1,10 @@
 {
   "_note": [
-    "Stato atteso per fonte DA UN RUNNER CI (IP cloud, nessun secret eBay).",
+    "Stato atteso per fonte DA UN RUNNER CI (IP cloud, fuori dall'Italia, nessun",
+    "secret eBay). NON e' lo stato atteso dalla tua macchina: diverse fonti si",
+    "comportano diversamente dai due posti, ed e' il motivo per cui questo file",
+    "esiste invece di un semplice 'devono rispondere tutte'.",
+    "",
     "Usato da .github/workflows/sources-canary.yml tramite",
     "`python tests/probe_scrapers.py --check-baseline`.",
     "",
@@ -10,7 +14,11 @@
     "",
     "Aggiornare questo file quando una fonte cambia stato in modo definitivo:",
     "il diff rende esplicito cosa ci si aspetta, invece di seppellirlo nel workflow.",
-    "Ultima revisione: 2026-07-30."
+    "",
+    "Calibrato il 2026-07-30 su due run reali da runner GitHub. La prima stesura",
+    "era stata scritta osservando da una macchina di sviluppo italiana e dava per",
+    "'ok' fonti che da un runner non rispondono: il canary l'ha corretta al primo",
+    "colpo, che e' esattamente il suo mestiere."
   ],
 
   "amazon": {
@@ -22,12 +30,22 @@
     "why": "senza i secret EBAY_APP_ID/EBAY_CERT_ID cade sul fallback HTML, che prende 403. Aggiungendo i secret al repo, portare a 'ok'"
   },
 
-  "trovaprezzi": { "expected": "ok" },
+  "mediaworld": {
+    "expected": "blocked",
+    "why": "come Amazon, risponde 403 agli IP cloud (2 run su 2 dal runner); da rete residenziale funziona"
+  },
+  "expert": {
+    "expected": "any",
+    "why": "dal runner rende sempre vuoto, probabile geo-restrizione (2 run su 2); in locale da 2-10 risultati"
+  },
+
+  "trovaprezzi": {
+    "expected": "ok",
+    "why": "tenuto sorvegliato: e' la fonte che da' il nome al progetto ed e' gia' caduta una volta. NB: due run a pochi minuti l'uno dall'altro fanno scattare un 403 di rate-limit — con la cadenza settimanale non capita"
+  },
   "euronics": { "expected": "ok" },
   "unieuro": { "expected": "ok" },
   "comet": { "expected": "ok" },
-  "expert": { "expected": "ok" },
-  "mediaworld": { "expected": "ok" },
   "vinted": { "expected": "ok" },
   "wallapop": { "expected": "ok" },
 
