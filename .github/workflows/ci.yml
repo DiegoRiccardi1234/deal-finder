@@ -11,14 +11,19 @@ jobs:
     name: Lint (ruff)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip
       - name: Install ruff
-        run: python -m pip install ruff==0.15.17
+        # La versione si legge da requirements-test.txt invece di essere scritta
+        # qui: era duplicata, e Dependabot aggiorna solo il file. Le due copie
+        # divergevano in silenzio — e `ruff format` cambia output fra versioni,
+        # quindi "formattato in locale" e "CI contenta" avrebbero smesso di
+        # coincidere. Si installa il solo strumento, non l'intero file.
+        run: python -m pip install "$(grep -E '^ruff==' requirements-test.txt)"
       - name: ruff check
         run: ruff check .
       - name: ruff format --check
@@ -28,14 +33,15 @@ jobs:
     name: Type-check (mypy, advisory)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip
       - name: Install mypy
-        run: python -m pip install mypy==2.1.0
+        # Versione da requirements-test.txt: sorgente unica (vedi job lint).
+        run: python -m pip install "$(grep -E '^mypy==' requirements-test.txt)"
       - name: mypy (source packages)
         # Advisory: il codice non è ancora interamente tipizzato. Riporta gli
         # esiti come warning senza far fallire il job (non-blocking).
@@ -55,9 +61,9 @@ jobs:
         # dichiarazione da stringere.
         python-version: ["3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Setup Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -80,14 +86,15 @@ jobs:
     name: Dependency audit (pip-audit, advisory)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip
       - name: Install pip-audit
-        run: python -m pip install pip-audit==2.10.1
+        # Versione da requirements-test.txt: sorgente unica (vedi job lint).
+        run: python -m pip install "$(grep -E '^pip-audit==' requirements-test.txt)"
       - name: Audit delle dipendenze dichiarate
         # Advisory come mypy: una CVE su una dipendenza transitiva è da sapere,
         # non da far bloccare un push. Diventerà bloccante quando il rumore di
@@ -106,9 +113,9 @@ jobs:
     continue-on-error: true
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip

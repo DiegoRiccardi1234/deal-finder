@@ -6,6 +6,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Accessories in other languages slipped through the relevance filter.** Vinted
+  and Wallapop are pan-European and listings arrive in the seller's language, so
+  the Italian/English word list caught nothing: a search for `iphone 15` returned
+  twelve €1.00 phone cases in a row — `coque` (FR), `Funda`/`Carcasa` (ES),
+  `Handyhülle` (DE), `hoesje` (NL), `Capa` (PT). Added those languages, plus
+  substring stems for German, where nouns compound (`Handyhülle`, `Hüllen`) and
+  whole-word matching misses every form. Measured end to end: the top of the
+  results went from twelve foreign-language cases to four actual iPhones out of
+  six. The remaining two are documented limits — a `Display` spare part
+  (deliberately not filtered, since displays are also products) and a €1.00 bait
+  listing whose name genuinely is the product.
+
+### Changed
+- CI no longer pins `ruff`, `mypy` and `pip-audit` twice. The versions were
+  written both in `requirements-test.txt` and by hand in the workflow, and
+  Dependabot only updates the file — so after the first dependency PR the two
+  would have drifted apart silently, and `ruff format` changes output between
+  versions, meaning "formatted locally" and "CI happy" could stop agreeing. The
+  jobs now read the version from the requirements file while still installing
+  only the single tool.
+
 ### Added
 - **Weekly sources canary** (`.github/workflows/sources-canary.yml`). The scrapers
   break on their own when sites change, and the test suite cannot notice: it mocks

@@ -81,8 +81,40 @@ _ACCESSORY_WORDS: frozenset[str] = frozenset(
         "back cover",
         "modulo fotocamera",
         "flat cable",
+        # Vinted e Wallapop sono paneuropei e gli annunci arrivano nella lingua
+        # del venditore: senza queste, cercando "iphone 15" i primi 12 risultati
+        # a 1,00 € erano tutti custodie francesi, spagnole, tedesche e olandesi.
+        "coque",
+        "coques",
+        "housse",
+        "etui",
+        "verre trempe",
+        "funda",
+        "fundas",
+        "carcasa",
+        "cargador",
+        "protector de pantalla",
+        "cristal templado",
+        "hoesje",
+        "hoesjes",
+        "oplader",
+        "screenprotector",
+        "panzerglas",
+        "ladegerat",
+        "capa",
+        "capas",
+        "skin",
+        "adesivo",
+        "sticker",
     }
 )
+
+#: Radici cercate come SOTTOSTRINGA, non come parola intera. Servono per le
+#: lingue che compongono i sostantivi: in tedesco la custodia è "Handyhülle",
+#: "Schutzhülle" o "Hüllen", e un match su parola intera le mancherebbe tutte.
+#: Tenute separate perché la ricerca per sottostringa è più aggressiva: qui
+#: stanno solo radici che non compaiono dentro parole italiane o inglesi.
+_ACCESSORY_STEMS: frozenset[str] = frozenset({"hülle", "huelle", "hullen", "schutzfolie"})
 
 #: Marchi che producono ESCLUSIVAMENTE accessori di protezione: se compaiono nel
 #: nome, il prodotto non è il dispositivo cercato. Tenuti separati dalle parole
@@ -112,11 +144,20 @@ def looks_like_accessory(nome: str, query_tokens: list[str]) -> bool:
 
     Se la query nomina già un accessorio ("custodia iphone 15") il filtro non
     scatta: in quel caso gli accessori sono il risultato voluto.
+
+    LIMITE NOTO: è una lista curata, quindi per definizione incompleta — copre
+    italiano, inglese, francese, spagnolo, tedesco, olandese e portoghese perché
+    Vinted e Wallapop sono paneuropei, ma un annuncio in una lingua o con un
+    termine non previsti passa. La soluzione strutturale sarebbe una soglia di
+    plausibilità sul prezzo (un accessorio costa una frazione del dispositivo),
+    che però rischia di scartare un affare vero: da valutare a parte.
     """
     query_text = " ".join(str(t).lower() for t in (query_tokens or []))
-    if any(w in query_text for w in _ACCESSORY_WORDS):
+    if any(w in query_text for w in (*_ACCESSORY_WORDS, *_ACCESSORY_STEMS)):
         return False
     nome_lower = str(nome or "").lower()
+    if any(stem in nome_lower for stem in _ACCESSORY_STEMS):
+        return True
     for word in (*_ACCESSORY_WORDS, *_ACCESSORY_BRANDS):
         if " " in word:
             if word in nome_lower:

@@ -476,6 +476,18 @@ def test_is_relevant_handles_spec_only_queries(query: str, nome: str, atteso: bo
         # Pezzi di ricambio dai marketplace dell'usato.
         ("iphone 15", "Scheda madre iPhone 15 256gb", False),
         ("iphone 15", "Chassis iPhone 15 Originale Apple", False),
+        # Vinted e Wallapop sono paneuropei: gli annunci arrivano nella lingua
+        # del venditore. Nomi reali osservati — senza queste voci i primi 12
+        # risultati per "iphone 15" erano tutti custodie estere da 1,00 €.
+        ("iphone 15", "Lot de 2 coques iPhone 15", False),
+        ("iphone 15", "Funda iPhone 15 plus", False),
+        ("iphone 15", "Carcasa iPhone 15", False),
+        ("iphone 15", "Iphone 15 hoesje met bloem", False),
+        # Tedesco: i sostantivi si compongono ("Handyhülle", "Hüllen"), quindi
+        # servono le radici cercate come sottostringa e non come parola intera.
+        ("iphone 15", "Handyhülle IPhone 15 Babyblau", False),
+        ("iphone 15", "iPhone 15 Pro Max Handyhuellen", False),
+        ("iphone 15", "Panzerglas iPhone 15", False),
         # Nessuna regressione su query non-accessorio.
         ("notebook 14 pollici 16gb", "Lenovo Notebook 14 IdeaPad 16GB", True),
         ("ssd 1tb", "Crucial P3 1TB PCIe M.2 SSD", True),

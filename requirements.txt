@@ -2,7 +2,7 @@ requests==2.34.2
 beautifulsoup4==4.15.0
 fake-useragent==2.2.0
 streamlit==1.60.0
-vinted-scraper==3.1.1
+vinted-scraper==4.0.0
 playwright==1.61.0
 
 # Provider AI (multi-provider via offerte/providers.py)
