@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import hashlib
-import json
+import sqlite3
 from pathlib import Path
 from typing import Any
 
 import streamlit as st
+
+from offerte.db import get_db
 
 try:
     import knowledge_base as kb_manager
@@ -30,30 +32,38 @@ _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 _DATA_DIR.mkdir(exist_ok=True)
 
 # Salt del fingerprint di sessione. NON è il nome del prodotto: cambiarlo
-# invalida tutti i token già in `data/auth_sessions.json` e obbliga a rifare il
-# login. Tenuto come costante separata proprio per non farlo seguire un rebrand
-# per sbaglio.
+# invalida tutti i token di sessione già salvati e obbliga a rifare il login.
+# Tenuto come costante separata proprio per non farlo seguire un rebrand per
+# sbaglio.
 _FINGERPRINT_SALT = "deal-finder-session-v1"
-_AUTH_SESSIONS_PATH = _DATA_DIR / "auth_sessions.json"
 
 
 def _load_auth_sessions() -> dict[str, float]:
+    """Sessioni valide dal database (fingerprint -> scadenza epoch)."""
     try:
-        if _AUTH_SESSIONS_PATH.exists():
-            data = json.loads(_AUTH_SESSIONS_PATH.read_text(encoding="utf-8"))
-            if isinstance(data, dict):
-                return {str(k): float(v) for k, v in data.items()}
-    except Exception:
-        pass
-    return {}
+        rows = get_db().query("SELECT fingerprint, expires_at FROM auth_sessions")
+    except sqlite3.Error:
+        return {}
+    return {str(r["fingerprint"]): float(r["expires_at"]) for r in rows}
 
 
 def _save_auth_sessions(sessions: dict[str, float]) -> None:
+    """Riscrive l'insieme delle sessioni valide.
+
+    Firma conservata perché i chiamanti passano già il dict ripulito dalle voci
+    scadute. Il DELETE+INSERT gira dentro il lock del writer, quindi non lascia
+    una finestra in cui la tabella è vuota per gli altri thread.
+    """
+    db = get_db()
     try:
-        _AUTH_SESSIONS_PATH.write_text(
-            json.dumps(sessions, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-    except Exception:
+        with db.lock:
+            db.conn.execute("DELETE FROM auth_sessions")
+            db.conn.executemany(
+                "INSERT OR REPLACE INTO auth_sessions(fingerprint, expires_at) VALUES (?, ?)",
+                [(str(k), float(v)) for k, v in sessions.items()],
+            )
+            db.conn.commit()
+    except (sqlite3.Error, TypeError, ValueError):
         pass
 
 

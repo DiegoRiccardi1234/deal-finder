@@ -3,26 +3,23 @@
 Registra il prezzo minimo trovato per ogni query a ogni ricerca, così da
 mostrare il trend nel tempo e segnalare quando un prezzo scende sotto soglia
 o tocca un nuovo minimo storico.
+
+Persistito su SQLite (`offerte.db`). Prima era un JSON riscritto per intero a
+ogni `record()`: append O(n) sull'intero storico, non atomico, e un file
+corrotto veniva letto come lista vuota — quindi il primo `record()` successivo
+cancellava definitivamente tutto lo storico dei prezzi.
 """
 
 from __future__ import annotations
 
-import json
-import os
+import sqlite3
 import time
 from typing import Any
 
-_DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
-PRICE_HISTORY_FILE = os.path.join(_DATA_DIR, "price_history.json")
+from offerte.db import DEFAULT_DB_PATH, get_db
 
-
-def _load(path: str) -> list[dict[str, Any]]:
-    try:
-        with open(path, encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, list) else []
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return []
+#: Mantenuto per compatibilità: i chiamanti passano `path=` per scegliere il db.
+PRICE_HISTORY_FILE = DEFAULT_DB_PATH
 
 
 def _norm(query: str) -> str:
@@ -30,43 +27,66 @@ def _norm(query: str) -> str:
 
 
 def record(
-    query: str, min_price: float | None, *, now: float | None = None, path: str = PRICE_HISTORY_FILE
+    query: str,
+    min_price: float | None,
+    *,
+    now: float | None = None,
+    path: str = DEFAULT_DB_PATH,
 ) -> None:
     """Registra il prezzo minimo per `query` al tempo `now`."""
     q = _norm(query)
     if not q or min_price is None:
         return
     now = time.time() if now is None else now
-    data = _load(path)
-    data.append({"query": q, "min_price": float(min_price), "ts": float(now)})
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False)
-    except OSError:
+        get_db(path).execute(
+            "INSERT INTO price_history(query, min_price, ts) VALUES (?, ?, ?)",
+            (q, float(min_price), float(now)),
+        )
+    except sqlite3.Error:
         pass
 
 
-def history_for(query: str, *, path: str = PRICE_HISTORY_FILE) -> list[dict[str, Any]]:
+def history_for(query: str, *, path: str = DEFAULT_DB_PATH) -> list[dict[str, Any]]:
     """Voci dello storico per `query`, ordinate per tempo crescente."""
     q = _norm(query)
-    entries = [e for e in _load(path) if e.get("query") == q]
-    entries.sort(key=lambda e: float(e.get("ts", 0)))
-    return entries
-
-
-def lowest_ever(query: str, *, path: str = PRICE_HISTORY_FILE) -> float | None:
-    """Prezzo minimo mai registrato per `query`, o None se non c'è storico."""
-    prices = [
-        float(e["min_price"])
-        for e in history_for(query, path=path)
-        if e.get("min_price") is not None
+    if not q:
+        return []
+    try:
+        rows = get_db(path).query(
+            "SELECT query, min_price, ts FROM price_history WHERE query = ? ORDER BY ts ASC",
+            (q,),
+        )
+    except sqlite3.Error:
+        return []
+    return [
+        {"query": r["query"], "min_price": float(r["min_price"]), "ts": float(r["ts"])}
+        for r in rows
     ]
-    return min(prices) if prices else None
 
 
-def is_new_low(query: str, current_min: float | None, *, path: str = PRICE_HISTORY_FILE) -> bool:
-    """True se `current_min` è sotto il minimo storico (o non c'è ancora storico)."""
+def lowest_ever(query: str, *, path: str = DEFAULT_DB_PATH) -> float | None:
+    """Prezzo minimo mai registrato per `query`, o None se non c'è storico."""
+    q = _norm(query)
+    if not q:
+        return None
+    try:
+        row = get_db(path).query_one(
+            "SELECT MIN(min_price) AS low FROM price_history WHERE query = ?", (q,)
+        )
+    except sqlite3.Error:
+        return None
+    if row is None or row["low"] is None:
+        return None
+    return float(row["low"])
+
+
+def is_new_low(query: str, current_min: float | None, *, path: str = DEFAULT_DB_PATH) -> bool:
+    """True se `current_min` è sotto il minimo storico (o non c'è ancora storico).
+
+    Va chiamata PRIMA di `record()`, altrimenti il valore corrente è già nello
+    storico e non risulterà mai un nuovo minimo.
+    """
     if current_min is None:
         return False
     low = lowest_ever(query, path=path)

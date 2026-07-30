@@ -1,26 +1,51 @@
-"""Persistenza semplice dello storico ricerche per la UI Streamlit."""
+"""Persistenza dello storico ricerche per la UI Streamlit.
+
+Su SQLite (`offerte.db`). La dedup per query normalizzata è la PRIMARY KEY
+invece di un filtro in Python fra una lettura e una riscrittura non atomiche.
+"""
 
 from __future__ import annotations
 
 import json
-import os
+import sqlite3
 from datetime import datetime
 from typing import Any
 
-_DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
-os.makedirs(_DATA_DIR, exist_ok=True)
-HISTORY_FILE = os.path.join(_DATA_DIR, "search_history.json")
+from offerte.db import DEFAULT_DB_PATH, get_db
+
+#: Mantenuto per compatibilità: i chiamanti passano `path=` per scegliere il db.
+HISTORY_FILE = DEFAULT_DB_PATH
 MAX_ENTRIES = 20
 
 
-def load_history() -> list[dict[str, Any]]:
-    """Carica lo storico ricerche dal file JSON, se disponibile."""
+def load_history(*, path: str = DEFAULT_DB_PATH) -> list[dict[str, Any]]:
+    """Storico ricerche, dalla più recente."""
     try:
-        with open(HISTORY_FILE, encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, list) else []
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        rows = get_db(path).query(
+            "SELECT query, budget_min, budget_max, condizione, fonti, results_count, timestamp "
+            "FROM search_history ORDER BY timestamp DESC, rowid DESC LIMIT ?",
+            (MAX_ENTRIES,),
+        )
+    except sqlite3.Error:
         return []
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        try:
+            fonti = json.loads(r["fonti"])
+        except json.JSONDecodeError:
+            fonti = []
+        out.append(
+            {
+                "query": r["query"],
+                "budget_min": int(r["budget_min"]),
+                "budget_max": int(r["budget_max"]),
+                "condizione": r["condizione"],
+                "fonti": fonti if isinstance(fonti, list) else [],
+                "results_count": int(r["results_count"]),
+                "timestamp": r["timestamp"],
+            }
+        )
+    return out
 
 
 def save_search(
@@ -30,32 +55,45 @@ def save_search(
     condizione: str,
     fonti: list[str],
     results_count: int,
+    *,
+    path: str = DEFAULT_DB_PATH,
 ) -> None:
     """Salva una ricerca in testa allo storico, deduplicando per query."""
     clean_query = str(query or "").strip()
     if not clean_query:
         return
-
-    history = load_history()
-    entry = {
-        "query": clean_query,
-        "budget_min": int(budget_min),
-        "budget_max": int(budget_max),
-        "condizione": str(condizione or "tutti"),
-        "fonti": list(fonti or []),
-        "results_count": int(results_count),
-        "timestamp": datetime.now().isoformat(timespec="seconds"),
-    }
-
-    history = [
-        item
-        for item in history
-        if str(item.get("query", "")).strip().lower() != clean_query.lower()
-    ]
-    history.insert(0, entry)
-
     try:
-        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-            json.dump(history[:MAX_ENTRIES], f, ensure_ascii=False, indent=2)
-    except OSError:
+        db = get_db(path)
+        db.execute(
+            "INSERT INTO search_history"
+            "(query_norm, query, budget_min, budget_max, condizione, fonti, results_count, timestamp)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT(query_norm) DO UPDATE SET"
+            "   query = excluded.query,"
+            "   budget_min = excluded.budget_min,"
+            "   budget_max = excluded.budget_max,"
+            "   condizione = excluded.condizione,"
+            "   fonti = excluded.fonti,"
+            "   results_count = excluded.results_count,"
+            "   timestamp = excluded.timestamp",
+            (
+                clean_query.lower(),
+                clean_query,
+                int(budget_min),
+                int(budget_max),
+                str(condizione or "tutti"),
+                json.dumps(list(fonti or []), ensure_ascii=False),
+                int(results_count),
+                datetime.now().isoformat(timespec="seconds"),
+            ),
+        )
+        # Tiene solo le MAX_ENTRIES più recenti. Prima il troncamento avveniva
+        # in memoria a ogni salvataggio; qui è una DELETE mirata.
+        db.execute(
+            "DELETE FROM search_history WHERE query_norm NOT IN ("
+            "  SELECT query_norm FROM search_history ORDER BY timestamp DESC, rowid DESC LIMIT ?"
+            ")",
+            (MAX_ENTRIES,),
+        )
+    except sqlite3.Error:
         pass

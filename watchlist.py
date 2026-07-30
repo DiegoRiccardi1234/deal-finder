@@ -1,65 +1,92 @@
-"""Watchlist / preferiti: prodotti salvati dall'utente, persistiti su disco.
+"""Watchlist / preferiti: prodotti salvati dall'utente.
 
-Stesso pattern di persistenza JSON di `search_history.py`.
+Persistita su SQLite (`offerte.db`). La dedup per link, che prima era una
+scansione lineare in Python fra un `load()` e un `_save()` non atomici (due
+click ravvicinati potevano inserire un doppione o perdere un inserimento), è
+adesso la PRIMARY KEY della tabella: se il link c'è già, `INSERT` non passa.
 """
 
 from __future__ import annotations
 
-import json
-import os
+import sqlite3
 from datetime import datetime
 from typing import Any
 
-_DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
-WATCHLIST_FILE = os.path.join(_DATA_DIR, "watchlist.json")
+from offerte.db import DEFAULT_DB_PATH, get_db
+
+#: Mantenuto per compatibilità: i chiamanti passano `path=` per scegliere il db.
+WATCHLIST_FILE = DEFAULT_DB_PATH
 
 
-def load(*, path: str = WATCHLIST_FILE) -> list[dict[str, Any]]:
+def load(*, path: str = DEFAULT_DB_PATH) -> list[dict[str, Any]]:
+    """Preferiti, dal più recente al più vecchio."""
     try:
-        with open(path, encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, list) else []
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        rows = get_db(path).query(
+            "SELECT nome, prezzo, link, fonte, timestamp FROM watchlist "
+            "ORDER BY timestamp DESC, rowid DESC"
+        )
+    except sqlite3.Error:
         return []
+    return [
+        {
+            "nome": r["nome"],
+            "prezzo": float(r["prezzo"]) if r["prezzo"] is not None else None,
+            "link": r["link"],
+            "fonte": r["fonte"],
+            "timestamp": r["timestamp"],
+        }
+        for r in rows
+    ]
 
 
-def _save(items: list[dict[str, Any]], path: str) -> None:
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(items, f, ensure_ascii=False, indent=2)
-    except OSError:
-        pass
-
-
-def is_watched(link: str, *, path: str = WATCHLIST_FILE) -> bool:
+def is_watched(link: str, *, path: str = DEFAULT_DB_PATH) -> bool:
     target = str(link or "").strip()
-    return any(str(i.get("link", "")).strip() == target for i in load(path=path))
+    if not target:
+        return False
+    try:
+        return (
+            get_db(path).query_one("SELECT 1 FROM watchlist WHERE link = ?", (target,)) is not None
+        )
+    except sqlite3.Error:
+        return False
 
 
 def add_item(
-    nome: str, prezzo: float | None, link: str, fonte: str, *, path: str = WATCHLIST_FILE
+    nome: str,
+    prezzo: float | None,
+    link: str,
+    fonte: str,
+    *,
+    path: str = DEFAULT_DB_PATH,
 ) -> bool:
     """Aggiunge un prodotto. Dedup per link: ritorna False se già presente."""
     target = str(link or "").strip()
-    if not target or is_watched(target, path=path):
+    if not target:
         return False
-    items = load(path=path)
-    items.insert(
-        0,
-        {
-            "nome": str(nome or "").strip(),
-            "prezzo": float(prezzo) if prezzo is not None else None,
-            "link": target,
-            "fonte": str(fonte or ""),
-            "timestamp": datetime.now().isoformat(timespec="seconds"),
-        },
-    )
-    _save(items, path)
-    return True
+    try:
+        cur = get_db(path).execute(
+            "INSERT OR IGNORE INTO watchlist(link, nome, prezzo, fonte, timestamp) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                target,
+                str(nome or "").strip(),
+                float(prezzo) if prezzo is not None else None,
+                str(fonte or ""),
+                datetime.now().isoformat(timespec="seconds"),
+            ),
+        )
+    except sqlite3.Error:
+        return False
+    # `OR IGNORE` non inserisce nulla se il link c'è già: rowcount distingue i
+    # due casi senza una SELECT preventiva, quindi senza finestra di race.
+    return bool(cur.rowcount)
 
 
-def remove(link: str, *, path: str = WATCHLIST_FILE) -> None:
+def remove(link: str, *, path: str = DEFAULT_DB_PATH) -> None:
     target = str(link or "").strip()
-    items = [i for i in load(path=path) if str(i.get("link", "")).strip() != target]
-    _save(items, path)
+    if not target:
+        return
+    try:
+        get_db(path).execute("DELETE FROM watchlist WHERE link = ?", (target,))
+    except sqlite3.Error:
+        pass

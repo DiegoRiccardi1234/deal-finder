@@ -37,7 +37,9 @@ do not re-scrape and do not burn through rate limits.
 | `filters.py` | `is_relevant` and the hard spec filters |
 | `dedup.py` | `_deduplica` — collapses the same product across sources, keeping the cheapest |
 | `http.py` | `fetch_with_retry`, `get_headers`, `_random_delay` |
-| `cache.py` | Disk-backed search cache with TTL (`data/search_cache.json`) |
+| `cache.py` | Search cache with TTL, persisted in SQLite |
+| `db.py` | Shared SQLite connection, WAL, writer lock — see [Persistence](#persistence) |
+| `migrations.py` | Schema versions plus the one-time import of legacy JSON stores |
 | `config.py` | Tunable constants. Holds `VERSION`, the single source of truth also read by `pyproject.toml` |
 | `export.py` | `print_results`, `export_to_csv` |
 | `cli.py` | `argparse` entry point — installed as the `deal-finder` command |
@@ -93,15 +95,39 @@ same variables. Component rules never hardcode colours — they read `var(...)`,
 so dark mode follows automatically. `_shared.load_css(theme)` swaps which block
 is active. Adding a second `:root` or a literal colour breaks dark mode.
 
-## Feature & persistence modules
+## Persistence
 
-| Module | Storage |
+Everything mutable lives in one SQLite database, `data/deal_finder.db`, opened
+through `offerte/db.py`. The connection uses `check_same_thread=False` because
+Streamlit serves reruns from different threads and the knowledge-base updater runs
+in a daemon thread; a `threading.RLock` serialises writes, and WAL journalling
+lets readers proceed during a write. `offerte/migrations.py` owns the schema,
+versioned via `PRAGMA user_version`.
+
+This replaced six independent JSON files. The reason was not tidiness: none of
+those writes was atomic (`open(w)` + `json.dump`, so a crash mid-write left
+truncated JSON), the cache did read-modify-write with no lock — a benchmark of 24
+concurrent writers lost 22 of them — and every reader swallowed
+`JSONDecodeError` and returned an empty container, so a corrupted file looked
+like "no data" and the next write destroyed the history for good. On first start
+the legacy files are imported automatically and renamed `*.json.migrated`, so
+upgrading does not lose a watchlist or a price history.
+
+| Module | Table |
 |---|---|
-| `knowledge_base.py` | `data/knowledge_base.json` — product KB, refreshed in a background thread |
-| `search_history.py` | `data/search_history.json` |
-| `watchlist.py` | `data/watchlist.json` — favourites, de-duplicated by link |
-| `price_history.py` | `data/price_history.json` — per-query minimum price, `is_new_low`, `below_threshold` |
-| `updater.py` | Checks GitHub releases and self-updates local installs |
+| `offerte/cache.py` | `search_cache` — keyed by the hash from `make_cache_key`, with TTL and `purge_expired` |
+| `price_history.py` | `price_history` — append-only; `is_new_low`, `lowest_ever`, `below_threshold` |
+| `watchlist.py` | `watchlist` — favourites; the link is the primary key, so de-duplication is a constraint |
+| `search_history.py` | `search_history` — normalised query as primary key, capped at `MAX_ENTRIES` |
+| `ui/auth.py` | `auth_sessions` — session fingerprint to expiry |
+| `knowledge_base.py` | `kb_state`, `kb_unknown_items` — product KB refreshed in a background thread |
+
+`data/knowledge_base.json` is still tracked in git, but only as a **read-only
+seed** used when `kb_state` is empty. It used to be rewritten by the updater,
+which meant every launch of the UI left the working tree dirty.
+
+`updater.py` sits outside this: it checks GitHub releases and self-updates local
+installs.
 
 ## Tests
 
@@ -127,7 +153,8 @@ than by the suite.
 Local runs read `.streamlit/secrets.toml` (template:
 `.streamlit/secrets.toml.example`). Docker reads environment variables from
 `.env` (template: `.env.example`) — `.streamlit/secrets.toml` is excluded from
-the Docker build context, so the container cannot see it.
+the Docker build context, so the container cannot see it. `docker-compose.yml`
+mounts `./data`, so the SQLite database survives container restarts.
 
 Every key is optional. Without any key, scraping still works and the AI
 features stay off; eBay falls back from the Browse API to HTML scraping.

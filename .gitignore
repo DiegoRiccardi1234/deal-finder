@@ -41,6 +41,14 @@ data/search_cache.json
 data/watchlist.json
 data/price_history.json
 
+# Database SQLite dell'app (dati runtime). `-wal` e `-shm` sono i file
+# ausiliari del journal WAL: vanno ignorati insieme al database.
+data/deal_finder.db
+data/deal_finder.db-wal
+data/deal_finder.db-shm
+# JSON legacy rinominati dopo l'import automatico in SQLite
+data/*.json.migrated
+
 # Note operative di sessione e istruzioni per agenti AI: utili in locale, ma
 # rumore per chi apre il repo (e in italiano). L'architettura pubblica sta in
 # ARCHITECTURE.md, la roadmap nella tabella "Sources" del README.

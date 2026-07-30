@@ -1,30 +1,68 @@
 """
 knowledge_base.py — Gestione knowledge base prodotti per Deal Finder.
 
-- Si aggiorna automaticamente via Cerebras ogni 7 giorni (thread background).
-- Se il JSON non esiste o è scaduto viene rigenerato al primo accesso al sito.
+- Si aggiorna automaticamente via il provider AI attivo ogni 7 giorni (thread
+  background).
+- Se lo stato non esiste o è scaduto viene rigenerato al primo accesso al sito.
 - Traccia item sconosciuti incontrati nella chat → li elabora al prossimo update.
 - Genera kb_update_report.md dopo ogni aggiornamento.
+
+Lo stato vive in SQLite (`offerte.db`, tabelle `kb_state` e `kb_unknown_items`).
+`data/knowledge_base.json` resta come seed iniziale di sola lettura: prima veniva
+riscritto dall'updater, ed essendo tracciato da git sporcava il working tree a
+ogni avvio della UI.
 """
 
 from __future__ import annotations
 
 import json
+import sqlite3
 import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from offerte.db import get_db
+
 _DATA_DIR = Path(__file__).parent / "data"
 _DATA_DIR.mkdir(exist_ok=True)
+# Seed di SOLA LETTURA, tracciato da git. Lo stato runtime della KB vive in
+# SQLite (tabella `kb_state`): questo file non viene mai riscritto.
 _KB_PATH = _DATA_DIR / "knowledge_base.json"
-_UNKNOWN_PATH = _DATA_DIR / "kb_unknown_items.json"
 _REPORT_PATH = _DATA_DIR / "kb_update_report.md"
 _UPDATE_INTERVAL_DAYS = 7
 
 _lock = threading.Lock()
+
+# Lock separato per il solo flag di "aggiornamento in corso". Deve essere
+# distinto da `_lock`: quest'ultimo è già preso da `load_kb()`, che viene
+# chiamata mentre si decide se avviare l'updater, quindi riusarlo qui
+# significherebbe deadlock (Lock non è reentrant).
+_update_flag_lock = threading.Lock()
 _update_in_progress = False
+
+
+def _try_claim_update() -> bool:
+    """Test-and-set atomico del flag. True se il chiamante ha preso il turno.
+
+    Prima era `if _update_in_progress: return` seguito da `_update_in_progress =
+    True`: due rerun ravvicinati di Streamlit passavano entrambi il controllo e
+    avviavano due updater sulla stessa knowledge base.
+    """
+    global _update_in_progress
+    with _update_flag_lock:
+        if _update_in_progress:
+            return False
+        _update_in_progress = True
+        return True
+
+
+def _release_update() -> None:
+    global _update_in_progress
+    with _update_flag_lock:
+        _update_in_progress = False
+
 
 # ── Schema base (usato come fallback e seed per Cerebras) ─────────────────────
 _BASE_KB: dict[str, Any] = {
@@ -433,20 +471,50 @@ _BASE_KB: dict[str, Any] = {
 # ── I/O ───────────────────────────────────────────────────────────────────────
 
 
-def load_kb() -> dict[str, Any]:
-    """Carica KB da disco. Ritorna _BASE_KB se mancante o corrotto."""
+def _read_seed_kb() -> dict[str, Any] | None:
+    """Legge il seed `data/knowledge_base.json`, che è tracciato e di SOLA lettura."""
     try:
         if _KB_PATH.exists():
-            with _lock:
-                data = json.loads(_KB_PATH.read_text(encoding="utf-8"))
+            data = json.loads(_KB_PATH.read_text(encoding="utf-8"))
             if isinstance(data, dict) and "categorie" in data:
-                # Merge: assicura che categorie aggiunte dopo l'ultima scrittura esistano
-                for cat, base_val in _BASE_KB["categorie"].items():
-                    if cat not in data["categorie"]:
-                        data["categorie"][cat] = base_val
                 return data
-    except Exception:
+    except (OSError, json.JSONDecodeError):
         pass
+    return None
+
+
+def load_kb() -> dict[str, Any]:
+    """Carica la KB: prima lo stato runtime in SQLite, poi il seed, poi _BASE_KB.
+
+    L'intera sequenza gira sotto `_lock` perché il merge con `_BASE_KB` avveniva
+    fuori dal lock che proteggeva la lettura: l'updater in background poteva
+    scrivere nel frattempo e il merge partiva da dati già superati.
+    """
+    data: dict[str, Any] | None = None
+    with _lock:
+        try:
+            row = get_db().query_one(
+                "SELECT updated_at, version, categorie FROM kb_state WHERE id = 1"
+            )
+            if row is not None:
+                data = {
+                    "updated_at": row["updated_at"],
+                    "version": int(row["version"]),
+                    "categorie": json.loads(row["categorie"]),
+                }
+        except (sqlite3.Error, json.JSONDecodeError):
+            data = None
+
+        if data is None:
+            data = _read_seed_kb()
+
+        if isinstance(data, dict) and isinstance(data.get("categorie"), dict):
+            # Merge: assicura che categorie aggiunte dopo l'ultima scrittura esistano
+            for cat, base_val in _BASE_KB["categorie"].items():
+                if cat not in data["categorie"]:
+                    data["categorie"][cat] = base_val
+            return data
+
     return json.loads(json.dumps(_BASE_KB))  # deep copy
 
 
@@ -460,8 +528,26 @@ def needs_update(kb: dict[str, Any]) -> bool:
 
 
 def _save_kb(kb: dict[str, Any]) -> None:
+    """Persiste la KB in SQLite.
+
+    NON scrive `data/knowledge_base.json`: quel file è tracciato da git e serve
+    solo come seed iniziale. Prima veniva riscritto qui, quindi ogni avvio della
+    UI lasciava il working tree sporco.
+    """
     with _lock:
-        _KB_PATH.write_text(json.dumps(kb, ensure_ascii=False, indent=2), encoding="utf-8")
+        try:
+            get_db().execute(
+                "INSERT INTO kb_state(id, updated_at, version, categorie) VALUES (1, ?, ?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at, "
+                "version = excluded.version, categorie = excluded.categorie",
+                (
+                    str(kb.get("updated_at", "")),
+                    int(kb.get("version", 1) or 1),
+                    json.dumps(kb.get("categorie", {}), ensure_ascii=False),
+                ),
+            )
+        except (sqlite3.Error, TypeError, ValueError):
+            pass
 
 
 # ── Cerebras update ───────────────────────────────────────────────────────────
@@ -571,20 +657,23 @@ def _generate_report(old_kb: dict[str, Any], new_kb: dict[str, Any], errors: lis
 
     # Sezione item sconosciuti
     try:
-        if _UNKNOWN_PATH.exists():
-            unknowns: dict[str, list] = json.loads(_UNKNOWN_PATH.read_text(encoding="utf-8"))
-            if any(unknowns.values()):
-                lines += [
-                    "## Item sconosciuti rilevati dagli utenti",
-                    "*(questi item sono stati menzionati nelle chat ma non erano nel KB — valuta se integrarli)*",
-                    "",
-                ]
-                for cat, items in unknowns.items():
-                    if items:
-                        lines.append(f"### {cat}")
-                        for item in items:
-                            lines.append(f"- {item}")
-                lines.append("")
+        unknowns: dict[str, list[str]] = {}
+        for row in get_db().query(
+            "SELECT categoria, item FROM kb_unknown_items ORDER BY categoria, item"
+        ):
+            unknowns.setdefault(row["categoria"], []).append(row["item"])
+        if any(unknowns.values()):
+            lines += [
+                "## Item sconosciuti rilevati dagli utenti",
+                "*(questi item sono stati menzionati nelle chat ma non erano nel KB — valuta se integrarli)*",
+                "",
+            ]
+            for cat, items in unknowns.items():
+                if items:
+                    lines.append(f"### {cat}")
+                    for item in items:
+                        lines.append(f"- {item}")
+            lines.append("")
     except Exception:
         pass
 
@@ -602,7 +691,6 @@ def _generate_report(old_kb: dict[str, Any], new_kb: dict[str, Any], errors: lis
 
 def _update_kb_worker(api_key: str) -> None:
     """Worker background: aggiorna ogni categoria via il provider AI attivo e salva."""
-    global _update_in_progress
     print("[KB] Inizio aggiornamento knowledge base via provider AI...")
 
     try:
@@ -615,7 +703,7 @@ def _update_kb_worker(api_key: str) -> None:
             raise RuntimeError("nessun provider AI configurato")
     except Exception as exc:
         print(f"[KB] Impossibile inizializzare il provider AI: {exc}")
-        _update_in_progress = False
+        _release_update()
         return
 
     old_kb = load_kb()
@@ -651,12 +739,12 @@ def _update_kb_worker(api_key: str) -> None:
 
     # Svuota unknown items dopo averli inclusi nel report
     try:
-        _UNKNOWN_PATH.write_text("{}", encoding="utf-8")
-    except Exception:
+        get_db().execute("DELETE FROM kb_unknown_items")
+    except sqlite3.Error:
         pass
 
     print(f"[KB] Aggiornamento completato. Versione {new_kb['version']}. Errori: {len(errors)}")
-    _update_in_progress = False
+    _release_update()
 
 
 # ── API pubblica ──────────────────────────────────────────────────────────────
@@ -668,17 +756,18 @@ def init_kb_on_startup(api_key: str) -> None:
     Se KB assente o > 7 giorni vecchio, lancia aggiornamento in background.
     Non blocca la UI — l'aggiornamento avviene in parallelo.
     """
-    global _update_in_progress
-    if _update_in_progress or not api_key:
+    if not api_key:
         return
-    kb = load_kb()
-    if needs_update(kb):
-        _update_in_progress = True
-        t = threading.Thread(
-            target=_update_kb_worker, args=(api_key,), daemon=True, name="kb-updater"
-        )
-        t.start()
-        print("[KB] Thread aggiornamento avviato in background.")
+    # `load_kb()` prende `_lock`, quindi va chiamata FUORI dal flag lock.
+    if not needs_update(load_kb()):
+        return
+    # Il claim avviene dopo la lettura: se un altro rerun ha già iniziato nel
+    # frattempo, qui perdiamo la corsa ed è corretto non fare nulla.
+    if not _try_claim_update():
+        return
+    t = threading.Thread(target=_update_kb_worker, args=(api_key,), daemon=True, name="kb-updater")
+    t.start()
+    print("[KB] Thread aggiornamento avviato in background.")
 
 
 def track_unknown(categoria: str, item: str) -> None:
@@ -688,18 +777,16 @@ def track_unknown(categoria: str, item: str) -> None:
     """
     if not item or not categoria:
         return
+    # Un solo INSERT: la coppia (categoria, item) è PRIMARY KEY, quindi il
+    # "già presente?" lo decide il database. Prima era una lettura fuori dal lock
+    # seguita da una scrittura dentro — due item concorrenti sulla stessa
+    # categoria si sovrascrivevano a vicenda.
     try:
-        unknowns: dict[str, list] = {}
-        if _UNKNOWN_PATH.exists():
-            unknowns = json.loads(_UNKNOWN_PATH.read_text(encoding="utf-8"))
-        bucket = unknowns.setdefault(categoria, [])
-        if item not in bucket:
-            bucket.append(item)
-            with _lock:
-                _UNKNOWN_PATH.write_text(
-                    json.dumps(unknowns, ensure_ascii=False, indent=2), encoding="utf-8"
-                )
-    except Exception:
+        get_db().execute(
+            "INSERT OR IGNORE INTO kb_unknown_items(categoria, item, first_seen) VALUES (?, ?, ?)",
+            (str(categoria), str(item), datetime.now().isoformat(timespec="seconds")),
+        )
+    except sqlite3.Error:
         pass
 
 
@@ -769,7 +856,9 @@ def get_status() -> str:
         ts_label = ts[:16].replace("T", " ")
     ver = kb.get("version", 0)
     n_cat = len(kb.get("categorie", {}))
-    suffix = " · aggiornamento in corso..." if _update_in_progress else ""
+    with _update_flag_lock:
+        in_progress = _update_in_progress
+    suffix = " · aggiornamento in corso..." if in_progress else ""
     return f"KB v{ver} · {n_cat} categorie · {ts_label}{suffix}"
 
 
@@ -778,9 +867,7 @@ def force_update(api_key: str) -> bool:
     Forza un aggiornamento immediato (bloccante) — da usare solo in script/debug.
     In produzione usa init_kb_on_startup() che è non bloccante.
     """
-    global _update_in_progress
-    if _update_in_progress:
+    if not _try_claim_update():
         return False
-    _update_in_progress = True
     _update_kb_worker(api_key)
     return True
