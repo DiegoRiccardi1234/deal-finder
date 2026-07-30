@@ -13,8 +13,13 @@ from offerte.http import _random_delay
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import is_relevant
 
-# Unieuro usa Algolia come motore di ricerca prodotti (chiave pubblica esposta
-# nel bundle JS del sito). Non serve Playwright né OAuth token.
+# Unieuro usa Algolia come motore di ricerca prodotti. Non serve Playwright né
+# OAuth token.
+# La chiave è *search-only pubblica*: il sito la pubblica nel proprio bundle JS,
+# dove il browser di qualsiasi visitatore la legge, e questo scraper chiama lo
+# stesso endpoint di ricerca del loro frontend. Non è una credenziale di questo
+# progetto e concede solo la ricerca del catalogo in lettura.
+# Vedi la sezione "Third-party public keys in source" in SECURITY.md.
 _UNIEURO_ALGOLIA_URL = (
     "https://mnbcenyfii-dsn.algolia.net/1/indexes/*/queries"
     "?x-algolia-api-key=977ed8d06b718d4929ca789c78c4107a"

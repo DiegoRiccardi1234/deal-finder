@@ -41,15 +41,28 @@ data/search_cache.json
 data/watchlist.json
 data/price_history.json
 
-# Handoff di sessione (locale, mai committato)
+# Note operative di sessione e istruzioni per agenti AI: utili in locale, ma
+# rumore per chi apre il repo (e in italiano). L'architettura pubblica sta in
+# ARCHITECTURE.md, la roadmap nella tabella "Sources" del README.
 HANDOFF.md
 APPUNTI.md
+TODO.md
+CLAUDE.md
+tests/CLAUDE.md
+.streamlit/CLAUDE.md
+.github/copilot-instructions.md
 
 # Artefatto Windows (nome device riservato)
 nul
 
 # ZIP di release generati localmente
 dist/
+
+# Artefatti di build/install (`pip install -e .`)
+*.egg-info/
+
+# Report markdown generato dall'auto-update della knowledge base
+data/kb_update_report.md
 
 # Artefatti probe real-network (dump rigenerabili, possono contenere dati scrapati)
 tests/probe_siti_results.json

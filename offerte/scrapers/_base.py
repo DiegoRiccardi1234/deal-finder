@@ -46,15 +46,7 @@ def _get_ebay_token(app_id: str, cert_id: str) -> str:
     return access_token
 
 
-_UNIEURO_ALGOLIA_URL = (
-    "https://mnbcenyfii-dsn.algolia.net/1/indexes/*/queries"
-    "?x-algolia-api-key=977ed8d06b718d4929ca789c78c4107a"
-    "&x-algolia-application-id=MNBCENYFII"
-)
-
-_WALLAPOP_COMPONENTS_URL = "https://api.wallapop.com/api/v3/search/components"
-_WALLAPOP_SECTION_URL = "https://api.wallapop.com/api/v3/search/section"
-
-_COMET_ALGOLIA_URL = "https://mvk2s77iyi-dsn.algolia.net/1/indexes/*/queries"
-_COMET_ALGOLIA_APP_ID = "MVK2S77IYI"
-_COMET_ALGOLIA_API_KEY = "f7f4f516742fcb4597c1e71641f7d0ed"
+# NB: qui vivevano anche copie delle costanti di endpoint di Unieuro, Comet e
+# Wallapop, residuo dello split del monolite. Erano codice morto — ogni scraper
+# definisce e usa le proprie — e duplicavano le chiavi Algolia in un secondo
+# punto del repo. Rimosse: le costanti stanno nel modulo che le usa.

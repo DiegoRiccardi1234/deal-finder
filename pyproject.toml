@@ -1,12 +1,45 @@
 [project]
-name = "trova-prezzi-mio"
-version = "1.1.0"
-description = "Price-comparison tool per e-commerce italiani con UI Streamlit e chat AI Cerebras"
+name = "deal-finder"
+description = "AI-assisted price-comparison tool for Italian e-commerce, with a pluggable LLM backend"
 requires-python = ">=3.11"
 readme = "README.md"
+license = { text = "MIT" }
+# La versione NON è duplicata qui: unica sorgente `offerte.config.VERSION`,
+# letta da [tool.setuptools.dynamic]. Prima erano tre valori indipendenti
+# (pyproject, config.py, badge README) e divergevano.
+dynamic = ["version"]
 
-# Le dipendenze sono gestite via requirements.txt / requirements-test.txt.
+# Le dipendenze runtime sono gestite via requirements.txt / requirements-test.txt.
 # La configurazione pytest resta in pytest.ini.
+
+[project.scripts]
+deal-finder = "offerte.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/DiegoRiccardi1234/deal-finder"
+Changelog = "https://github.com/DiegoRiccardi1234/deal-finder/blob/main/CHANGELOG.md"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+version = { attr = "offerte.config.VERSION" }
+
+# Layout flat con molti moduli top-level: l'auto-discovery di setuptools
+# fallirebbe, quindi packages e py-modules sono espliciti.
+[tool.setuptools]
+packages = ["offerte", "offerte.scrapers", "ui"]
+py-modules = [
+    "app",
+    "_shared",
+    "offerte_tech",
+    "knowledge_base",
+    "price_history",
+    "search_history",
+    "watchlist",
+    "updater",
+]
 
 [tool.ruff]
 line-length = 100
@@ -34,8 +67,10 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Test e probe: ridefinizioni, asserzioni e helper liberi.
 "tests/*" = ["F401", "F811", "B011", "E741", "E731"]
-# Tool one-shot del refactor: non vale la pena irrigidirli.
-"tools/*" = ["B023", "F401"]
+# NB: l'eccezione "tools/*" = ["B023", "F401"] è stata rimossa insieme agli
+# script one-shot del refactor che la richiedevano. Ciò che resta in tools/
+# passa il lint pieno: se serve reintrodurla, è il segnale di un nuovo script
+# da tenere fuori dal repo.
 
 [tool.mypy]
 # Advisory, non-strict: obiettivo segnale, non blocco della CI.

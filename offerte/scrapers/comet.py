@@ -16,6 +16,11 @@ from offerte.filters import is_relevant
 # ===========================================================================
 _COMET_ALGOLIA_URL = "https://mvk2s77iyi-dsn.algolia.net/1/indexes/*/queries"
 _COMET_ALGOLIA_APP_ID = "MVK2S77IYI"
+# Chiave Algolia *search-only pubblica* di Comet: il sito la pubblica nel proprio
+# bundle JS, dove il browser di qualsiasi visitatore la legge, e questo scraper
+# chiama lo stesso endpoint di ricerca del loro frontend. Non è una credenziale
+# di questo progetto e non concede altro che la ricerca del catalogo in lettura.
+# Vedi la sezione "Third-party public keys in source" in SECURITY.md.
 _COMET_ALGOLIA_API_KEY = "f7f4f516742fcb4597c1e71641f7d0ed"
 
 

@@ -4,13 +4,82 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Renamed the project to "Deal Finder"** (repo `deal-finder`), aligning it with
+  the sibling `job-finder`. The scraper for the *website* trovaprezzi.it keeps
+  its name — only the product was renamed.
+- `pyproject.toml` no longer duplicates the version: it is read from
+  `offerte.config.VERSION` via `[tool.setuptools.dynamic]`. Previously three
+  independent values (pyproject, `config.py`, README badge) had drifted apart —
+  1.1.0 vs 2.0.0 vs 2.0.0. The README badge now reads the latest GitHub release.
+- **The package is installable and the CLI is a real entry point.** Added
+  `[build-system]` and `[project.scripts]`, so `pip install -e .` exposes
+  `deal-finder`. `--help` no longer crashes on a Windows console: the emoji in
+  the argparse description caused a `UnicodeEncodeError` under cp1252.
+- `README.md` replaces the "14 scrapers" claim with a measured **Sources** table
+  (live / throttled / blocked) plus a "last verified" date, reproducible with
+  `tests/probe_scrapers.py`.
+- Internal session notes and AI-agent instructions (`CLAUDE.md`, `TODO.md`,
+  per-directory `CLAUDE.md`, `copilot-instructions.md`) are no longer tracked.
+  The public architecture reference is the new
+  [`ARCHITECTURE.md`](ARCHITECTURE.md), which the README links instead.
+
+### Fixed
+- **Trovaprezzi returned zero results.** The site was never blocking us — the
+  markup had changed. Search now redirects to a product page whose offers live
+  in `li.listing_item`, which works on both page types, unlike the previous
+  `a.suggested_product`. The shop reported is now the actual merchant (eBay, Bpm
+  power, …) instead of a flat "Trovaprezzi".
+- **Trovaprezzi silently dropped JSON-LD results.** In the fallback branch the
+  counter was incremented before being initialised, raising
+  `UnboundLocalError` on the *first* item; the enclosing `except Exception:
+  continue` swallowed it and skipped every remaining item in that script block.
+- **Euronics returned zero results.** Cloudflare answers 403 on `/search?q=`
+  while the home page stays 200, so the WAF rule targets the search path. The
+  scraper now calls the Salesforce Commerce Cloud AJAX endpoint the product grid
+  itself uses (`Search-UpdateGrid`).
+- **Euronics reported the wrong price and hid discounted products.** The price
+  selector picked `span.value` — the *recommended* list price — before
+  `span.price-formatted`, the actual sale price. Because the inflated value was
+  compared against the user's budget, discounted items were filtered out
+  entirely rather than merely mispriced.
+- **The Docker quickstart did not work as documented.** It told you to create
+  `.streamlit/secrets.toml`, but that path is excluded by `.dockerignore` and
+  compose only reads environment variables. Added the missing `.env.example`
+  and corrected README and SETUP.txt.
+- `tests/probe_scrapers.py` reported eBay as broken: running outside Streamlit it
+  never loaded `.streamlit/secrets.toml`, so it only ever exercised the HTML
+  fallback (403) instead of the working Browse API. It now loads the secrets and
+  covers all 14 sources — four of them (trovaprezzi, wallapop, comet, expert)
+  were missing from its list.
+
+### Security
+- `SECURITY.md` no longer claims "No credentials are ever committed", which was
+  false as written. It now distinguishes *your* secrets — never committed — from
+  two Algolia **search-only public keys** that Unieuro and Comet publish in their
+  own JavaScript bundles, and which the scrapers need. Both are annotated at
+  their definition with their provenance.
+- Removed dead duplicate copies of those keys from `offerte/scrapers/_base.py`;
+  every scraper already defined and used its own.
+- The session-fingerprint salt in `ui/auth.py` was the old product slug inline.
+  It is now a named constant documented as a salt, so a future rename cannot
+  invalidate stored sessions by accident.
+
+### Added
+- `ARCHITECTURE.md` — public module map, request flow, provider abstraction and
+  test layout, in English.
+- `.env.example` — template for the Docker path.
+
 ## [2.0.0] - 2026-07-05
 
 ### Security
 - **Purged a leaked Google Maps API key from the entire git history.** It had
   been committed inside the test-output dump `tests/probe_siti_results.json`
   (since 2026-04). History was rewritten with `git-filter-repo`; the file and
-  other probe dumps are now gitignored. The exposed key must be rotated.
+  other probe dumps are now gitignored. See [SECURITY.md](SECURITY.md) for the
+  current status of that incident.
 - Hardened `.gitignore`: added `.env`, `.env.local`, and the regenerable probe
   artifacts (`tests/probe_siti_results.json`, `report_siti.md`).
 
