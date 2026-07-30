@@ -1,12 +1,12 @@
 requests==2.34.2
 beautifulsoup4==4.15.0
 fake-useragent==2.2.0
-streamlit==1.58.0
+streamlit==1.60.0
 vinted-scraper==3.1.1
-playwright==1.60.0
+playwright==1.61.0
 
 # Provider AI (multi-provider via offerte/providers.py)
-cerebras-cloud-sdk==1.67.0
-openai==2.41.1
-anthropic==0.109.1
+cerebras-cloud-sdk==1.91.0
+openai==2.50.0
+anthropic==0.120.2
 google-generativeai==0.8.6
