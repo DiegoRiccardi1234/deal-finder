@@ -25,17 +25,32 @@ def scrape_euronics(
     """
     Scraper per euronics.it.
 
-    NOTE SELETTORI (validi a marzo 2026):
-        URL ricerca: /search?q=
+    NOTE SELETTORI (verificati 2026-07-30):
+        URL ricerca: endpoint AJAX SFCC `Search-UpdateGrid` (vedi FIX CLOUDFLARE)
         Container:   div.new-product-tile.flex-fill  (grid view — evita i duplicati della list-view)
-        Nome:        span.tile-name
-        Prezzo:      span.value  (visibile nella pagina, es. "€ 879,00")
-        Link:        a[href] (relativo → prepend euronics.it)
+        Nome:        span.tile-name          (es. "APPLE - iPhone 15 Plus 128GB-Nero")
+        Prezzo:      span.price-formatted    (es. "€ 699,00" — prezzo di vendita)
+        Link:        a.link-pdp[href] (relativo → prepend euronics.it)
+
+    FIX CLOUDFLARE (2026-07): `/search?q=` risponde 403 (`<title>Just a moment...`),
+    mentre la home resta 200 → la regola WAF colpisce il path di ricerca, non il
+    sito. Euronics è Salesforce Commerce Cloud (`/on/demandware.static/…`), quindi
+    si usa l'endpoint AJAX che la griglia stessa chiama per aggiornarsi:
+    `/on/demandware.store/Sites-euronics-Site/it_IT/Search-UpdateGrid?q=…&sz=…`
+    con `X-Requested-With: XMLHttpRequest`. Ritorna lo stesso markup delle tile.
 
     FIX STORICO: Accept-Encoding: identity è obbligatorio — senza, il server restituisce
     una pagina compressa/minimizzata di 38KB (bot-detection) invece dei 686KB reali.
+
+    ATTENZIONE PREZZI: nella tile convivono `span.price-formatted` (prezzo di
+    vendita) e `span.value` dentro `.more-price-details` (prezzo *consigliato*,
+    più alto). L'ordine dei selettori non è cosmetico: invertirlo fa riportare il
+    listino invece dello sconto.
     """
-    url = f"https://www.euronics.it/search?q={quote_plus(query)}"
+    url = (
+        "https://www.euronics.it/on/demandware.store/Sites-euronics-Site/it_IT/"
+        f"Search-UpdateGrid?q={quote_plus(query)}&sz=48"
+    )
     print(f'\n🔍 Cerco su Euronics.it: "{query}"')
     risultati: list[Offerta] = []
 
@@ -43,6 +58,7 @@ def scrape_euronics(
         headers = get_headers()
         headers["Referer"] = "https://www.euronics.it/"
         headers["Accept-Encoding"] = "identity"  # FIX: senza questo, risposta bot-detection 38KB
+        headers["X-Requested-With"] = "XMLHttpRequest"  # richiesto dall'endpoint Search-UpdateGrid
 
         resp = fetch_with_retry(url, headers)
         if resp.status_code in (401, 403, 429, 503):
@@ -107,11 +123,15 @@ def scrape_euronics(
                     if not nome:
                         continue
 
-                    # Prezzo: span.value (il prezzo visibile sulla pagina, es. "€ 879,00")
+                    # Prezzo di VENDITA: span.price-formatted (es. "€ 699,00").
+                    # `span.value` va tenuto solo come fallback: dentro
+                    # `.more-price-details` contiene il prezzo *consigliato*, più
+                    # alto, e metterlo per primo gonfia i prezzi degli scontati.
                     prezzo_tag = (
-                        card.select_one("span.value")
-                        or card.select_one("[class*='price'] span.value")
+                        card.select_one("span.price-formatted")
                         or card.select_one("[class*='price-formatted']")
+                        or card.select_one("[class*='price'] span.value")
+                        or card.select_one("span.value")
                         or card.select_one("[class*='price']")
                     )
                     if not prezzo_tag:

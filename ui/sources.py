@@ -27,6 +27,7 @@ except ImportError:
 _FONTE_LABELS: dict[str, str] = {
     "amazon": "Amazon.it",
     "ebay": "eBay.it",
+    "trovaprezzi": "Trovaprezzi.it",
     "vinted": "Vinted.it",
     "euronics": "Euronics.it",
     "unieuro": "Unieuro.it",

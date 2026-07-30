@@ -1,10 +1,14 @@
 """
-probe_scrapers.py — Sonda real HTTP per tutti gli scraper di Trova Prezzi.
+probe_scrapers.py — Sonda real HTTP per tutti gli scraper di Deal Finder.
 
 Esegue ricerche reali (senza mock) su ogni sito configurato e stampa:
   - quante offerte ha restituito
   - i primi 3 risultati
   - diagnostica HTML se 0 risultati (status code, lunghezza pagina, snippet)
+
+Copre tutte le 14 fonti del registry `offerte.scrapers.SCRAPERS`. Le chiavi
+opzionali vengono lette da `.streamlit/secrets.toml`, così eBay viene sondato
+via Browse API come fa l'app e non solo sul fallback HTML.
 
 Uso:
     python tests/probe_scrapers.py
@@ -17,6 +21,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+import tomllib
 from pathlib import Path
 
 # Aggiungi la root del progetto al path
@@ -24,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlsplit
 
 import offerte_tech as ot
 
@@ -36,6 +41,29 @@ DEFAULT_QUERY = "iphone 256gb"
 DEFAULT_BUDGET = 1200.0
 DEFAULT_PREZZO_MIN = 0.0
 
+SECRETS_PATH = Path(__file__).parent.parent / ".streamlit" / "secrets.toml"
+
+
+def _load_secrets() -> dict[str, str]:
+    """Legge `.streamlit/secrets.toml` se presente.
+
+    Il probe gira fuori da Streamlit, quindi `st.secrets` non esiste: senza
+    questa lettura eBay cadrebbe sempre sul fallback HTML (403) e il probe
+    riporterebbe la fonte come rotta pur essendo funzionante via Browse API.
+    """
+    if not SECRETS_PATH.is_file():
+        return {}
+    try:
+        with SECRETS_PATH.open("rb") as fh:
+            raw = tomllib.load(fh)
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        print(f"  ⚠️  secrets.toml illeggibile ({exc}); proseguo senza chiavi.")
+        return {}
+    return {k: v for k, v in raw.items() if isinstance(v, str)}
+
+
+SECRETS = _load_secrets()
+
 SITES: dict[str, dict] = {
     "amazon": {
         "fn": lambda q, pmin, pmax, tokens, cond: ot.scrape_amazon(q, pmin, pmax, tokens, cond),
@@ -43,9 +71,34 @@ SITES: dict[str, dict] = {
         "supports_condizione": True,
     },
     "ebay": {
-        "fn": lambda q, pmin, pmax, tokens, cond: _scrape_ebay_html(q, pmin, pmax, tokens),
+        "fn": lambda q, pmin, pmax, tokens, cond: _scrape_ebay(q, pmin, pmax, tokens, cond),
+        "args": ["query", "prezzo_min", "budget_max", "tokens", "condizione"],
+        "note": (
+            "Browse API (chiavi da secrets.toml)"
+            if SECRETS.get("EBAY_APP_ID") and SECRETS.get("EBAY_CERT_ID")
+            else "HTML fallback — EBAY_APP_ID/EBAY_CERT_ID assenti in secrets.toml"
+        ),
+        "supports_condizione": True,
+    },
+    "trovaprezzi": {
+        "fn": lambda q, pmin, pmax, tokens, cond: ot.scrape_trovaprezzi(q, pmin, pmax, tokens),
         "args": ["query", "prezzo_min", "budget_max", "tokens"],
-        "note": "eBay HTML fallback (senza API key)",
+        "supports_condizione": False,
+    },
+    "wallapop": {
+        "fn": lambda q, pmin, pmax, tokens, cond: ot.scrape_wallapop(q, pmin, pmax, tokens, cond),
+        "args": ["query", "prezzo_min", "budget_max", "tokens", "condizione"],
+        "supports_condizione": True,
+        "note": "Solo usato — skip se condizione=nuovo",
+    },
+    "comet": {
+        "fn": lambda q, pmin, pmax, tokens, cond: ot.scrape_comet(q, pmin, pmax, tokens),
+        "args": ["query", "prezzo_min", "budget_max", "tokens"],
+        "supports_condizione": False,
+    },
+    "expert": {
+        "fn": lambda q, pmin, pmax, tokens, cond: ot.scrape_expert(q, pmin, pmax, tokens),
+        "args": ["query", "prezzo_min", "budget_max", "tokens"],
         "supports_condizione": False,
     },
     "euronics": {
@@ -91,6 +144,19 @@ SITES: dict[str, dict] = {
         "supports_condizione": False,
     },
 }
+
+
+def _scrape_ebay(query: str, prezzo_min: float, budget_max, tokens: list[str], condizione: str):
+    """eBay via Browse API se le chiavi ci sono, altrimenti fallback HTML.
+
+    Rispecchia il comportamento reale dell'app, che legge le chiavi da
+    `st.secrets`: sondare solo l'HTML darebbe un falso negativo (403).
+    """
+    app_id = SECRETS.get("EBAY_APP_ID", "")
+    cert_id = SECRETS.get("EBAY_CERT_ID", "")
+    if app_id and cert_id:
+        return ot.scrape_ebay(query, prezzo_min, budget_max, condizione, tokens, app_id, cert_id)
+    return _scrape_ebay_html(query, prezzo_min, budget_max, tokens)
 
 
 def _scrape_ebay_html(query: str, prezzo_min: float, budget_max, tokens: list[str]):
@@ -143,6 +209,11 @@ def _diagnose_site(site_name: str, query: str) -> None:
         "temu": f"https://www.temu.com/it/search_result.html?search_key={quote_plus(query)}",
         "aliexpress": f"https://it.aliexpress.com/wholesale?SearchText={quote_plus(query)}",
         "alibaba": f"https://www.alibaba.com/trade/search?SearchText={quote_plus(query)}",
+        # Fonti storicamente funzionanti e poi bloccate: la diagnosi serve a
+        # distinguere "selettori cambiati" (HTTP 200) da "blocco" (403/503).
+        "amazon": f"https://www.amazon.it/s?k={quote_plus(query)}",
+        "euronics": f"https://www.euronics.it/search/?text={quote_plus(query)}",
+        "trovaprezzi": f"https://www.trovaprezzi.it/categoria.aspx?libera={quote_plus(query)}",
     }
     if site_name not in urls:
         return
@@ -152,7 +223,7 @@ def _diagnose_site(site_name: str, query: str) -> None:
     print(f"  URL: {url}")
     try:
         headers = ot.get_headers()
-        headers["Referer"] = f"https://www.{site_name}.com/"
+        headers["Referer"] = f"{urlsplit(url).scheme}://{urlsplit(url).netloc}/"
         resp = requests.get(url, headers=headers, timeout=15)
         print(f"  Status: {resp.status_code}")
         print(f"  Content-Type: {resp.headers.get('Content-Type', '?')}")

@@ -28,10 +28,13 @@ from offerte_tech import (
 
 
 class _FakeResponse:
-    def __init__(self, text: str, status_code: int = 200) -> None:
+    def __init__(self, text: str, status_code: int = 200, url: str = "") -> None:
         self.text = text
         self.status_code = status_code
         self.headers: dict[str, str] = {}
+        # Alcuni scraper (trovaprezzi) leggono `resp.url` per l'URL finale
+        # dopo redirect, da cui costruiscono la paginazione.
+        self.url = url
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
@@ -1004,3 +1007,248 @@ def test_scrape_expert_returns_results(monkeypatch: pytest.MonkeyPatch) -> None:
     assert results[0].negozio == "Expert"
     assert results[0].prezzo == 699.0
     assert "expert.it" in results[0].link
+
+
+# ===========================================================================
+# Trovaprezzi
+# ===========================================================================
+
+
+_TP_LISTING_HTML = """
+<html><head><title>Apple iPhone 15 | Confronta prezzi | Trovaprezzi.it</title></head>
+<body>
+<ul>
+  <li class="listing_item">
+    <a class="item_image" href="/goto/111"><img src="https://img.trovaprezzi.it/111.jpg"></a>
+    <div class="item_info">
+      <div class="item_name_desc">
+        <a class="item_name" href="/goto/111">Apple iPhone 15 5G 128GB Smartphone</a>
+      </div>
+      <div class="item_merchant">
+        <div class="merchant_name_and_logo"><span class="merchant_name">Bpm power</span></div>
+      </div>
+      <div class="item_price">
+        <div class="item_basic_price">679,00 &euro;</div>
+        <div class="item_delivery_price">+ Sped. 6,32 &euro;</div>
+        <div class="item_total_price">Tot. 685,32 &euro;</div>
+      </div>
+    </div>
+  </li>
+  <li class="listing_item">
+    <div class="item_info">
+      <a class="item_name" href="https://www.trovaprezzi.it/goto/222">Apple iPhone 15 256GB</a>
+      <span class="merchant_name">eBay</span>
+      <div class="item_basic_price">498,99 &euro;</div>
+      <div class="free_shipping">Sped. gratuita</div>
+    </div>
+  </li>
+  <li class="listing_item">
+    <div class="item_info">
+      <a class="item_name" href="/goto/333">Apple iPhone 15 Pro Max 1TB</a>
+      <span class="merchant_name">Troppo Caro Shop</span>
+      <div class="item_basic_price">1.899,00 &euro;</div>
+    </div>
+  </li>
+</ul>
+</body></html>
+"""
+
+
+def test_scrape_trovaprezzi_parses_listing_items(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Percorso primario `li.listing_item` (pagina categoria e scheda prodotto)."""
+    from offerte_tech import scrape_trovaprezzi
+
+    monkeypatch.setattr(
+        "offerte.scrapers.trovaprezzi.fetch_with_retry",
+        lambda *a, **k: _FakeResponse(
+            _TP_LISTING_HTML, 200, url="https://www.trovaprezzi.it/cellulari/offerte/iphone-15"
+        ),
+    )
+    monkeypatch.setattr("offerte.scrapers.trovaprezzi._random_delay", lambda *a, **k: None)
+
+    results = scrape_trovaprezzi("iphone 15", 0.0, 900.0, ["iphone", "15"])
+
+    # La terza voce (1.899,00 €) esce dal budget.
+    assert len(results) == 2
+    # Su un aggregatore il negozio è il merchant, non "Trovaprezzi".
+    assert [o.negozio for o in results] == ["Bpm power", "eBay"]
+    assert results[0].prezzo == 679.0
+    assert results[0].spedizione == "+ Sped. 6,32 €"
+    assert results[0].immagine == "https://img.trovaprezzi.it/111.jpg"
+    # href relativo → assoluto; href già assoluto → invariato.
+    assert results[0].link == "https://www.trovaprezzi.it/goto/111"
+    assert results[1].link == "https://www.trovaprezzi.it/goto/222"
+    assert results[1].spedizione == "Gratuita"
+    assert all(o.fonte == "trovaprezzi.it" for o in results)
+
+
+def test_scrape_trovaprezzi_jsonld_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fallback JSON-LD: regressione sul contatore usato prima dell'assegnazione.
+
+    Senza `li.listing_item` né card `a.suggested_product`, il ramo JSON-LD
+    incrementava `added` prima di inizializzarlo → UnboundLocalError sul PRIMO
+    item, mascherato dall'`except Exception: continue` che lo racchiudeva. Il
+    `continue` salta all'elemento `<script>` successivo, quindi **tutti gli item
+    successivi dello stesso script venivano persi in silenzio**.
+
+    Servono perciò almeno DUE item per esporre il difetto: con uno solo il test
+    passa anche sul codice rotto (verificato: pre-fix 1, post-fix 2).
+    """
+    from offerte_tech import scrape_trovaprezzi
+
+    json_ld = json.dumps(
+        [
+            {
+                "@type": "Product",
+                "name": "Apple iPhone 15 128GB",
+                "url": "https://www.trovaprezzi.it/prodotto/iphone-15-128",
+                "image": ["https://img.trovaprezzi.it/ld.jpg"],
+                "offers": {"@type": "Offer", "price": "729.00", "priceCurrency": "EUR"},
+            },
+            {
+                "@type": "Product",
+                "name": "Apple iPhone 15 256GB",
+                "url": "https://www.trovaprezzi.it/prodotto/iphone-15-256",
+                "offers": {"@type": "Offer", "price": "799.00", "priceCurrency": "EUR"},
+            },
+        ]
+    )
+    html = (
+        "<html><head><title>Trovaprezzi.it</title></head><body>"
+        f'<script type="application/ld+json">{json_ld}</script>'
+        "</body></html>"
+    )
+
+    monkeypatch.setattr(
+        "offerte.scrapers.trovaprezzi.fetch_with_retry",
+        lambda *a, **k: _FakeResponse(html, 200, url="https://www.trovaprezzi.it/x"),
+    )
+    monkeypatch.setattr("offerte.scrapers.trovaprezzi._random_delay", lambda *a, **k: None)
+
+    results = scrape_trovaprezzi("iphone 15", 0.0, 900.0, ["iphone", "15"])
+
+    assert [o.prezzo for o in results] == [729.0, 799.0]
+    assert all(o.negozio == "Trovaprezzi" for o in results)
+    assert results[0].immagine == "https://img.trovaprezzi.it/ld.jpg"
+
+
+def test_scrape_trovaprezzi_blocked_returns_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    """HTTP 403 → lista vuota senza eccezioni (rate-limit osservato in produzione)."""
+    from offerte_tech import scrape_trovaprezzi
+
+    monkeypatch.setattr(
+        "offerte.scrapers.trovaprezzi.fetch_with_retry",
+        lambda *a, **k: _FakeResponse("<html></html>", 403),
+    )
+    monkeypatch.setattr("offerte.scrapers.trovaprezzi._random_delay", lambda *a, **k: None)
+
+    assert scrape_trovaprezzi("iphone 15", 0.0, 900.0, ["iphone", "15"]) == []
+
+
+# ===========================================================================
+# Euronics
+# ===========================================================================
+
+
+_EURONICS_TILE_HTML = """
+<html><head><title>Ricerca</title></head><body>
+<div class="product" data-pid="232010290">
+  <div class="new-product-tile flex-fill available">
+    <div class="image-container">
+      <a class="link-pdp" href="/telefonia/iphone/apple-iphone-15-128gb/232010290.html">
+        <img class="tile-image" src="https://www.euronics.it/img/232010290.jpg">
+      </a>
+    </div>
+    <div class="tile-name-container">
+      <div class="pdp-link"><a class="text-dark"><span class="tile-name">APPLE - iPhone 15 128GB-Nero</span></a></div>
+    </div>
+    <div class="product-price-container">
+      <div class="price-container-new">
+        <div class="discount"><span class="price-formatted">&euro; 699,00</span></div>
+        <div class="more-price-details"><p><span class="value">&euro; 979,00</span> consigliato</p></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="product" data-pid="242014238">
+  <div class="new-product-tile flex-fill available">
+    <a class="link-pdp" href="/telefonia/accessori/custodia-magsafe/242014238.html"></a>
+    <div class="pdp-link"><span class="tile-name">APPLE - Custodia MagSafe iPhone 15-Trasparente</span></div>
+    <div class="price-container-new">
+      <div class="discount"><span class="price-formatted">&euro; 59,90</span></div>
+    </div>
+  </div>
+</div>
+</body></html>
+"""
+
+
+def test_scrape_euronics_prefers_sale_price_over_consigliato(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regressione: `span.value` è il prezzo *consigliato*, non quello di vendita.
+
+    Nella tile convivono `span.price-formatted` (€ 699,00, quanto si paga) e
+    `span.value` dentro `.more-price-details` (€ 979,00, listino). Selezionare
+    `span.value` per primo — come faceva il codice precedente — riporta il
+    listino e gonfia il prezzo di ogni prodotto scontato.
+    """
+    from offerte_tech import scrape_euronics
+
+    monkeypatch.setattr(
+        "offerte.scrapers.euronics.fetch_with_retry",
+        lambda *a, **k: _FakeResponse(_EURONICS_TILE_HTML, 200),
+    )
+    monkeypatch.setattr("offerte.scrapers.euronics._random_delay", lambda *a, **k: None)
+
+    results = scrape_euronics("iphone 15", 0.0, 900.0, ["iphone", "15"])
+
+    assert len(results) == 2
+    assert results[0].prezzo == 699.0, "preso il consigliato invece del prezzo di vendita"
+    assert results[1].prezzo == 59.90
+    assert results[0].negozio == "Euronics"
+    assert results[0].link == (
+        "https://www.euronics.it/telefonia/iphone/apple-iphone-15-128gb/232010290.html"
+    )
+    assert results[0].immagine == "https://www.euronics.it/img/232010290.jpg"
+
+
+def test_scrape_euronics_uses_ajax_grid_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    """L'URL deve essere l'endpoint SFCC `Search-UpdateGrid`, non `/search?q=`.
+
+    Cloudflare risponde 403 su `/search?q=` (verificato 2026-07-30) mentre
+    l'endpoint AJAX della griglia passa: se qualcuno "semplifica" l'URL
+    tornando a `/search`, la fonte torna muta.
+    """
+    from offerte_tech import scrape_euronics
+
+    chiamate: list[tuple[str, dict]] = []
+
+    def _fake_fetch(url, headers, *a, **k):
+        chiamate.append((url, dict(headers)))
+        return _FakeResponse(_EURONICS_TILE_HTML, 200)
+
+    monkeypatch.setattr("offerte.scrapers.euronics.fetch_with_retry", _fake_fetch)
+    monkeypatch.setattr("offerte.scrapers.euronics._random_delay", lambda *a, **k: None)
+
+    scrape_euronics("iphone 15", 0.0, 900.0, ["iphone", "15"])
+
+    assert chiamate, "nessuna richiesta effettuata"
+    url, headers = chiamate[0]
+    assert "Search-UpdateGrid" in url
+    assert "demandware.store" in url
+    assert headers.get("X-Requested-With") == "XMLHttpRequest"
+    assert headers.get("Accept-Encoding") == "identity"
+
+
+def test_scrape_euronics_blocked_returns_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    """HTTP 403 → lista vuota senza eccezioni."""
+    from offerte_tech import scrape_euronics
+
+    monkeypatch.setattr(
+        "offerte.scrapers.euronics.fetch_with_retry",
+        lambda *a, **k: _FakeResponse("<html><title>Just a moment...</title></html>", 403),
+    )
+    monkeypatch.setattr("offerte.scrapers.euronics._random_delay", lambda *a, **k: None)
+
+    assert scrape_euronics("iphone 15", 0.0, 900.0, ["iphone", "15"]) == []

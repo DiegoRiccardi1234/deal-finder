@@ -26,11 +26,19 @@ def scrape_trovaprezzi(
     Scraper trovaprezzi.it (sito diretto).
 
     URL: /categoria.aspx?libera={query}  →  redirect a /{categoria}/offerte/{slug}
-    Selettori (validi a marzo 2026):
-        Container: a.suggested_product[href]
-        Nome:      .product_info .name  (testo dentro il container)
-        Prezzo:    .price_range         (es. "da 1.419,00 €")
-        Link:      href del container a (relativo → prepend https://www.trovaprezzi.it)
+    oppure, se la query combacia con un singolo prodotto, a
+    /{categoria}/prezzi-scheda-prodotto/{slug}.
+
+    Selettori primari — offerte dei singoli merchant, presenti su entrambi i
+    tipi di pagina (verificati 2026-07-30):
+        Container: li.listing_item
+        Nome:      a.item_name          (l'href è il link /goto/... di redirect)
+        Prezzo:    div.item_basic_price (fallback div.item_total_price)
+        Negozio:   span.merchant_name
+        Spedizione: div.free_shipping | div.item_delivery_price
+
+    Fallback secondari, nell'ordine: card aggregate `a.suggested_product[href]`
+    (solo pagine categoria, con `.name` e `.price_range`) e infine JSON-LD.
     """
     url = f"https://www.trovaprezzi.it/categoria.aspx?libera={quote_plus(query)}"
     print(f'\n🔍 Cerco su Trovaprezzi.it: "{query}"')
@@ -67,6 +75,68 @@ def scrape_trovaprezzi(
         }
         tp_tokens = [t for t in query_tokens if t not in _tp_cat_words] or query_tokens
 
+        def _parse_listing_items(soup_p: BeautifulSoup) -> int:
+            """Parsa le offerte dei singoli merchant (`li.listing_item`).
+
+            È il blocco presente sia sulle pagine categoria sia sulle schede
+            prodotto — dove la ricerca viene rediretta quando la query combacia
+            con un solo prodotto — quindi è il selettore più affidabile dei due.
+            Ogni voce è un prezzo realmente acquistabile presso un negozio, non
+            un intervallo aggregato come in `a.suggested_product`.
+            """
+            added_li = 0
+            for item in soup_p.select("li.listing_item"):
+                nome_tag = item.select_one("a.item_name")
+                if not nome_tag:
+                    continue
+                nome = nome_tag.get_text(" ", strip=True)
+                if not nome:
+                    continue
+                prezzo_tag = item.select_one("div.item_basic_price") or item.select_one(
+                    "div.item_total_price"
+                )
+                prezzo = parse_price(prezzo_tag.get_text(" ", strip=True) if prezzo_tag else "")
+                if not math.isfinite(prezzo):
+                    continue
+                href = str(nome_tag.get("href", "") or "")
+                if not href:
+                    continue
+                link = href if href.startswith("http") else f"https://www.trovaprezzi.it{href}"
+                if link in seen_links:
+                    continue
+                seen_links.add(link)
+                if not is_relevant(nome, tp_tokens, strict_specs=False):
+                    continue
+                if not _within_price_range(prezzo, prezzo_min, budget_max):
+                    continue
+                # Su un aggregatore il negozio reale è il merchant, non "Trovaprezzi".
+                merchant_tag = item.select_one("span.merchant_name")
+                merchant = merchant_tag.get_text(strip=True) if merchant_tag else ""
+                if item.select_one("div.free_shipping"):
+                    spedizione = "Gratuita"
+                else:
+                    sped_tag = item.select_one("div.item_delivery_price")
+                    spedizione = sped_tag.get_text(" ", strip=True) if sped_tag else "n.d."
+                img_tag = item.select_one("a.item_image img") or item.select_one("img")
+                immagine = (
+                    str(img_tag.get("src", "") or img_tag.get("data-src", "") or "")
+                    if img_tag
+                    else ""
+                )
+                risultati.append(
+                    Offerta(
+                        nome=nome,
+                        prezzo=prezzo,
+                        negozio=merchant or "Trovaprezzi",
+                        link=link,
+                        fonte="trovaprezzi.it",
+                        spedizione=spedizione,
+                        immagine=immagine,
+                    )
+                )
+                added_li += 1
+            return added_li
+
         def _parse_page_tp(html: str) -> int:
             """Parsa una pagina trovaprezzi, aggiunge offerte valide, ritorna il numero aggiunto."""
             soup_p = BeautifulSoup(html, "html.parser")
@@ -76,11 +146,23 @@ def scrape_trovaprezzi(
                 for kw in ("sorry", "captcha", "robot", "unusual traffic", "404")
             ):
                 return 0
+
+            # `added` va inizializzato prima di ogni ramo: il fallback JSON-LD
+            # sotto lo incrementa e lo ritorna, e prima sollevava UnboundLocalError
+            # (mascherato dai due `except Exception` che lo racchiudevano).
+            added = 0
+
+            # 1) Offerte dei singoli merchant — il percorso principale.
+            added += _parse_listing_items(soup_p)
+            if added:
+                return added
+
+            # 2) Card prodotto aggregate, presenti solo sulle pagine categoria.
             cards_p = soup_p.select("a.suggested_product[href]")
             if not cards_p:
                 cards_p = soup_p.select("[class*='product'][href]")
             if not cards_p:
-                # Fallback JSON-LD
+                # 3) Fallback JSON-LD
                 for _script in soup_p.find_all("script", {"type": "application/ld+json"}):
                     try:
                         _ld = json.loads(str(_script.string or ""))
@@ -130,7 +212,6 @@ def scrape_trovaprezzi(
                     except Exception:
                         continue
                 return added
-            added = 0
             for card in cards_p:
                 try:
                     nome_tag = card.select_one(".name") or card.select_one("[class*='name']")
