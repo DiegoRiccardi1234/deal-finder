@@ -4,6 +4,70 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0] - 2026-08-03
+
+Major because the distribution format changes completely. Until now the release
+attached a ZIP of Python sources: to use it you needed Python 3.11+, a
+double-click on `run.bat` that left a `cmd` window open for the whole session,
+and you had to type `http://localhost:8501` yourself — because
+`.streamlit/config.toml` sets `headless = true`, contradicting what `run.bat`,
+`SETUP.txt` and the README all promised. Then the app asked for a password the
+template had set to `"cambiami"`, and turning the AI on meant editing a TOML
+file inside a hidden folder.
+
+Now it is a Windows application: unzip, double-click, done. Same shape as the
+other Finder tools — `DealFinder.exe`, `Aggiorna.exe`, `LEGGIMI.txt`,
+`_internal/`.
+
+### Added
+- **Windows bundle, no console.** `DealFinder.spec` builds two windowless
+  executables in one PyInstaller run, merged so they share dependencies:
+  `DealFinder.exe` (20 MB) and `Aggiorna.exe` (1.7 MB). 87 MB zipped, ready in
+  ~1.2 s. A price-tag icon sits in the notification area with *Apri* / *Copia
+  indirizzo* / *Esci*; the browser opens on its own once the server really
+  answers.
+- **Updates that actually update.** Download, replace, restart — the app closes
+  and comes back by itself, and `data/` is never touched. Verified end to end on
+  a real installation: 1495 files copied, saved keys and history still there.
+- **API keys from inside the app.** *Impostazioni* in the sidebar: free
+  providers first, a link to get a key for each, hot reload without restarting.
+  Keys live in `data/local_secrets.json`, are never shown again, and take
+  precedence over `.env` and `secrets.toml`.
+- **Health-aware model selection.** OpenRouter endpoints are checked live
+  (unauthenticated, no inference, so it costs nothing against the quota); dead
+  models sink, and models that truncate, answer empty or rate-limit are
+  de-ranked for the rest of the session, per `(provider, model)`.
+
+### Changed
+- **The login gate is off in the bundle.** It guarded the public deployment; on
+  `127.0.0.1` it protected nothing. Still there for Streamlit Cloud and Docker,
+  and `APP_PASSWORD` in the template is now empty instead of `"cambiami"`.
+- **Gemini goes through Google's OpenAI-compatible endpoint** instead of the
+  `google-generativeai` SDK. That SDK pulled in `googleapiclient` and `grpc` —
+  111 MB in the bundle — and its adapter could not list models, so automatic
+  selection was reading a hardcoded list instead of the real catalogue.
+- **Context window is no longer how a model is picked.** It was a poor proxy:
+  the widest context usually belongs to a reasoning model, which burns the
+  budget on hidden thinking and truncates the JSON — and truncation is silent,
+  because the outer object still closes and `json.loads` still passes.
+- **Repository tidied.** `ARCHITECTURE.md` → `docs/`, Docker → `docker/`,
+  `run.bat`/`run.sh` → `scripts/`, `pytest.ini` folded into `pyproject.toml`,
+  `SETUP.txt` removed (the bundle carries `LEGGIMI.txt`).
+
+### Fixed
+- **`.coverage` was tracked in git**, so a coverage binary shipped inside the
+  published archive.
+- **The Amazon price chart never rendered.** `st.image` was the only call of its
+  kind in the whole project and dragged in numpy — 56 MB — for an image the
+  browser could load by itself. Replaced with an `<img>` tag. The chart is still
+  blank, but for a different reason: CamelCamelCamel answers **403** to
+  hotlinking, and always did.
+
+### Removed
+- The source ZIP release asset and its builder (`tools/build_release_zip.py`).
+  The Windows bundle replaces it; people who want the sources clone the repo.
+- `google-generativeai` from the dependencies.
+
 ## [3.0.0] - 2026-07-30
 
 Major because two things break compatibility: the distributed package is renamed

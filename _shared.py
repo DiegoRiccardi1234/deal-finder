@@ -38,7 +38,20 @@ def render_nav(active_page: str = "tool") -> None:
         st.markdown("<div class='sidebar-brand'>Deal Finder</div>", unsafe_allow_html=True)
         st.markdown("---")
         render_theme_toggle()
+        _render_settings()
         _render_update_control()
+
+
+def _render_settings() -> None:
+    """Pannello chiavi. Importato qui e non in cima per non legare `_shared`
+    (utility di pagina) al pacchetto `ui`: in test-mode non serve affatto."""
+    if os.environ.get("APP_TEST_MODE", "0").strip() == "1":
+        return
+    try:
+        from ui.settings import render_settings
+    except Exception:
+        return
+    render_settings()
 
 
 def _render_update_control() -> None:
@@ -46,32 +59,45 @@ def _render_update_control() -> None:
     if os.environ.get("APP_TEST_MODE", "0").strip() == "1":
         return
     try:
-        import updater
+        from offerte import update
     except Exception:
         return
-    if updater.is_cloud():
+    if update.is_cloud():
         return
     if "update_latest" not in st.session_state:
         try:
-            st.session_state["update_latest"] = updater.update_available()
+            st.session_state["update_latest"] = update.update_available()
         except Exception:
             st.session_state["update_latest"] = None
     latest = st.session_state.get("update_latest")
     if not latest:
         return
     st.markdown("---")
-    st.warning(f"🆕 Versione {latest} disponibile (hai v{updater.current_version()})")
-    if updater.is_git_clone():
+    st.warning(f"🆕 Versione {latest} disponibile (hai v{update.current_version()})")
+
+    if update.is_frozen():
+        # Nel bundle l'aggiornamento è completo: scarica, sostituisce e riapre
+        # da solo. Il programma si spegne un secondo e mezzo dopo il click, ed è
+        # voluto — va detto prima, o la finestra che sparisce sembra un guasto.
+        if st.button("⬇️ Aggiorna ora", key="btn_do_update", use_container_width=True):
+            with st.spinner("Scarico l'aggiornamento…"):
+                res = update.do_update()
+            if res.get("ok"):
+                st.success("✅ Deal Finder si chiude e si riapre da solo. I tuoi dati restano.")
+                st.session_state["update_latest"] = None
+            else:
+                st.error(f"Non riuscito: {res.get('error') or res.get('message', '')}")
+    elif update.is_git_clone():
         if st.button("⬇️ Aggiorna ora", key="btn_do_update", use_container_width=True):
             with st.spinner("Aggiornamento in corso (git pull + dipendenze)…"):
-                res = updater.do_update()
+                res = update.do_update()
             if res.get("ok"):
                 st.success("✅ Fatto. Riavvia l'app per applicare l'aggiornamento.")
                 st.session_state["update_latest"] = None
             else:
                 st.error(f"Non riuscito: {res.get('error') or res.get('message', '')}")
     else:
-        st.link_button("⬇️ Scarica l'aggiornamento", updater.RELEASES_URL, use_container_width=True)
+        st.link_button("⬇️ Scarica l'aggiornamento", update.RELEASES_URL, use_container_width=True)
 
 
 def get_theme_mode() -> str:

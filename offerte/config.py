@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 
 # Versione del progetto (sorgente unica; usata dall'auto-update per il confronto).
-VERSION: str = "3.0.0"
+VERSION: str = "4.0.0"
 
 # La scelta del modello è DINAMICA: `offerte.ai.get_best_model()` interroga
 # `client.models.list()` e seleziona il migliore disponibile (per context_window,

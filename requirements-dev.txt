@@ -1,0 +1,3 @@
+# Serve solo a costruire il bundle Windows (scripts/build_exe.py), non a far
+# girare l'applicazione. Non installarlo su chi usa Deal Finder da sorgente.
+pyinstaller==6.21.0

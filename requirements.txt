@@ -5,8 +5,16 @@ streamlit==1.60.0
 vinted-scraper==4.0.0
 playwright==1.61.0
 
+# Icona nell'area di notifica del bundle Windows (scripts/launch_tray.py).
+# Pillow arriva già con Streamlit, ma qui la usiamo direttamente per disegnare
+# l'icona, quindi è dichiarata: una dipendenza usata e non scritta è una
+# dipendenza che sparisce al primo aggiornamento di qualcun altro.
+pystray==0.19.5
+pillow==12.1.1
+
 # Provider AI (multi-provider via offerte/providers.py)
 cerebras-cloud-sdk==1.91.0
 openai==2.50.0
 anthropic==0.120.2
-google-generativeai==0.8.6
+# Gemini non ha una riga sua: passa dall'endpoint OpenAI-compatible di Google
+# attraverso il client `openai` qui sopra. Vedi offerte/providers.py.

@@ -1,0 +1,81 @@
+Deal Finder
+===========
+
+Le offerte di quattordici negozi e mercatini italiani, confrontate in una
+schermata sola.
+
+
+Come si avvia
+-------------
+
+Doppio click su DealFinder.exe.
+
+Si apre il browser da solo su http://127.0.0.1:8501/ e compare un cartellino
+del prezzo nell'area di notifica, accanto all'orologio. Da li' si riapre la
+pagina, si copia l'indirizzo o si esce. Non c'e' nessuna finestra nera: e'
+voluto.
+
+La prima volta Windows puo' mostrare un avviso di SmartScreen, perche'
+l'eseguibile non e' firmato (una firma costa qualche centinaio di euro l'anno).
+Si passa da "Ulteriori informazioni" e poi "Esegui comunque".
+
+Se il doppio click sembra non fare niente, controlla l'area di notifica: e'
+gia' aperto. Un secondo doppio click riapre la scheda, non avvia un secondo
+programma.
+
+
+Cosa ti serve
+-------------
+
+Niente. Non serve installare Python, non serve registrarsi da nessuna parte,
+non serve una carta.
+
+Serve la rete per cercare: i prezzi si leggono dai siti dei negozi nel momento
+in cui premi Cerca. Qualche fonte ogni tanto risponde male o blocca la
+richiesta — l'applicazione te lo dice fonte per fonte invece di far finta di
+niente.
+
+
+L'intelligenza artificiale e' facoltativa
+-----------------------------------------
+
+Serve per tre cose: capire la richiesta scritta a parole ("un notebook da 14
+pollici sotto gli 800 euro"), scartare i risultati fuori tema e consigliarti
+alla fine. La ricerca su tutti i negozi funziona identica senza.
+
+Se la vuoi: apri Impostazioni e incolla la chiave di uno dei fornitori
+gratuiti elencati li'. Le chiavi restano su questo computer, nel file
+data/local_secrets.json, e non vengono mai rimostrate a schermo.
+
+
+Dove finiscono i tuoi dati
+--------------------------
+
+Tutto nella cartella data/, accanto a DealFinder.exe: lo storico delle
+ricerche, i preferiti, lo storico dei prezzi, i log, le chiavi. Se sposti la
+cartella si sposta tutto; se la cancelli riparti da zero. Niente esce da qui
+tranne le richieste ai negozi e, se l'hai accesa, al fornitore di IA che hai
+scelto.
+
+Gli aggiornamenti non toccano data/: quello che hai salvato resta.
+
+
+Non toccare _internal
+---------------------
+
+E' il programma vero e proprio, smontato nei suoi pezzi. Spostare o cancellare
+qualcosa la' dentro impedisce l'avvio. La cartella si sposta tutta intera,
+oppure niente.
+
+
+Se qualcosa non parte
+---------------------
+
+Guarda data/logs/deal-finder.log: e' l'unico posto dove un errore d'avvio
+lascia traccia, perche' non c'e' una console dove stamparlo.
+
+
+Il progetto
+-----------
+
+https://github.com/DiegoRiccardi1234/deal-finder

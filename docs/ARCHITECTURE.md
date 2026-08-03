@@ -45,6 +45,11 @@ do not re-scrape and do not burn through rate limits.
 | `config.py` | Tunable constants. Holds `VERSION`, the single source of truth also read by `pyproject.toml` |
 | `export.py` | `print_results`, `export_to_csv` |
 | `cli.py` | `argparse` entry point — installed as the `deal-finder` command |
+| `paths.py` | Where files live. Splits the **shipped** tree (`sys._MEIPASS`, read-only) from the **user** tree (next to the executable) — see [Windows bundle](#windows-bundle) |
+| `update.py` | Update check and install: GitHub release → download → hand over to `Aggiorna.exe` → exit |
+| `secrets_store.py` | API keys typed into the app, in `data/local_secrets.json`. Wins over `.env` and `secrets.toml`; never returns a key |
+| `model_selector.py` | Ranks candidate models: name heuristics plus penalties learned at runtime (truncated / empty / 429) per `(provider, model)` |
+| `endpoint_health.py` | Live OpenRouter endpoint health — unauthenticated, no inference, so it costs nothing against the quota |
 
 `offerte_tech.py` at the repo root is a thin shim that re-exports `offerte` for
 backwards compatibility with earlier import paths.
@@ -221,8 +226,45 @@ than by the suite.
 Local runs read `.streamlit/secrets.toml` (template:
 `.streamlit/secrets.toml.example`). Docker reads environment variables from
 `.env` (template: `.env.example`) — `.streamlit/secrets.toml` is excluded from
-the Docker build context, so the container cannot see it. `docker-compose.yml`
-mounts `./data`, so the SQLite database survives container restarts.
+the Docker build context, so the container cannot see it.
+`docker/docker-compose.yml` builds from the repo root and mounts `../data`, so
+the SQLite database survives container restarts.
+
+In the Windows bundle neither file exists: keys are typed into the app
+(*Impostazioni* in the sidebar) and stored in `data/local_secrets.json`, which
+`secrets_store.py` applies **over** any environment variable — what the user
+just typed is their last word. The login gate is disabled when frozen: it
+guarded the public deployment, and on `127.0.0.1` it protects nothing.
 
 Every key is optional. Without any key, scraping still works and the AI
 features stay off; eBay falls back from the Browse API to HTML scraping.
+
+
+## Windows bundle
+
+`DealFinder.spec` builds two windowless executables from one PyInstaller run,
+merged so they share dependencies:
+
+| File | Source | Job |
+|---|---|---|
+| `DealFinder.exe` | `scripts/launch_tray.py` | Starts Streamlit on a thread, opens the browser, owns the notification-area icon |
+| `Aggiorna.exe` | `scripts/updater.py` | Replaces the installation once the app has exited, then restarts it |
+
+Three constraints shape the launcher, and none of them announces itself as an
+error:
+
+1. **`console=False` means `sys.stdout` is `None`**, and a process relaunched by
+   the updater can inherit a descriptor that *looks* valid. `_harden_stdio()`
+   checks with `os.fstat` before the first import; without it the process dies
+   on the first line anything prints.
+2. **Streamlit re-executes the script from disk**, so `app.py` ships as a real
+   file inside `_internal/`, not frozen into the executable. `bootstrap.run`
+   also does not apply the options passed to it — `load_config_options` does,
+   and skipping it starts the server on the wrong port in silence.
+3. **`sys._MEIPASS` is temporary and read-only.** `offerte/paths.py` keeps the
+   user's data next to the executable, which is also what the updater
+   preserves (`data` is in `DA_NON_TOCCARE`).
+
+`scripts/build_exe.py` produces `dist/DealFinder-windows.zip` and refuses to
+publish an archive with too few files. The `release` workflow runs it on
+`windows-latest` — PyInstaller does not cross-compile.

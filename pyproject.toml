@@ -9,8 +9,11 @@ license = { text = "MIT" }
 # (pyproject, config.py, badge README) e divergevano.
 dynamic = ["version"]
 
-# Le dipendenze runtime sono gestite via requirements.txt / requirements-test.txt.
-# La configurazione pytest resta in pytest.ini.
+# Le dipendenze runtime sono gestite via requirements.txt (applicazione),
+# requirements-dev.txt (solo per costruire il bundle Windows) e
+# requirements-test.txt — quest'ultimo resta un file a sé perché la CI ne legge
+# le versioni di ruff/mypy/pip-audit con un `grep`: è la sorgente unica, e
+# spostarlo qui vorrebbe dire scriverle due volte.
 
 [project.scripts]
 deal-finder = "offerte.cli:main"
@@ -38,7 +41,7 @@ py-modules = [
     "price_history",
     "search_history",
     "watchlist",
-    "updater",
+    "update_sync",
 ]
 
 [tool.ruff]
@@ -80,3 +83,12 @@ warn_unused_ignores = false
 warn_redundant_casts = true
 no_implicit_optional = true
 exclude = ['^\.venv/', '^tests/probe_', '^data/']
+
+[tool.pytest.ini_options]
+# Era `pytest.ini`: un file in meno nella radice, zero differenze di
+# comportamento (pytest legge questa sezione con la stessa precedenza).
+pythonpath = "."
+testpaths = ["tests"]
+markers = [
+    "playwright: test E2E della UI (richiedono Playwright + server Streamlit su :9000)",
+]

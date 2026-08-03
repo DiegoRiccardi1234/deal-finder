@@ -10,7 +10,7 @@
 [![Ruff](https://img.shields.io/badge/lint-ruff-261230?logo=ruff&logoColor=white)](https://github.com/astral-sh/ruff)
 ![AI providers](https://img.shields.io/badge/AI-6%20providers-blueviolet)
 
-**📦 Download:** [latest release](https://github.com/DiegoRiccardi1234/deal-finder/releases/latest) (ready-to-run ZIP) · see the GIF below for what it does.
+**📦 Download:** [latest release](https://github.com/DiegoRiccardi1234/deal-finder/releases/latest) — `DealFinder-windows.zip`: unzip, double-click, no Python, no terminal window, updates itself. See the GIF below for what it does.
 
 **[🇬🇧 English](#-english) · [🇮🇹 Italiano](#-italiano)**
 
@@ -82,19 +82,22 @@ that can catch a site changing its markup.
 
 ### 🚀 Quickstart
 
-**A. Local** — the exercised path:
+**A. Windows bundle** — what most people want:
+download `DealFinder-windows.zip` from the [latest release](https://github.com/DiegoRiccardi1234/deal-finder/releases/latest), unzip anywhere, double-click `DealFinder.exe`. No Python, no terminal window; a price-tag icon appears in the notification area and the browser opens by itself. API keys go in *Impostazioni*, inside the app.
+
+**B. From source** — the developer path:
 ```bash
-run.bat          # Windows
-./run.sh         # macOS / Linux
+scripts/run.bat    # Windows
+./scripts/run.sh   # macOS / Linux
 ```
 The script creates a virtualenv, installs dependencies and launches the UI on `http://localhost:8501`.
 
-**B. Hosted** — deploy `app.py` from the repo on [share.streamlit.io](https://share.streamlit.io), then add your keys under *Settings → Secrets* (template in [`.streamlit/secrets.toml.example`](.streamlit/secrets.toml.example)).
+**C. Hosted** — deploy `app.py` from the repo on [share.streamlit.io](https://share.streamlit.io), then add your keys under *Settings → Secrets* (template in [`.streamlit/secrets.toml.example`](.streamlit/secrets.toml.example)).
 
-**C. Docker** — provided, but **not exercised in CI**:
+**D. Docker** — provided, but **not exercised in CI**:
 ```bash
 cp .env.example .env                 # then fill in your keys
-docker compose up --build
+docker compose -f docker/docker-compose.yml up --build
 # open http://localhost:8501
 ```
 Docker reads the keys from `.env`, **not** from `.streamlit/secrets.toml`: that path is excluded from the build context in `.dockerignore`, so the container never sees it.
@@ -136,7 +139,7 @@ app.py        entry point (page config, auth gate, render flow)
 updater.py, watchlist.py, price_history.py, search_history.py   features & persistence
 tests/        unit suite (monkeypatched) + Playwright E2E
 ```
-The LLM backend is abstracted in [`offerte/providers.py`](offerte/providers.py): OpenAI-compatible providers share one client, while Anthropic and Gemini are wrapped in thin adapters exposing the same interface — so the rest of the codebase is provider-agnostic. See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full module map.
+The LLM backend is abstracted in [`offerte/providers.py`](offerte/providers.py): OpenAI-compatible providers share one client, while Anthropic and Gemini are wrapped in thin adapters exposing the same interface — so the rest of the codebase is provider-agnostic. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full module map.
 
 ### ✅ Tests & CI
 
@@ -173,19 +176,22 @@ Descrivi cosa cerchi in linguaggio naturale — l'AI lo trasforma in query ottim
 
 ### 🚀 Avvio rapido
 
-**A. Locale** — il percorso testato:
+**A. Bundle Windows** — quello che serve alla maggior parte delle persone:
+scarica `DealFinder-windows.zip` dall'[ultima release](https://github.com/DiegoRiccardi1234/deal-finder/releases/latest), scompatta dove vuoi, doppio click su `DealFinder.exe`. Niente Python, nessuna finestra nera; compare un cartellino del prezzo nell'area di notifica e il browser si apre da solo. Le chiavi si incollano in *Impostazioni*, dentro l'app.
+
+**B. Da sorgente** — il percorso di sviluppo:
 ```bash
-run.bat          # Windows
-./run.sh         # macOS / Linux
+scripts/run.bat    # Windows
+./scripts/run.sh   # macOS / Linux
 ```
 Lo script crea la virtualenv, installa le dipendenze e avvia la UI su `http://localhost:8501`.
 
-**B. Demo online** — fai il deploy di `app.py` dal repo su [share.streamlit.io](https://share.streamlit.io), poi aggiungi le chiavi in *Settings → Secrets* (template in [`.streamlit/secrets.toml.example`](.streamlit/secrets.toml.example)).
+**C. Demo online** — fai il deploy di `app.py` dal repo su [share.streamlit.io](https://share.streamlit.io), poi aggiungi le chiavi in *Settings → Secrets* (template in [`.streamlit/secrets.toml.example`](.streamlit/secrets.toml.example)).
 
-**C. Docker** — presente, ma **non verificato in CI**:
+**D. Docker** — presente, ma **non verificato in CI**:
 ```bash
 cp .env.example .env                 # poi compila le chiavi
-docker compose up --build
+docker compose -f docker/docker-compose.yml up --build
 # apri http://localhost:8501
 ```
 Docker legge le chiavi da `.env`, **non** da `.streamlit/secrets.toml`: quel path è escluso dal build context in `.dockerignore`, quindi il container non lo vede.

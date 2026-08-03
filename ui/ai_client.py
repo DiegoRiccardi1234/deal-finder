@@ -47,10 +47,17 @@ except ImportError:
 def _get_ai_api_key() -> str:
     """Bootstrap dei secret Streamlit nelle env var e ritorna la API key del
     provider AI attivo (multi-provider via offerte.providers)."""
-    from offerte import providers
+    from offerte import providers, secrets_store
 
     try:
         providers.load_keys_from(st.secrets)
+    except Exception:
+        pass
+    # **Dopo** i secrets, non prima: quello che l'utente ha scritto nel pannello
+    # è la sua ultima parola e deve scavalcare un `.env` o un `secrets.toml`
+    # dimenticato. `load_keys_from` di proposito non sovrascrive; questo sì.
+    try:
+        secrets_store.applica_all_ambiente()
     except Exception:
         pass
     return providers.get_api_key(providers.active_provider())

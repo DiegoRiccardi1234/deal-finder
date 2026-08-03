@@ -1,6 +1,13 @@
+# Si lancia da qui:  docker compose -f docker/docker-compose.yml up
+#
+# Il contesto di build resta la radice del progetto — è lì che stanno il codice
+# e `.dockerignore`, che Docker legge solo dalla radice del contesto e non
+# accanto al Dockerfile.
 services:
   app:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     ports:
       - "8501:8501"
     environment:
@@ -17,6 +24,8 @@ services:
       - EBAY_APP_ID=${EBAY_APP_ID:-}
       - EBAY_CERT_ID=${EBAY_CERT_ID:-}
     volumes:
-      # Persiste KB, storico, preferiti, cache tra i riavvii del container
-      - ./data:/app/data
+      # Persiste KB, storico, preferiti, cache tra i riavvii del container.
+      # `../data` e non `./data`: i percorsi relativi di compose partono dalla
+      # cartella del file, che ora è `docker/`.
+      - ../data:/app/data
     restart: unless-stopped

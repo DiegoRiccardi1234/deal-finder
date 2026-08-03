@@ -277,7 +277,27 @@ div[data-baseweb="base-input"] > div,
     font-size: 0.72rem;
     font-weight: 600;
     min-height: 44px;
+    /* Le etichette vanno a capo fra le parole, mai dentro una parola. Streamlit
+       mette `overflow-wrap: break-word` sui paragrafi, e dentro un bottone
+       stretto «RICOMINCIA» diventava «RICO / MIN / CIA». `nowrap` risolveva
+       quello e ne creava uno peggiore: le etichette lunghe («NOTEBOOK 14"
+       16GB SOTTO 800€») venivano tagliate a metà invece di andare a capo. */
+    overflow-wrap: normal;
+    word-break: normal;
+    hyphens: none;
     transition: transform 0.12s ease, opacity 0.12s ease;
+}
+
+/* Il testo del bottone vive in un <p> che Streamlit imposta a
+   `overflow-wrap: break-word`: la regola sull'elemento figlio vince
+   sull'ereditarietà, quindi va ripetuta qui o non ha effetto. */
+.stButton button p,
+.stDownloadButton button p,
+[data-testid="stBaseButton-primary"] p,
+[data-testid="stBaseButton-secondary"] p {
+    overflow-wrap: normal;
+    word-break: normal;
+    hyphens: none;
 }
 
 .stButton button:hover,
@@ -845,6 +865,24 @@ textarea:focus-visible {
 }
 
 /* ── Responsive ── */
+/* Sotto i 1000px le colonne di Streamlit smettono di seguire i rapporti e si
+   fermano a una larghezza minima: un bottone in una colonna stretta si ritrova
+   con meno spazio di quanto la parola richieda, e la taglia. Qui si recupera
+   quello che serve dal maiuscolo spaziato, che a quelle dimensioni costa più di
+   quanto renda. Misurato a 930px: «RICOMINCIA» chiedeva 80px in 65px disponibili, ora
+   ne chiede 70 in 81. */
+@media (max-width: 1000px) {
+    .stButton button,
+    .stDownloadButton button,
+    .card-cta,
+    [data-testid="stBaseButton-primary"] {
+        letter-spacing: 0.03em;
+        font-size: 0.68rem;
+        padding-left: 0.45rem;
+        padding-right: 0.45rem;
+    }
+}
+
 @media (max-width: 900px) {
     .section-heading h3 { font-size: clamp(1.7rem, 8vw, 2.3rem); }
     .card-price { font-size: 1.55rem; }

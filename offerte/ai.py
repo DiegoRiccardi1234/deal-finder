@@ -972,6 +972,42 @@ def _backoff_delay(base_delay: float, attempt: int) -> float:
     return base_delay * (2**attempt) * (0.5 + random.random())
 
 
+def _annota_esito(model: str, risposta) -> None:
+    """Guarda com'è finita la risposta e se ne ricorda.
+
+    `finish_reason == "length"` è il segnale d'oro: il completamento è stato
+    tagliato. Su un compito a JSON il fallimento è **silenzioso** — il
+    dizionario esterno si chiude, l'array dentro è corto, e `json.loads` passa.
+    Ritentare lo stesso modello non serve: va de-rankato, che è quello che fa la
+    penalità.
+    """
+    try:
+        from offerte import model_selector, providers
+
+        scelta = getattr(risposta, "choices", None) or []
+        if not scelta:
+            model_selector.registra_penalita(providers.active_provider(), model, "vuoto")
+            return
+        motivo = getattr(scelta[0], "finish_reason", None)
+        testo = getattr(getattr(scelta[0], "message", None), "content", None)
+        if motivo == "length":
+            model_selector.registra_penalita(providers.active_provider(), model, "troncato")
+        elif not (testo or "").strip():
+            model_selector.registra_penalita(providers.active_provider(), model, "vuoto")
+    except Exception:  # una statistica non deve mai far fallire una risposta buona
+        pass
+
+
+def _annota_errore(model: str, kind: str) -> None:
+    try:
+        from offerte import model_selector, providers
+
+        motivo = "rate_limit" if kind == AI_ERROR_RATE_LIMIT else "errore"
+        model_selector.registra_penalita(providers.active_provider(), model, motivo)
+    except Exception:
+        pass
+
+
 def cerebras_chat_with_retry(
     client,
     messages: list,
@@ -998,10 +1034,13 @@ def cerebras_chat_with_retry(
 
     while attempt < max_retries:
         try:
-            return client.chat.completions.create(model=model, messages=messages, **kwargs)
+            risposta = client.chat.completions.create(model=model, messages=messages, **kwargs)
+            _annota_esito(model, risposta)
+            return risposta
         except Exception as exc:
             last_exc = exc
             kind = classify_ai_error(exc)
+            _annota_errore(model, kind)
 
             if kind == AI_ERROR_FATAL:
                 log.warning("Chiamata AI non ritentabile (%s): %s", type(exc).__name__, exc)

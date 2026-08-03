@@ -20,17 +20,18 @@ import sqlite3
 import threading
 import time
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any
 
+from offerte import paths
 from offerte.db import get_db
 
-_DATA_DIR = Path(__file__).parent / "data"
-_DATA_DIR.mkdir(exist_ok=True)
 # Seed di SOLA LETTURA, tracciato da git. Lo stato runtime della KB vive in
-# SQLite (tabella `kb_state`): questo file non viene mai riscritto.
-_KB_PATH = _DATA_DIR / "knowledge_base.json"
-_REPORT_PATH = _DATA_DIR / "kb_update_report.md"
+# SQLite (tabella `kb_state`): questo file non viene mai riscritto. Sta quindi
+# fra i file *spediti* (nel bundle: dentro `_MEIPASS`), non fra quelli
+# dell'utente — così un aggiornamento può portare un seed nuovo, che invece
+# resterebbe congelato se stesse in `data/`, protetta dall'aggiornatore.
+_KB_PATH = paths.bundle_dir() / "data" / "knowledge_base.json"
+_REPORT_PATH = paths.data_dir() / "kb_update_report.md"
 _UPDATE_INTERVAL_DAYS = 7
 
 _lock = threading.Lock()

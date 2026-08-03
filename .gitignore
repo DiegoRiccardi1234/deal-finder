@@ -4,6 +4,14 @@ __pycache__/
 *.pyo
 *.pyd
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+# Era tracciato, quindi finiva anche nell'archivio pubblicato: un binario di
+# coverage dentro la release che scarica l'utente.
+.coverage
+
+# Cartella di lavoro di PyInstaller
+build/
 
 # Virtual environment
 .venv/
@@ -48,6 +56,11 @@ data/deal_finder.db-wal
 data/deal_finder.db-shm
 # JSON legacy rinominati dopo l'import automatico in SQLite
 data/*.json.migrated
+# Log e archivi scaricati dall'aggiornatore: nascono al primo avvio.
+data/logs/
+data/aggiornamenti/
+data/aggiornamento.lock
+data/local_secrets.json
 
 # Note operative di sessione e istruzioni per agenti AI: utili in locale, ma
 # rumore per chi apre il repo (e in italiano). L'architettura pubblica sta in

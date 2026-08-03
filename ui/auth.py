@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
-from pathlib import Path
 from typing import Any
 
 import streamlit as st
 
+from offerte import paths
 from offerte.db import get_db
 
 try:
@@ -28,8 +28,7 @@ except ImportError:
         return None
 
 
-_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-_DATA_DIR.mkdir(exist_ok=True)
+_DATA_DIR = paths.data_dir()
 
 # Salt del fingerprint di sessione. NON è il nome del prodotto: cambiarlo
 # invalida tutti i token di sessione già salvati e obbliga a rifare il login.

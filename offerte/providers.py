@@ -4,10 +4,11 @@ Obiettivo: poter scegliere il backend LLM (Cerebras, Groq, OpenAI, OpenRouter,
 Anthropic, Google Gemini) senza toccare i decine di call-site che usano la forma
 OpenAI `client.chat.completions.create(...).choices[0].message.content`.
 
-- Cerebras / Groq / OpenAI / OpenRouter sono OpenAI-compatible → un unico client
-  `openai.OpenAI(base_url=...)` (o l'SDK Cerebras nativo) funziona senza modifiche.
-- Anthropic e Gemini hanno API diverse → adapter sottili che espongono la stessa
-  forma (`.chat.completions.create` e `.models.list`).
+- Cerebras / Groq / OpenAI / OpenRouter / Gemini sono OpenAI-compatible → un
+  unico client `openai.OpenAI(base_url=...)` (o l'SDK Cerebras nativo) funziona
+  senza modifiche.
+- Anthropic ha un'API diversa → un adapter sottile che espone la stessa forma
+  (`.chat.completions.create` e `.models.list`).
 
 Modulo dipendente solo da stdlib + offerte.config; gli SDK dei provider sono
 importati in modo lazy in `build_client`, così l'assenza di un pacchetto degrada
@@ -26,9 +27,16 @@ from offerte.config import CEREBRAS_MODEL_BLACKLIST, DEFAULT_CEREBRAS_MODEL
 class Provider:
     label: str
     key_env: str
-    kind: str  # "openai" | "anthropic" | "gemini"
+    kind: str  # "openai" | "anthropic"
     base_url: str | None
     default_models: tuple[str, ...]
+    #: Ha un piano gratuito utilizzabile senza lasciare una carta. Il pannello
+    #: delle chiavi mostra prima questi: è la differenza che conta per chi apre
+    #: l'applicazione e non vuole spendere.
+    free: bool = False
+    #: Dove si ottiene la chiave. Senza il link, «incolla la tua chiave» è un
+    #: vicolo cieco per chi non sa già dove andare.
+    signup_url: str = ""
 
 
 PROVIDERS: dict[str, Provider] = {
@@ -38,6 +46,8 @@ PROVIDERS: dict[str, Provider] = {
         "openai",
         "https://api.cerebras.ai/v1",
         ("zai-glm-4.7", "gpt-oss-120b"),
+        free=True,
+        signup_url="https://cloud.cerebras.ai",
     ),
     "groq": Provider(
         "Groq",
@@ -45,14 +55,25 @@ PROVIDERS: dict[str, Provider] = {
         "openai",
         "https://api.groq.com/openai/v1",
         ("llama-3.3-70b-versatile", "openai/gpt-oss-120b"),
+        free=True,
+        signup_url="https://console.groq.com/keys",
     ),
-    "openai": Provider("OpenAI", "OPENAI_API_KEY", "openai", None, ("gpt-4o-mini", "gpt-4o")),
+    "openai": Provider(
+        "OpenAI",
+        "OPENAI_API_KEY",
+        "openai",
+        None,
+        ("gpt-4o-mini", "gpt-4o"),
+        signup_url="https://platform.openai.com/api-keys",
+    ),
     "openrouter": Provider(
         "OpenRouter",
         "OPENROUTER_API_KEY",
         "openai",
         "https://openrouter.ai/api/v1",
         ("anthropic/claude-3.5-sonnet", "google/gemini-flash-1.5"),
+        free=True,
+        signup_url="https://openrouter.ai/keys",
     ),
     "anthropic": Provider(
         "Anthropic",
@@ -60,9 +81,22 @@ PROVIDERS: dict[str, Provider] = {
         "anthropic",
         None,
         ("claude-sonnet-4-5", "claude-3-5-haiku-latest"),
+        signup_url="https://console.anthropic.com/settings/keys",
     ),
+    # Gemini passa dall'endpoint OpenAI-compatible di Google, non dall'SDK
+    # `google-generativeai`. Due ragioni, entrambe concrete: quell'SDK trascina
+    # `googleapiclient` e `grpc` — 111 MB nel bundle Windows, per un provider
+    # che è uno di sei — e il suo adapter non sapeva elencare i modelli, quindi
+    # su Gemini la scelta automatica leggeva una lista finta invece del catalogo
+    # vero. Da qui `models.list()` funziona come per tutti gli altri.
     "gemini": Provider(
-        "Google Gemini", "GEMINI_API_KEY", "gemini", None, ("gemini-2.0-flash", "gemini-2.5-pro")
+        "Google Gemini",
+        "GEMINI_API_KEY",
+        "openai",
+        "https://generativelanguage.googleapis.com/v1beta/openai/",
+        ("gemini-2.0-flash", "gemini-2.5-pro"),
+        free=True,
+        signup_url="https://aistudio.google.com/apikey",
     ),
 }
 
@@ -198,23 +232,6 @@ class _AnthropicAdapter:
         return _Completion(text)
 
 
-class _GeminiAdapter:
-    """Espone la forma OpenAI su Google Generative AI."""
-
-    DEFAULT_MODELS = ("gemini-2.0-flash", "gemini-2.5-pro")
-
-    def __init__(self, model_factory) -> None:
-        self._model_factory = model_factory
-        self.chat = _Chat(self._create)
-        self.models = _ModelsNS(self.DEFAULT_MODELS)
-
-    def _create(self, *, model, messages, temperature: float = 0.1, **_):
-        prompt = "\n\n".join(f"{m.get('role', 'user')}: {m['content']}" for m in messages)
-        gm = self._model_factory(model)
-        resp = gm.generate_content(prompt)
-        return _Completion(getattr(resp, "text", "") or "")
-
-
 # --------------------------------------------------------------------------- #
 # Costruzione client + selezione modello
 # --------------------------------------------------------------------------- #
@@ -280,43 +297,66 @@ def build_client(provider: str | None = None):
             return None
         return _AnthropicAdapter(_construct(anthropic.Anthropic, api_key=key))
 
-    if cfg.kind == "gemini":
-        try:
-            import google.generativeai as genai
-        except Exception:
-            return None
-        genai.configure(api_key=key)
-        return _GeminiAdapter(model_factory=lambda name: genai.GenerativeModel(name))
-
     return None
 
 
-def best_model(provider: str | None = None, client=None) -> str:
-    """Sceglie il miglior modello DISPONIBILE per il provider.
+#: Quanti modelli sottoporre alla verifica di salute. Il catalogo di OpenRouter
+#: ne ha centinaia: interrogarli tutti sarebbe centinaia di richieste per una
+#: scelta sola. Si ordina prima per merito e si verifica solo la testa.
+MAX_DA_VERIFICARE = 8
 
-    Preferenza: primo candidato del registry effettivamente presente in
-    `models.list()`; in mancanza, il modello col context_window più ampio
-    (caso Cerebras); poi il primo disponibile; infine il primo candidato.
+
+def ranked_models(provider: str | None = None, client=None, *, compito: str = "json") -> list[str]:
+    """I modelli disponibili, dal migliore al peggiore.
+
+    Tre passaggi, in quest'ordine perché ognuno costa più del precedente:
+    catalogo del provider → ordinamento per nome e penalità accumulate → e solo
+    per la testa della lista, se il provider è OpenRouter, la verifica live
+    degli endpoint (gratuita, senza autenticazione, nessuna inferenza).
     """
+    from offerte import model_selector
+
     provider = provider or active_provider()
     cfg = PROVIDERS.get(provider)
     candidates = cfg.default_models if cfg else (DEFAULT_CEREBRAS_MODEL,)
     if client is None:
         client = build_client(provider)
     if client is None:
-        return candidates[0]
+        return list(candidates)
+
     try:
         data = list(getattr(client.models.list(), "data", []) or [])
         ids = [m.id for m in data if getattr(m, "id", None) and m.id not in _BLACKLIST]
-        for c in candidates:
-            if c in ids:
-                return c
-        with_ctx = [m for m in data if getattr(m, "id", None) and getattr(m, "context_window", 0)]
-        if with_ctx:
-            with_ctx.sort(key=lambda m: m.context_window, reverse=True)
-            return with_ctx[0].id
-        if ids:
-            return ids[0]
     except Exception:
-        pass
-    return candidates[0]
+        return list(candidates)
+    if not ids:
+        return list(candidates)
+
+    ordinati = model_selector.ordina(
+        ids, provider=provider, preferiti=tuple(candidates), compito=compito
+    )
+    if provider != "openrouter":
+        return ordinati
+
+    testa = ordinati[:MAX_DA_VERIFICARE]
+    try:
+        from offerte import endpoint_health
+
+        salute = endpoint_health.check_many(testa)
+    except Exception:
+        # Una verifica che non riesce non deve cambiare l'esito: i candidati
+        # restano quelli, e sarà il failover a scartare chi non risponde.
+        return ordinati
+    riordinata = model_selector.ordina(
+        testa, provider=provider, preferiti=tuple(candidates), compito=compito, salute=salute
+    )
+    return riordinata + ordinati[MAX_DA_VERIFICARE:]
+
+
+def best_model(provider: str | None = None, client=None) -> str:
+    """Il modello da usare adesso per questo provider."""
+    ordinati = ranked_models(provider, client)
+    if ordinati:
+        return ordinati[0]
+    cfg = PROVIDERS.get(provider or active_provider())
+    return (cfg.default_models if cfg else (DEFAULT_CEREBRAS_MODEL,))[0]

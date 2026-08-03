@@ -104,24 +104,22 @@ def test_anthropic_adapter_models_list_has_ids():
     assert ids and all(isinstance(i, str) for i in ids)
 
 
-def test_gemini_adapter_normalizes_to_openai_shape():
-    from offerte.providers import _GeminiAdapter
+def test_gemini_passa_dall_endpoint_openai_compatible(monkeypatch):
+    """Gemini non deve più dipendere dall'SDK `google-generativeai`.
 
-    fake_model = MagicMock()
-    fake_model.generate_content.return_value = MagicMock(text="risposta gemini")
-    adapter = _GeminiAdapter(model_factory=lambda name: fake_model)
-    resp = adapter.chat.completions.create(
-        model="gemini-2.0-flash", messages=[{"role": "user", "content": "ciao"}]
-    )
-    assert resp.choices[0].message.content == "risposta gemini"
+    Quell'SDK si trascinava `googleapiclient` e `grpc` — 111 MB nel bundle
+    Windows — e per giunta non sapeva elencare i modelli, quindi la scelta
+    automatica leggeva una lista finta. Il test guarda il client costruito, non
+    la tabella: è la tabella che potrebbe mentire.
+    """
+    _clear_keys(monkeypatch)
+    monkeypatch.setenv("GEMINI_API_KEY", "gk-finta")
+    from offerte import providers
 
-
-def test_gemini_adapter_models_list_has_ids():
-    from offerte.providers import _GeminiAdapter
-
-    adapter = _GeminiAdapter(model_factory=lambda name: MagicMock())
-    ids = [m.id for m in adapter.models.list().data]
-    assert ids and all(isinstance(i, str) for i in ids)
+    client = providers.build_client("gemini")
+    assert client is not None
+    assert type(client).__module__.startswith("openai")
+    assert "generativelanguage.googleapis.com" in str(client.base_url)
 
 
 def test_best_model_prefers_available_candidate():
@@ -171,18 +169,40 @@ def test_load_keys_from_does_not_override_existing_env(monkeypatch):
     assert os.environ.get("OPENAI_API_KEY") == "from-env"
 
 
-def test_best_model_falls_back_to_largest_context_window():
+def test_il_contesto_piu_ampio_non_e_piu_il_criterio():
+    """Sostituisce la vecchia regola «vince il context_window più grande».
+
+    Era un cattivo indicatore: il modello con la finestra più larga è spesso un
+    reasoning-model, che sui compiti a JSON brucia il budget in ragionamento
+    nascosto e tronca la risposta — un fallimento silenzioso, perché il
+    dizionario esterno si chiude e `json.loads` passa lo stesso. Ora decidono la
+    taglia, la vocazione a seguire istruzioni e quello che il modello ha
+    combinato davvero.
+    """
     from offerte import providers
 
     client = MagicMock()
     client.models.list.return_value = MagicMock(
         data=[
-            MagicMock(id="x-small", context_window=8000),
-            MagicMock(id="x-large", context_window=128000),
+            MagicMock(id="qwq-32b-preview", context_window=128000),
+            MagicMock(id="gemma-3-27b-it", context_window=8000),
         ]
     )
-    # nessun candidato cerebras presente → si sceglie il context_window più ampio
-    assert providers.best_model("cerebras", client) == "x-large"
+    assert providers.best_model("cerebras", client) == "gemma-3-27b-it"
+
+
+def test_un_candidato_del_registry_resta_preferito():
+    """La lista scritta a mano conta, ma non è più l'unica cosa che conta."""
+    from offerte import providers
+
+    client = MagicMock()
+    client.models.list.return_value = MagicMock(
+        data=[
+            MagicMock(id="modello-a-caso-70b-instruct", context_window=8000),
+            MagicMock(id="zai-glm-4.7", context_window=8000),
+        ]
+    )
+    assert providers.best_model("cerebras", client) == "zai-glm-4.7"
 
 
 # --------------------------------------------------------------------------- #

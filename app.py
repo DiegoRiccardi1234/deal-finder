@@ -12,6 +12,7 @@ import time
 from typing import Any
 import streamlit as st
 from _shared import load_css, render_nav
+from offerte import paths
 from offerte.log import configure_logging
 
 # Idempotente: Streamlit ri-esegue lo script a ogni interazione, e senza la
@@ -101,6 +102,13 @@ try:
     _APP_PASSWORD = st.secrets.get("APP_PASSWORD", "") if hasattr(st, "secrets") else ""
 except Exception:
     _APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
+# Nel bundle desktop il gate non protegge da niente: l'applicazione ascolta su
+# 127.0.0.1 e chi la avvia è già seduto davanti al computer. Serviva al deploy
+# pubblico su Streamlit Cloud, e lì resta. Chiedere una password a chi ha
+# appena scompattato uno zip è solo un ostacolo — per giunta con una password
+# che non ha scelto lui.
+if paths.is_frozen():
+    _APP_PASSWORD = ""
 _APP_TEST_MODE = os.environ.get("APP_TEST_MODE", "0").strip() == "1"
 if _APP_PASSWORD and not _APP_TEST_MODE:
     _now = time.time()
@@ -140,30 +148,12 @@ if _APP_PASSWORD and not _APP_TEST_MODE:
                     st.error("Password errata.")
             st.markdown("</div>", unsafe_allow_html=True)
         st.stop()
+# Le chiavi vanno riversate nell'ambiente **prima** della barra laterale: è lì
+# che vive il pannello Impostazioni, e disegnandolo prima mostrerebbe come
+# "non configurato" un provider che invece lo è.
+api_key = _get_ai_api_key()
 render_nav(active_page="tool")
 _init_state()
-_get_ai_api_key()  # bootstrap secret provider → env var
-# Selettore provider AI: solo tra quelli con API key configurata
-from offerte import providers as _providers
-
-_configured_ai = _providers.configured_providers()
-if _configured_ai:
-    _cur_ai = _providers.active_provider()
-    if _cur_ai not in _configured_ai:
-        _cur_ai = _configured_ai[0]
-    _sel_ai = st.sidebar.selectbox(
-        "🧠 Provider AI",
-        _configured_ai,
-        index=_configured_ai.index(_cur_ai),
-        format_func=lambda p: _providers.PROVIDERS[p].label,
-        key="ai_provider_sel",
-    )
-    if _sel_ai != _providers.active_provider():
-        os.environ["AI_PROVIDER"] = _sel_ai
-        from offerte.ai import invalidate_model
-
-        invalidate_model()
-api_key = _get_ai_api_key()
 cerebras_client = _get_ai_client(api_key)
 if kb_manager is not None:
     kb_manager.init_kb_on_startup(api_key)
@@ -259,7 +249,11 @@ st.markdown("<span id='sezione-offerte'></span>", unsafe_allow_html=True)
 st.markdown("<div class='section-card'>", unsafe_allow_html=True)
 if not _presearch_done:
     # ══════════════════════════════ STATO 1: Chat attiva ═════════════════
-    _chat_hdr = st.columns([6, 1])
+    # 1.6 e non 1: con la colonna più stretta l'etichetta del bottone —
+    # maiuscola e spaziata dal design system — non ci stava sotto i ~950px CSS
+    # e si spezzava in tre righe («RICO / MIN / CIA»). A schermo largo non
+    # cambia niente: il bottone resta della sua larghezza, allineato a destra.
+    _chat_hdr = st.columns([6, 1.6])
     with _chat_hdr[0]:
         st.markdown(
             "<div class='section-heading'><h3>Trova le migliori offerte</h3>"
@@ -273,8 +267,13 @@ if not _presearch_done:
         st.markdown("</div>", unsafe_allow_html=True)
 
     if cerebras_client is None:
+        # Il messaggio deve indicare una strada che l'utente può percorrere da
+        # dove si trova: nel bundle non esiste nessun file dei secrets da
+        # editare, e mandarcelo era un vicolo cieco.
         st.info(
-            "💡 Per la chat assistita imposta CEREBRAS_API_KEY in secrets o variabile ambiente."
+            "💡 La chat assistita ha bisogno di una chiave AI. "
+            "Aprila da **⚙️ Impostazioni** nella barra laterale: ci sono quattro "
+            "fornitori gratuiti, nessuno chiede una carta."
         )
 
     c_left, c_mid, c_right = st.columns([1, 6, 1])
@@ -738,18 +737,22 @@ if st.session_state.get("ricerca_effettuata", False):
                     if _m:
                         _amazon_asin_pairs.append((_ao, _m.group(1)))
             if _amazon_asin_pairs:
+                # Qui c'era il grafico di CamelCamelCamel incorporato. Non si
+                # vedeva: quel dominio risponde **403** a chi lo richiede da
+                # fuori, con o senza Referer, e lo faceva da sempre — verificato
+                # il 2026-08-03. Restava un riquadro rotto che sembrava un
+                # guasto nostro. Un link che funziona è meglio di un'immagine
+                # che non c'è.
                 with st.expander("📈 Storico prezzi Amazon (CamelCamelCamel)", expanded=False):
+                    st.caption(
+                        "Lo storico si apre sul sito: CamelCamelCamel non "
+                        "consente di incorporare i suoi grafici altrove."
+                    )
                     for _cao, _asin in _amazon_asin_pairs[:5]:
-                        st.markdown(f"**{_cao.nome[:80]}** — {_format_price(_cao.prezzo)}")
-                        _chart_url = (
-                            f"https://charts.camelcamelcamel.com/it/{_asin}/amazon.png"
-                            f"?force=1&zero=0&w=800&h=200&desired=false&legend=1&ilt=1&tp=all&fo=0&lang=it"
+                        st.markdown(
+                            f"**{_cao.nome[:80]}** — {_format_price(_cao.prezzo)} · "
+                            f"[storico prezzi →](https://camelcamelcamel.com/product/{_asin})"
                         )
-                        st.image(_chart_url, width="stretch")
-                        st.caption(
-                            f"[Apri storico completo su CamelCamelCamel →](https://camelcamelcamel.com/product/{_asin})"
-                        )
-                        st.divider()
 
             risultati_con_alternativa = [o for o in offerte_vis if str(o.alternativa or "").strip()]
             if risultati_con_alternativa:

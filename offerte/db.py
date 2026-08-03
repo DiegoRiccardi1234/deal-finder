@@ -14,6 +14,8 @@ sembrare vuoto. Stesso approccio del progetto gemello `job-finder`.
 
 Solo stdlib, come `offerte/config.py`, per poter essere importato da qualsiasi
 modulo di `offerte/`, `ui/` e dai moduli top-level senza import circolari.
+L'unica dipendenza interna è `offerte.paths`, che a sua volta non importa nulla
+del progetto: la catena resta aciclica.
 """
 
 from __future__ import annotations
@@ -25,8 +27,9 @@ import threading
 from collections.abc import Callable
 from typing import Any, TypeVar
 
-_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join(_ROOT, "data")
+from offerte import paths
+
+DATA_DIR = str(paths.data_dir())
 
 #: Database condiviso da tutti gli store. Un solo file → un solo WAL e un solo
 #: writer lock, invece di sei file che si sporcano a vicenda.
@@ -128,8 +131,15 @@ def get_db(path: str | None = None) -> Database:
         return db
 
 
-def reset_instances() -> None:
-    """Chiude e dimentica le connessioni in cache. Solo per i test."""
+def close_all() -> None:
+    """Chiude e dimentica le connessioni in cache.
+
+    Serve in due momenti diversi. Nei test, per isolare un database per caso.
+    E alla chiusura dell'applicazione desktop: chiudendo l'ultima connessione
+    SQLite fa il checkpoint e riassorbe il `-wal`, mentre un `os._exit` a
+    freddo lo lascerebbe lì — e sarebbe poi quel file bloccato a far fallire
+    la sostituzione durante un aggiornamento.
+    """
     with _INSTANCES_LOCK:
         for db in _INSTANCES.values():
             try:
@@ -137,3 +147,7 @@ def reset_instances() -> None:
             except sqlite3.Error:
                 pass
         _INSTANCES.clear()
+
+
+#: Nome storico, usato dai test.
+reset_instances = close_all
