@@ -180,6 +180,14 @@ def main() -> int:
 
                 scritti = sincronizza(origine=_radice(scompattato), destinazione=dest)
                 scrivi(f"copiati {scritti} file, data/ intatta")
+
+            # L'archivio scaricato ha finito il suo lavoro: sono ~78 MB accanto
+            # ai dati dell'utente, quanto l'applicazione intera. Si cancella solo
+            # **dopo** una copia riuscita — se qualcosa fosse andato storto
+            # servirebbe ancora, ed è già scaricato.
+            with contextlib.suppress(OSError):
+                Path(args.zip).unlink(missing_ok=True)
+                scrivi("archivio scaricato rimosso")
         except Exception as exc:
             scrivi(f"FALLITO: {exc!r}")
             scrivi("resta installata la versione di prima")

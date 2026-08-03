@@ -4,6 +4,14 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- The updater left the downloaded archive in `data/aggiornamenti/` — 78 MB
+  sitting next to the user's data, the size of the whole application. It is now
+  removed, but only after the copy has succeeded: if something had gone wrong it
+  would still be needed, and it is already on disk.
+
 ## [4.0.0] - 2026-08-03
 
 Major because the distribution format changes completely. Until now the release
