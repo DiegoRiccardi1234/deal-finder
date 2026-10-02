@@ -54,7 +54,7 @@ jobs:
 
       - name: Allega alla release
         if: github.event_name == 'push'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/DealFinder-windows.zip
           body_path: release-notes.md
