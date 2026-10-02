@@ -32,6 +32,7 @@ except ImportError:
 
 from ui.ai_client import (
     _ai_chat_with_retry,
+    _ai_error_message,
     _extract_json_object,
     _get_ai_client,
     _is_test_mode,
@@ -137,6 +138,7 @@ def _sanitize_presearch_payload(payload: dict[str, Any], transcript: str) -> dic
 
 
 def _reset_presearch_chat() -> None:
+    st.session_state.pop("presearch_ai_warning", None)
     st.session_state["presearch_messages"] = [
         {
             "role": "assistant",
@@ -383,6 +385,7 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
     if not cleaned:
         return
 
+    st.session_state.pop("presearch_ai_warning", None)
     st.session_state["presearch_messages"].append({"role": "user", "content": cleaned})
     preferenze = dict(st.session_state.get("preferenze_utente", {}))
     messaggi = list(preferenze.get("messaggi", []))
@@ -524,7 +527,13 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
                 temperature=0.1,
             )
             result = _extract_json_object(raw)
-        except Exception:
+        except Exception as exc:
+            warning = (
+                _ai_error_message(exc)
+                + " La ricerca viene preparata con regole locali, senza AI; puoi comunque cercare le offerte."
+            )
+            st.session_state["presearch_ai_warning"] = warning
+            st.warning(warning)
             result = {}
 
         if not result:

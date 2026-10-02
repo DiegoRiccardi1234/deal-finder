@@ -67,6 +67,37 @@ def _is_test_mode() -> bool:
     return os.environ.get("APP_TEST_MODE", "0").strip() == "1"
 
 
+def _ai_error_message(exc: BaseException) -> str:
+    """Spiega l'errore senza esporre risposta del provider o credenziali."""
+    status = getattr(exc, "status_code", None)
+    if status is None:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+    error_text = str(exc).lower()
+    if status is None:
+        match = re.search(r"\b(401|402|403|429)\b", error_text)
+        status = int(match.group(1)) if match else None
+    if status == 402 or "payment required" in error_text:
+        return (
+            "Il provider AI richiede credito o un piano abilitato (HTTP 402). "
+            "Apri ⚙️ Impostazioni per scegliere un altro provider o verificare "
+            "il piano del provider attuale."
+        )
+    if status in (401, 403) or "invalid api key" in error_text:
+        return (
+            "La chiave AI non è valida o non è autorizzata per questa richiesta. "
+            "Apri ⚙️ Impostazioni per controllare la chiave o scegliere un altro provider."
+        )
+    if status == 429 or any(word in error_text for word in ("too_many", "queue")):
+        return (
+            "Il provider AI è momentaneamente sovraccarico o ha raggiunto un limite di richieste. "
+            "Riprova tra qualche secondo oppure scegli un altro provider in ⚙️ Impostazioni."
+        )
+    return (
+        "Il servizio AI non ha completato la richiesta. Riprova oppure controlla "
+        "il provider e la chiave in ⚙️ Impostazioni."
+    )
+
+
 class _MockCompletionMessage:
     def __init__(self, content: str) -> None:
         self.content = content

@@ -40,6 +40,11 @@ Describe what you want in plain language — the AI turns it into an optimized q
 - **Pluggable multi-provider AI** — switch the LLM backend at runtime from the sidebar: **Cerebras, Groq, OpenAI, OpenRouter, Anthropic (Claude), Google Gemini**. Set the key of any provider you own; the best available model is picked dynamically.
 - **10 live sources scraped in parallel** — aggregated, de-duplicated and price-ranked. See [Sources](#-sources) for exactly which ones answer today and which are blocked by bot protection.
 - **Watchlist** — save products and review them even before running a new search.
+- **Listing checks** — explicit title warnings for empty boxes, broken items,
+  deposits and monthly prices, also passed to the AI recommendation. Offers
+  remain visible; a low price alone does not trigger a warning.
+- **AI failure guidance** — payment, key and rate-limit errors explain the next
+  step in Settings; local search preparation is disclosed when AI is unavailable.
 - **Price history + alerts** — tracks the minimum price per query over time and flags new lows / below-threshold deals.
 - **Persistent search cache** — disk-backed with TTL, respecting your filters and result limit. Use **Aggiorna offerte** to fetch fresh results immediately.
 - **Light & dark mode**, CSV export, side-by-side comparison, Amazon price history.
@@ -171,6 +176,11 @@ Descrivi cosa cerchi in linguaggio naturale — l'AI lo trasforma in query ottim
 - **Preferiti** — salva i prodotti e riguardali anche prima di avviare una nuova ricerca.
 - **Storico prezzi + alert** — traccia il prezzo minimo per query nel tempo e segnala nuovi minimi / offerte sotto soglia.
 - **Cache ricerche persistente** — rispetta filtri e numero di risultati, riducendo le richieste ripetute. **Aggiorna offerte** ripete subito la ricerca senza cache.
+- **Verifica annunci** — avvisi motivati per scatole vuote, guasti, acconti e
+  prezzi mensili espliciti nel titolo, condivisi anche con il consiglio AI.
+  Gli annunci restano visibili; il solo prezzo basso non genera un avviso.
+- **Errori AI chiari** — problemi di credito, chiave e limiti rimandano alle
+  Impostazioni. Se la preparazione usa regole locali senza AI, l'app lo dichiara.
 - **Modalità chiara e scura**, export CSV, confronto fianco a fianco, storico prezzi Amazon.
 - **Auto-update** — le installazioni locali controllano GitHub e si aggiornano con un click.
 

@@ -6,6 +6,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-10-02
+
+### Added
+- Offer cards explain explicit title signals such as empty boxes, broken items,
+  spare parts, deposits and monthly instalments. Listings remain visible;
+  flagged titles do not receive the best-price badge. Low prices alone are
+  not treated as suspicious.
+- Recommendations receive the same warnings and must distinguish a complete
+  product from a box, damaged item or partial payment.
+
+### Fixed
+- AI payment, authentication and rate-limit errors now explain what to do in
+  Settings without exposing raw provider responses. Pre-search failures visibly
+  disclose the local fallback, and the warning survives Streamlit reruns.
+
+### Changed
+- Reviewed and merged Dependabot #14 (Python dependencies) and #10 (release
+  action v3); verified the updated stack with the full test suite.
+
 ## [4.0.1] - 2026-10-02
 
 ### Added

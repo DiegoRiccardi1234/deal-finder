@@ -45,6 +45,7 @@ except ImportError:
 
 # Helper modulari
 from ui.ai_client import (
+    _ai_error_message,
     _get_ai_api_key,
     _get_ai_client,
 )
@@ -201,6 +202,8 @@ fonti_backend: list[str] = [_fonti_map[f] for f in fonti_selezionate if f in _fo
 avvia_ricerca: bool = False
 _flush_pending_price_sync()
 _history = load_history()
+if st.session_state.get("presearch_ai_warning"):
+    st.warning(st.session_state["presearch_ai_warning"])
 if _history:
     with st.expander("Ricerche recenti", expanded=False):
         for entry in _history[:8]:
@@ -771,7 +774,9 @@ if st.session_state.get("ricerca_effettuata", False):
                 "Chiedi quale prodotto ti conviene tra quelli trovati, in base al tuo uso e budget."
             )
             if cerebras_client is None:
-                st.info("💡 Aggiungi CEREBRAS_API_KEY per ottenere la raccomandazione finale AI.")
+                st.info(
+                    "💡 Apri ⚙️ Impostazioni per configurare un provider AI e ottenere il consiglio."
+                )
             else:
                 # Auto top-3 al primo caricamento (al massimo 1 tentativo per ricerca)
                 if not st.session_state.get("final_chat_messages") and not st.session_state.get(
@@ -798,9 +803,7 @@ if st.session_state.get("ricerca_effettuata", False):
                                 ]
                                 st.rerun()
                         except Exception as exc:
-                            _exc_s = str(exc).lower()
-                            if not ("429" in _exc_s or "too_many" in _exc_s or "queue" in _exc_s):
-                                st.warning(f"⚠️ Auto-raccomandazione non disponibile: {exc}")
+                            st.warning(_ai_error_message(exc))
 
                 _AUTO_QUERY_PREFIX = "Analizza i prodotti disponibili"
                 for message in st.session_state.get("final_chat_messages", []):
@@ -834,13 +837,7 @@ if st.session_state.get("ricerca_effettuata", False):
                             )
                             st.rerun()
                         except Exception as exc:
-                            _exc_s = str(exc).lower()
-                            if "429" in _exc_s or "too_many" in _exc_s or "queue" in _exc_s:
-                                st.warning(
-                                    "⚠️ Servizio AI momentaneamente sovraccarico, riprova tra qualche secondo."
-                                )
-                            else:
-                                st.error(f"❌ Errore AI: {exc}")
+                            st.warning(_ai_error_message(exc))
 
     st.markdown("</div>", unsafe_allow_html=True)
 

@@ -12,6 +12,7 @@ except Exception:
     kb_manager = None  # type: ignore[assignment]
 
 from offerte_tech import Offerta
+from offerte.offer_warnings import get_offer_warnings
 
 try:
     from search_history import load_history, save_search as _save_search
@@ -44,7 +45,17 @@ def _render_offerta_card(offerta: Offerta, idx: int, best_price: float = 0) -> s
     title = _html.escape(offerta.nome[:90] + ("\u2026" if len(offerta.nome) > 90 else ""))
     specs_line = _summarize_specs(offerta.specs, offerta.nome)
     specs_html = f"<p class='card-specs'>{_html.escape(specs_line)}</p>" if specs_line else ""
-    is_best = best_price > 0 and offerta.prezzo == best_price
+    warnings = get_offer_warnings(offerta.nome)
+    warnings_html = ""
+    if warnings:
+        warnings_html = (
+            "<div class='offer-warning' style='border-left:3px solid currentColor;"
+            "padding:8px;margin:8px 0;font-size:0.9rem'>"
+            "<strong>⚠️ Verifica l'annuncio</strong>"
+            + "".join(f"<p>{_html.escape(warning)}</p>" for warning in warnings)
+            + "</div>"
+        )
+    is_best = not warnings and best_price > 0 and offerta.prezzo == best_price
     best_badge = "<span class='best-badge'>Miglior Prezzo</span>" if is_best else ""
     img_html = ""
     if getattr(offerta, "immagine", ""):
@@ -69,6 +80,7 @@ def _render_offerta_card(offerta: Offerta, idx: int, best_price: float = 0) -> s
         f"<div class='card-body'>"
         f"<p class='card-title'>{title}</p>"
         f"<p class='card-price'>{price_str}</p>"
+        f"{warnings_html}"
         f"<p class='card-meta'>{negozio_escaped}{spedizione_html}</p>"
         f"{specs_html}"
         f"</div>"
@@ -81,7 +93,10 @@ def _render_results_grid(offerte: list[Offerta]) -> None:
     """Renders tutti i risultati come card grid con immagini."""
     if not offerte:
         return
-    best_price = min(o.prezzo for o in offerte) if offerte else 0
+    best_price = min(
+        (o.prezzo for o in offerte if not get_offer_warnings(o.nome)),
+        default=0,
+    )
     cards_html = "".join(
         _render_offerta_card(o, i, best_price=best_price) for i, o in enumerate(offerte)
     )

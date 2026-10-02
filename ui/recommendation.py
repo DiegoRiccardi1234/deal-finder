@@ -13,6 +13,7 @@ except Exception:
     kb_manager = None  # type: ignore[assignment]
 
 from offerte_tech import Offerta
+from offerte.offer_warnings import get_offer_warnings
 
 try:
     from search_history import load_history, save_search as _save_search
@@ -36,6 +37,7 @@ def _build_products_payload(offerte: list[Offerta]) -> list[dict[str, Any]]:
             "negozio": offerta.negozio,
             "link": offerta.link,
             "specs": offerta.specs,
+            "avvisi": get_offer_warnings(offerta.nome),
         }
         for offerta in sorted(offerte, key=lambda item: item.prezzo)[:10]
     ]
@@ -58,13 +60,21 @@ def _build_comparison_payload() -> tuple[list[dict[str, Any]], list[dict[str, An
             continue
         ordered = sorted(results, key=lambda item: item.prezzo)
         if ordered:
+            best = next((item for item in ordered if not get_offer_warnings(item.nome)), None)
             summary_payload.append(
                 {
                     "query": str(query),
-                    "best_name": ordered[0].nome,
-                    "best_price": round(ordered[0].prezzo, 2),
-                    "best_store": ordered[0].negozio,
+                    "best_name": best.nome if best else None,
+                    "best_price": round(best.prezzo, 2) if best else None,
+                    "best_store": best.negozio if best else None,
                     "count": len(ordered),
+                    "avvisi": []
+                    if best
+                    else list(
+                        dict.fromkeys(
+                            warning for item in ordered for warning in get_offer_warnings(item.nome)
+                        )
+                    ),
                 }
             )
 
@@ -78,6 +88,7 @@ def _build_comparison_payload() -> tuple[list[dict[str, Any]], list[dict[str, An
                     "negozio": offerta.negozio,
                     "link": offerta.link,
                     "specs": offerta.specs,
+                    "avvisi": get_offer_warnings(offerta.nome),
                 }
             )
 
@@ -119,6 +130,11 @@ def _call_final_recommendation(
         f"PRODOTTI TROVATI (ordinati per prezzo):\n{json.dumps(products_payload, ensure_ascii=False)}\n"
         "Rispondi in italiano con una raccomandazione motivata e personalizzata sulle esigenze emerse dalla conversazione. "
         "Cita nome e prezzo dei prodotti consigliati, confronta almeno 2-3 parametri rilevanti per l'utente. "
+        "Leggi il campo avvisi: non raccomandare come prodotto completo un annuncio che indica "
+        "solo scatola, guasto o ricambi, acconto o rata mensile. Spiega il segnale e invita a verificare "
+        "contenuto, condizione e prezzo totale dell'annuncio prima di confrontarlo o acquistare. "
+        "Se tutte le offerte hanno avvisi, chiarisci che serve verifica e non inventare un prezzo totale. "
+        "Un prezzo basso da solo non indica un problema: non formulare accuse o sospetti dal prezzo. "
         "Sii diretto e concreto."
     )
     payload = [{"role": "system", "content": system_prompt}] + messages
