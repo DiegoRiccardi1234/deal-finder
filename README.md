@@ -39,9 +39,9 @@ Describe what you want in plain language — the AI turns it into an optimized q
 - **Conversational search** — an LLM extracts query, budget and hardware specs from a free-text request, then auto-generates a ranked top-3 recommendation.
 - **Pluggable multi-provider AI** — switch the LLM backend at runtime from the sidebar: **Cerebras, Groq, OpenAI, OpenRouter, Anthropic (Claude), Google Gemini**. Set the key of any provider you own; the best available model is picked dynamically.
 - **10 live sources scraped in parallel** — aggregated, de-duplicated and price-ranked. See [Sources](#-sources) for exactly which ones answer today and which are blocked by bot protection.
-- **Watchlist** — save products and review them later.
+- **Watchlist** — save products and review them even before running a new search.
 - **Price history + alerts** — tracks the minimum price per query over time and flags new lows / below-threshold deals.
-- **Persistent search cache** — disk-backed with TTL, to cut repeated scraping and rate-limits.
+- **Persistent search cache** — disk-backed with TTL, respecting your filters and result limit. Use **Aggiorna offerte** to fetch fresh results immediately.
 - **Light & dark mode**, CSV export, side-by-side comparison, Amazon price history.
 - **Auto-update** — local installs check GitHub for a newer release and update with one click.
 
@@ -168,9 +168,9 @@ Descrivi cosa cerchi in linguaggio naturale — l'AI lo trasforma in query ottim
 - **Ricerca conversazionale** — un LLM estrae query, budget e specifiche da una richiesta in testo libero e genera in automatico una raccomandazione top-3.
 - **AI multi-provider modulare** — cambia il backend LLM al volo dalla sidebar: **Cerebras, Groq, OpenAI, OpenRouter, Anthropic (Claude), Google Gemini**. Imposti la chiave del provider che hai; il modello migliore disponibile è scelto dinamicamente.
 - **10 fonti attive in parallelo** — aggregate, deduplicate e ordinate per prezzo. La tabella [Sources](#-sources) dice quali rispondono oggi e quali sono bloccate dalla bot-protection.
-- **Preferiti** — salva i prodotti e riguardali dopo.
+- **Preferiti** — salva i prodotti e riguardali anche prima di avviare una nuova ricerca.
 - **Storico prezzi + alert** — traccia il prezzo minimo per query nel tempo e segnala nuovi minimi / offerte sotto soglia.
-- **Cache ricerche persistente** — su disco con TTL, per ridurre scraping ripetuto e rate-limit.
+- **Cache ricerche persistente** — rispetta filtri e numero di risultati, riducendo le richieste ripetute. **Aggiorna offerte** ripete subito la ricerca senza cache.
 - **Modalità chiara e scura**, export CSV, confronto fianco a fianco, storico prezzi Amazon.
 - **Auto-update** — le installazioni locali controllano GitHub e si aggiornano con un click.
 

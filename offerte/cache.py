@@ -31,16 +31,31 @@ def make_cache_key(
     budget_max: int,
     condizione: str,
     fonti: list[str] | tuple[str, ...] | None,
+    *,
+    top_n: int | None = None,
+    categoria: str = "altro",
+    filtri_ai: dict[str, Any] | None = None,
+    ai_enabled: bool = False,
 ) -> str:
-    """Chiave stabile e indipendente dall'ordine delle fonti."""
-    raw = "|".join(
-        [
-            str(query or "").strip().lower(),
-            str(int(prezzo_min)),
-            str(int(budget_max)),
-            str(condizione or "tutti"),
-            ",".join(sorted(str(f) for f in (fonti or []))),
-        ]
+    """Identifica i risultati già filtrati e troncati, non solo la query.
+
+    La versione esclude le vecchie voci che non distinguevano i requisiti.
+    """
+    raw = json.dumps(
+        {
+            "version": 2,
+            "query": str(query or "").strip().lower(),
+            "prezzo_min": int(prezzo_min),
+            "budget_max": int(budget_max),
+            "condizione": str(condizione or "tutti"),
+            "fonti": sorted(set(str(f) for f in (fonti or []))),
+            "top_n": top_n,
+            "categoria": categoria,
+            "filtri_ai": filtri_ai or {},
+            "ai_enabled": ai_enabled,
+        },
+        sort_keys=True,
+        ensure_ascii=False,
     )
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()
 

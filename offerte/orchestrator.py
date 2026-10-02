@@ -354,9 +354,6 @@ def cerca_offerte(
                 )
             ] = "Alibaba.com"
 
-        # Cap per-source: evita che una singola fonte (es. eBay con 50 risultati) soffochi le altre.
-        # Distribuiamo top_n diviso per numer fonti per non avere un dominio assoluto, + extra safety margin
-        _per_source_cap = max((top_n // max(1, len(fonti_norm))) + 5, 10)
         # Tetto al tempo totale: prima non c'era, quindi una fonte appesa
         # trascinava l'intera ricerca finché non scadevano i retry di `requests`
         # (TIMEOUT × (1+MAX_RETRIES)) — e il `with` non poteva chiudersi.
@@ -368,7 +365,6 @@ def cerca_offerte(
                 label = future_to_label[future]
                 try:
                     new_results = future.result()
-                    new_results = new_results[:_per_source_cap]
                     offerte += new_results
                     if progress_callback:
                         progress_callback(label, len(new_results))

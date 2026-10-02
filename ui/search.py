@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import contextlib
+import copy
 import io
+import json
 import os
 import time
 from typing import Any
@@ -49,6 +51,9 @@ def _run_search(
     condizione: str,
     fonti_backend: list[str],
     cerebras_client: object | None,
+    force_refresh: bool = False,
+    categoria: str | None = None,
+    filtri_ai: dict[str, Any] | None = None,
 ) -> None:
     st.session_state["ricerca_effettuata"] = True
     st.session_state["ultima_query"] = query
@@ -62,10 +67,32 @@ def _run_search(
     st.session_state["risultati"] = []
     st.session_state["log_ricerca"] = ""
     st.session_state["prezzo_nuovo_minimo"] = False
+    st.session_state["prezzo_minimo_prec"] = None
+    st.session_state["prezzo_minimo_corrente"] = None
+    # Anche una ricerca in cache deve liberarsi dei filtri dei vecchi risultati.
+    st.session_state["filtro_fonti_tabella"] = []
+    st.session_state["filtro_prezzo_range_tabella"] = None
+    st.session_state["filtro_condizione_tabella"] = "tutti"
+    st.session_state["comparatore_selezione"] = []
+    st.session_state["watchlist_add_selezione"] = []
 
-    categoria = str(st.session_state.get("categoria", "altro") or "altro")
-    if not categoria:
+    categoria = categoria or str(st.session_state.get("categoria", "altro") or "altro")
+    if categoria == "altro":
         categoria = _infer_categoria_from_query(query)
+    filtri_ai = copy.deepcopy(
+        st.session_state.get("filtri_ai", {}) if filtri_ai is None else filtri_ai
+    )
+    st.session_state["filtri_ai_ultima_ricerca"] = copy.deepcopy(filtri_ai)
+    st.session_state["_last_search_params"] = {
+        "query": query,
+        "prezzo_min": prezzo_min,
+        "budget_max": budget_max,
+        "top_n": top_n,
+        "condizione": condizione,
+        "fonti_backend": list(fonti_backend),
+        "categoria": categoria,
+        "filtri_ai": copy.deepcopy(filtri_ai),
+    }
 
     try:
         ebay_app_id = str(st.secrets.get("EBAY_APP_ID", "") or "")
@@ -85,7 +112,6 @@ def _run_search(
         st.session_state["log_ricerca"] = (
             "[mock-mode] risultati generati localmente per la suite UI"
         )
-        st.session_state["filtri_ai_ultima_ricerca"] = st.session_state.get("filtri_ai", {})
         return
 
     # ── Cache: stessa ricerca entro 5 minuti → riusa i risultati ──────────────
@@ -94,42 +120,49 @@ def _run_search(
         int(prezzo_min),
         int(budget_max),
         condizione,
-        tuple(sorted(fonti_backend)),
+        tuple(sorted(set(fonti_backend))),
+        int(top_n),
+        categoria,
+        json.dumps(filtri_ai, sort_keys=True, ensure_ascii=False),
+        cerebras_client is not None,
     )
     _cache = st.session_state.get("_search_cache", {})
-    if _cache.get("key") == _cache_key and (time.time() - float(_cache.get("ts", 0))) < 300:
+    if (
+        not force_refresh
+        and _cache.get("key") == _cache_key
+        and (time.time() - float(_cache.get("ts", 0))) < 300
+    ):
         st.session_state["risultati"] = _cache["risultati"]
         st.session_state["log_ricerca"] = _cache.get("log", "")
-        st.session_state["filtri_ai_ultima_ricerca"] = st.session_state.get("filtri_ai", {})
-        st.toast("⚡ Risultati dalla cache (< 5 min) — clicca di nuovo Cerca per aggiornare.")
+        st.toast("⚡ Risultati dalla cache (< 5 min). Usa Aggiorna offerte per una nuova ricerca.")
         return
 
     # ── Cache su disco: persiste tra sessioni/riavvii ─────────────────────────
     _disk_key = (
-        _disk_cache.make_cache_key(query, prezzo_min, budget_max, condizione, fonti_backend)
+        _disk_cache.make_cache_key(
+            query,
+            prezzo_min,
+            budget_max,
+            condizione,
+            fonti_backend,
+            top_n=int(top_n),
+            categoria=categoria,
+            filtri_ai=filtri_ai,
+            ai_enabled=cerebras_client is not None,
+        )
         if _disk_cache
         else None
     )
-    if _disk_key:
+    if _disk_key and not force_refresh:
         _disk_hit = _disk_cache.read(_disk_key, ttl=300)
         if _disk_hit is not None:
             try:
                 st.session_state["risultati"] = [Offerta(**_d) for _d in _disk_hit]
                 st.session_state["log_ricerca"] = "♻️ Risultati dalla cache su disco (< 5 min)."
-                st.session_state["filtri_ai_ultima_ricerca"] = st.session_state.get("filtri_ai", {})
-                st.toast("♻️ Risultati dalla cache su disco — clicca di nuovo Cerca per aggiornare.")
+                st.toast("♻️ Risultati dalla cache su disco. Usa Aggiorna offerte per aggiornarli.")
                 return
             except Exception:
                 pass
-
-    # Reset filtri tabella per la nuova ricerca
-    st.session_state["filtro_fonti_tabella"] = []
-    st.session_state["filtro_prezzo_range_tabella"] = None
-    st.session_state["filtro_condizione_tabella"] = "tutti"
-    st.session_state["comparatore_selezione"] = []
-    # Reset chat AI post-ricerca e flag auto top-3 ad ogni nuova ricerca
-    st.session_state["final_chat_messages"] = []
-    st.session_state["auto_recommend_tried"] = False
 
     try:
         with st.status(
@@ -154,7 +187,7 @@ def _run_search(
                         query=query,
                         budget_max=float(budget_max),
                         prezzo_min=float(prezzo_min),
-                        filtri_ai=st.session_state.get("filtri_ai", {}),
+                        filtri_ai=filtri_ai,
                         top_n=int(top_n),
                         export_csv=False,
                         condizione=condizione,
@@ -177,7 +210,6 @@ def _run_search(
 
         st.session_state["risultati"] = risultati
         st.session_state["log_ricerca"] = log_buffer.getvalue()
-        st.session_state["filtri_ai_ultima_ricerca"] = st.session_state.get("filtri_ai", {})
         # Salva in cache per 5 minuti
         st.session_state["_search_cache"] = {
             "key": _cache_key,

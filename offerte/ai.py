@@ -708,8 +708,9 @@ def filtra_risultati_con_ai(risultati: list[Offerta], filtri: dict[str, str]) ->
         if extra > 0:
             print(f"    ... altri {extra} scarti hard non mostrati")
 
-    if hard_filtered:
-        risultati = hard_filtered
+    risultati = hard_filtered
+    if not risultati:
+        return []
 
     scored: list[tuple[int, Offerta]] = []
 

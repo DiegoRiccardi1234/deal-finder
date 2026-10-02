@@ -196,9 +196,10 @@ def _hard_spec_mismatch_reasons(offerta: Offerta, filtri: dict[str, str]) -> lis
 
     storage_target = filtri.get("storage_gb") or filtri.get("storage")
     if storage_target:
+        target_values = _extract_gb_values(str(storage_target))
         m = re.search(r"(\d{2,4})", str(storage_target))
-        if m:
-            target = int(m.group(1))
+        if target_values or m:
+            target = max(target_values) if target_values else int(m.group(1))
             gb_vals = _extract_storage_gb_values(search_lower)
             if not gb_vals:
                 gb_vals = _extract_gb_values(search_lower)

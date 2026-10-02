@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import copy
 import io
 import os
 from typing import Any
@@ -75,28 +76,34 @@ def _render_comparison_board(cmp_results: dict[str, list[Offerta]]) -> None:
         if isinstance(raw_results, list):
             ordered_by_query[str(query)] = sorted(raw_results, key=lambda item: item.prezzo)
 
-    valid_queries = [query for query, rows in ordered_by_query.items() if rows]
-    if not valid_queries:
-        st.warning("Nessun risultato disponibile per il confronto richiesto.")
+    comparison_queries = list(ordered_by_query)
+    if not comparison_queries:
         return
+    if not any(ordered_by_query.values()):
+        st.warning("Nessun risultato disponibile per il confronto richiesto.")
 
-    spec_keys = _extract_comparison_spec_keys(
-        {query: ordered_by_query[query] for query in valid_queries}
-    )
+    spec_keys = _extract_comparison_spec_keys(ordered_by_query)
 
     header_cells = "".join(
         (
             f"<th>{_html.escape(query.title())}"
             f"<span>{len(ordered_by_query[query])} risultati</span></th>"
         )
-        for query in valid_queries
+        for query in comparison_queries
     )
 
     price_cells = []
     spread_cells = []
     best_offer_cells = []
-    for query in valid_queries:
+    for query in comparison_queries:
         rows = ordered_by_query[query]
+        if not rows:
+            price_cells.append(
+                "<td><span class='value'>n.d.</span><span class='meta'>Nessun risultato</span></td>"
+            )
+            spread_cells.append("<td>n.d.</td>")
+            best_offer_cells.append("<td>Nessun risultato</td>")
+            continue
         best = rows[0]
         price_cells.append(
             "<td>"
@@ -135,9 +142,10 @@ def _render_comparison_board(cmp_results: dict[str, list[Offerta]]) -> None:
     for key in spec_keys:
         label = _html.escape(str(key).replace("_", " ").capitalize())
         values = []
-        for query in valid_queries:
-            best = ordered_by_query[query][0]
-            values.append(f"<td>{_html.escape(_spec_value_for_key(best, key))}</td>")
+        for query in comparison_queries:
+            rows = ordered_by_query[query]
+            value = _spec_value_for_key(rows[0], key) if rows else "n.d."
+            values.append(f"<td>{_html.escape(value)}</td>")
         specs_rows_html += f"<tr><td>{label}</td>{''.join(values)}</tr>"
 
     table_html = (
@@ -165,8 +173,8 @@ def _render_comparison_board(cmp_results: dict[str, list[Offerta]]) -> None:
     )
     st.markdown(table_html, unsafe_allow_html=True)
 
-    cmp_cols = st.columns(len(valid_queries), gap="medium")
-    for col, query in zip(cmp_cols, valid_queries, strict=True):
+    cmp_cols = st.columns(len(comparison_queries), gap="medium")
+    for col, query in zip(cmp_cols, comparison_queries, strict=True):
         rows = ordered_by_query[query]
         stack_items = []
         for rank, offerta in enumerate(rows[:3], start=1):
@@ -283,6 +291,22 @@ def _run_comparison_search(
 ) -> None:
     """Esegue ricerche separate per ciascuna query di confronto e salva i risultati."""
     st.session_state["ricerca_effettuata"] = True
+    st.session_state["ultima_query"] = " vs ".join(queries)
+    st.session_state["ultimo_prezzo_min"] = int(prezzo_min)
+    st.session_state["ultimo_prezzo_max"] = int(budget_max)
+    st.session_state["ultimo_top_n"] = int(top_n)
+    st.session_state["condizione"] = condizione
+    st.session_state["filtro_fonti_tabella"] = []
+    st.session_state["filtro_prezzo_range_tabella"] = None
+    st.session_state["filtro_condizione_tabella"] = "tutti"
+    st.session_state["comparatore_selezione"] = []
+    st.session_state["watchlist_add_selezione"] = []
+    st.session_state["prezzo_nuovo_minimo"] = False
+    st.session_state["prezzo_minimo_prec"] = None
+    st.session_state["prezzo_minimo_corrente"] = None
+    filtri_ai = copy.deepcopy(st.session_state.get("filtri_ai", {}))
+    st.session_state["filtri_ai_ultima_ricerca"] = copy.deepcopy(filtri_ai)
+    st.session_state.pop("_last_search_params", None)
     st.session_state["comparison_results"] = {}
     st.session_state["risultati"] = []
     st.session_state["log_ricerca"] = ""
@@ -314,6 +338,7 @@ def _run_comparison_search(
                 with contextlib.redirect_stdout(log_buf):
                     res = cerca_offerte(
                         query=q,
+                        filtri_ai=copy.deepcopy(filtri_ai),
                         budget_max=float(budget_max),
                         prezzo_min=float(prezzo_min),
                         top_n=top_n,

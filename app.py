@@ -538,6 +538,14 @@ if st.session_state.get("ricerca_effettuata", False):
         unsafe_allow_html=True,
     )
 
+    _last_search = st.session_state.get("_last_search_params")
+    if _last_search and st.button(
+        "🔄 Aggiorna offerte",
+        key="refresh_offerte",
+        help="Ripete l'ultima ricerca sulle fonti selezionate, senza usare la cache.",
+    ):
+        _run_search(**_last_search, cerebras_client=cerebras_client, force_refresh=True)
+
     if st.session_state.get("log_ricerca", ""):
         with st.expander("Log ricerca", expanded=False):
             st.code(st.session_state.get("log_ricerca", ""), language=None)
@@ -709,23 +717,6 @@ if st.session_state.get("ricerca_effettuata", False):
                         and watchlist.add_item(_o.nome, _o.prezzo, _o.link, _o.fonte)
                     )
                     st.toast(f"⭐ {_added} prodotto/i salvato/i nei preferiti")
-                _wl_items = watchlist.load()
-                if _wl_items:
-                    with st.expander(f"⭐ Preferiti salvati ({len(_wl_items)})", expanded=False):
-                        for _wi in _wl_items:
-                            _wc1, _wc2 = st.columns([6, 1])
-                            _wprezzo = (
-                                _format_price(_wi["prezzo"])
-                                if _wi.get("prezzo") is not None
-                                else "n.d."
-                            )
-                            _wc1.markdown(
-                                f"[{_wi.get('nome', '')[:70]}]({_wi.get('link', '')}) — "
-                                f"{_wprezzo} · {_wi.get('fonte', '')}"
-                            )
-                            if _wc2.button("🗑", key=f"wl_del_{_wi.get('link', '')}"):
-                                watchlist.remove(_wi.get("link", ""))
-                                st.rerun()
 
             # ── Storico prezzi Amazon (CamelCamelCamel) ────────────────────
             import re as _re
@@ -852,3 +843,22 @@ if st.session_state.get("ricerca_effettuata", False):
                                 st.error(f"❌ Errore AI: {exc}")
 
     st.markdown("</div>", unsafe_allow_html=True)
+
+# I preferiti persistono anche senza una ricerca o con risultati filtrati vuoti.
+if watchlist is not None:
+    _wl_items = watchlist.load()
+    if _wl_items:
+        with st.expander(f"⭐ Preferiti salvati ({len(_wl_items)})", expanded=False):
+            for _wi in _wl_items:
+                _wc1, _wc2 = st.columns([6, 1])
+                _wprezzo = _format_price(_wi["prezzo"]) if _wi.get("prezzo") is not None else "n.d."
+                _wc1.markdown(
+                    f"[{_wi.get('nome', '')[:70]}]({_wi.get('link', '')}) — "
+                    f"{_wprezzo} · {_wi.get('fonte', '')}"
+                )
+                _wc2.button(
+                    "🗑",
+                    key=f"wl_del_{_wi.get('link', '')}",
+                    on_click=watchlist.remove,
+                    args=(_wi.get("link", ""),),
+                )

@@ -22,6 +22,10 @@ user free-text request
 
 Results are cached on disk with a TTL (`offerte/cache.py`) so repeated searches
 do not re-scrape and do not burn through rate limits.
+Both cache keys include the result limit, category, technical requirements and
+AI availability because the stored offers have already been filtered and ranked.
+The UI's **Aggiorna offerte** button bypasses both caches, using a snapshot of
+the last search parameters rather than unapplied edits in the form.
 
 ## `offerte/` — core engine
 
@@ -209,6 +213,12 @@ installs.
 - `tests/test_providers.py` — provider abstraction, including the
   no-hardcoded-model guard.
 - `tests/test_features.py` — cache, price history, watchlist (all on `tmp_path`).
+- `tests/test_search_cache.py` — search cache reuse, changed requirements and
+  explicit refresh, with an isolated SQLite database.
+- `tests/test_search_constraints.py` — mandatory hardware requirements and
+  ranking before the final result limit.
+- `tests/test_ui_comparison.py` — incomplete comparisons, state reset, and
+  Streamlit AppTest checks for favourites and refresh routing.
 - `tests/test_updater.py` — release check and update path.
 - `tests/conftest.py` — fixtures: the LLM mock, and a real Streamlit server for
   the E2E group. A marker is applied automatically based on the `page` fixture,

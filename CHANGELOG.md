@@ -6,7 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Refresh offers** repeats the last search immediately, bypassing both caches
+  while keeping its original sources, budget and requirements.
+
 ### Fixed
+- Search caches now distinguish result limits, category, technical requirements
+  and AI availability; changing filters cannot reuse incompatible results.
+- RAM/storage requirements remain mandatory even when no offer satisfies them;
+  storage requirements expressed in TB are converted to GB before comparison.
+- Offers are filtered and ranked before the final result limit, so a cheaper
+  listing later in a source's response is no longer discarded prematurely.
+- Saved favourites remain accessible before searching and when results are empty.
+- Comparisons retain products with no offers and clear filters and price badges
+  from previous searches.
 - The updater left the downloaded archive in `data/aggiornamenti/` — 78 MB
   sitting next to the user's data, the size of the whole application. It is now
   removed, but only after the copy has succeeded: if something had gone wrong it
