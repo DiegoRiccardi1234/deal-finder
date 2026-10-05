@@ -1,9 +1,9 @@
 requests==2.34.2
 beautifulsoup4==4.15.0
 fake-useragent==2.2.0
-streamlit==1.62.0
+streamlit==1.64.0
 vinted-scraper==4.0.0
-playwright==1.62.0
+playwright==1.63.0
 
 # Icona nell'area di notifica del bundle Windows (scripts/launch_tray.py).
 # Pillow arriva già con Streamlit, ma qui la usiamo direttamente per disegnare
