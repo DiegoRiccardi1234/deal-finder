@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 
 # Versione del progetto (sorgente unica; usata dall'auto-update per il confronto).
-VERSION: str = "4.2.0"
+VERSION: str = "4.2.1"
 
 # Fallback testuali di Google; i pool per compito sono in offerte.providers.
 # Il catalogo limita la scelta ai modelli ammessi, senza passaggi a pagamento.

@@ -6,7 +6,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [4.2.0] - 2026-10-22
+## [4.2.1] - 2026-10-22
+
+### Fixed
+- Windows launches use the existing h11 HTTP parser explicitly. An upgrade from
+  4.1 can leave native httptools files without their Python package; auto-detection
+  previously chose that broken namespace and made the restarted app unreachable.
+  User files and old runtime files are preserved.
+
+### Changed
+- Includes the 4.2 changes below: Cerebras removal, Gemini default, grounded
+  offer advice, source/cache corrections and recoverable Windows updates.
+
+### Known limitations
+- Google latency and availability remain variable; the verified 3.5 Lite advice
+  fallback took 49 seconds. Manual search remains available without AI.
+
+## [4.2.0] - 2026-10-22 (withdrawn)
+
+Withdrawn after the published 4.1 upgrade test exposed the httptools residue
+problem fixed in 4.2.1. The fresh-install tests alone did not expose it.
 
 ### Changed
 - Google Gemini is the default AI provider, with separate Flash-Lite JSON and

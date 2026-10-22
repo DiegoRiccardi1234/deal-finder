@@ -279,6 +279,19 @@ def run_tray(url: str) -> None:
         threading.Event().wait()
 
 
+def _usa_http_compatibile() -> None:
+    """Usa il parser Python anche con librerie native residue del vecchio bundle.
+
+    L'aggiornatore preserva i file estranei. La vecchia cartella ``httptools``
+    può quindi restare senza il modulo Python che ne espone l'API: l'import
+    riesce come namespace package e Uvicorn ``auto`` sceglie un parser rotto.
+    h11 è già incluso ed evita questa selezione solo nel processo del launcher.
+    """
+    from uvicorn.config import HTTP_PROTOCOLS
+
+    HTTP_PROTOCOLS["auto"] = "uvicorn.protocols.http.h11_impl:H11Protocol"
+
+
 def _avvia_streamlit(port: int) -> threading.Thread:
     """Streamlit su un thread, con i due aggiustamenti che il thread impone.
 
@@ -296,6 +309,8 @@ def _avvia_streamlit(port: int) -> threading.Thread:
        e basta, sulla porta di default e con le impostazioni sbagliate. È il
        genere di difetto che si vede solo guardando l'indirizzo.
     """
+    _usa_http_compatibile()
+
     from streamlit import config as st_config
     from streamlit.web import bootstrap
 
