@@ -29,8 +29,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   contaminate another search. Unsupported condition filters are explained.
 - Incomplete listings cannot create new historical lows or best-price summaries.
   Metrics, export and advice follow the visible results, including empty filters.
+- Advice instructions no longer force technical comparisons when specifications
+  are missing; they require the supplied offer facts and disclose unknowns.
 - Windows updates validate the archive before shutdown, back up replaced files
   and restore on failed copies; an incomplete restoration preserves recovery data.
+
+### Known limitations
+- Live Google QA succeeded for extraction and grounded advice on the 3.5 Lite
+  fallback after primary-model timeouts and transient 503 errors. Advice took
+  49 seconds in the final check; manual search remains available without AI.
 
 ## [4.1.0] - 2026-10-02
 
