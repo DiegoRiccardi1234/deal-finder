@@ -19,6 +19,9 @@ Solo stdlib, nessun import interno.
 from __future__ import annotations
 
 import threading
+import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 
 #: La fonte ha risposto e ha prodotto risultati.
@@ -66,15 +69,41 @@ class SourceStatus:
 class _Registry:
     lock: threading.Lock = field(default_factory=threading.Lock)
     entries: dict[str, SourceStatus] = field(default_factory=dict)
+    closed: bool = False
 
 
-_registry = _Registry()
+_registry: ContextVar[_Registry | None] = ContextVar("search_source_status", default=None)
 
 
-def reset() -> None:
-    """Azzera il registro. Va chiamata all'inizio di ogni ricerca."""
-    with _registry.lock:
-        _registry.entries.clear()
+def _current() -> _Registry:
+    registry = _registry.get()
+    if registry is None:
+        registry = reset()
+    return registry
+
+
+def reset() -> _Registry:
+    """Un registro per ricerca: i thread precedenti conservano solo il loro."""
+    registry = _Registry()
+    _registry.set(registry)
+    return registry
+
+
+@contextmanager
+def use_registry(registry: _Registry):
+    """Propaga esplicitamente il contesto ai worker del ThreadPoolExecutor."""
+    token = _registry.set(registry)
+    try:
+        yield
+    finally:
+        _registry.reset(token)
+
+
+def finish() -> None:
+    """Congela l'esito: una fonte arrivata oltre il timeout non lo cambia."""
+    registry = _current()
+    with registry.lock:
+        registry.closed = True
 
 
 #: Stati che spiegano *perché* non ci sono risultati e che quindi non vanno
@@ -94,11 +123,14 @@ def report(fonte: str, state: str, detail: str = "", results: int = 0) -> None:
     key = str(fonte or "").strip().lower()
     if not key:
         return
-    with _registry.lock:
-        prev = _registry.entries.get(key)
+    registry = _current()
+    with registry.lock:
+        if registry.closed:
+            return
+        prev = registry.entries.get(key)
         if prev is not None and prev.state in _EXPLANATORY and state == EMPTY:
             return
-        _registry.entries[key] = SourceStatus(key, state, str(detail or ""), int(results))
+        registry.entries[key] = SourceStatus(key, state, str(detail or ""), int(results))
 
 
 def report_blocked(fonte: str, status_code: int | str | None = None) -> None:
@@ -107,6 +139,15 @@ def report_blocked(fonte: str, status_code: int | str | None = None) -> None:
 
 
 def report_error(fonte: str, exc: BaseException | str) -> None:
+    # Non riportare URL, cookie o contenuto arbitrario dell'eccezione alla UI.
+    # La libreria Vinted incapsula lo status HTTP dentro un RuntimeError.
+    text = str(exc)
+    match = re.search(r"(?:error code|status code|HTTP)\s*[:=]?\s*(\d{3})\b", text, re.I)
+    if match:
+        status = int(match.group(1))
+        state = BLOCKED if status in (401, 403, 429, 503) else ERROR
+        report(fonte, state, f"HTTP {status}")
+        return
     detail = f"{type(exc).__name__}" if isinstance(exc, BaseException) else str(exc)
     report(fonte, ERROR, detail)
 
@@ -124,14 +165,16 @@ def report_ok(fonte: str, results: int) -> None:
 
 
 def get(fonte: str) -> SourceStatus | None:
-    with _registry.lock:
-        return _registry.entries.get(str(fonte or "").strip().lower())
+    registry = _current()
+    with registry.lock:
+        return registry.entries.get(str(fonte or "").strip().lower())
 
 
 def snapshot() -> dict[str, SourceStatus]:
     """Copia dello stato corrente, sicura da leggere dopo la ricerca."""
-    with _registry.lock:
-        return dict(_registry.entries)
+    registry = _current()
+    with registry.lock:
+        return dict(registry.entries)
 
 
 def problems() -> list[SourceStatus]:

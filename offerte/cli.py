@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 
 from offerte import providers
 from offerte.log import configure_logging
@@ -80,8 +79,8 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="NOME",
         help=(
-            "Provider AI per filtri/specs: cerebras, groq, openai, openrouter,\n"
-            "anthropic, gemini. Default: env AI_PROVIDER o cerebras.\n"
+            "Provider AI per filtri/specs: gemini, groq, openrouter, openai, anthropic.\n"
+            "Default: env AI_PROVIDER o gemini. OpenRouter usa solo :free.\n"
             "Richiede la relativa API key in ambiente."
         ),
     )
@@ -107,23 +106,22 @@ def main() -> None:
     # Diagnostica su stderr, così stdout resta pulito per i risultati e per
     # `--export csv`. Alzabile con LOG_LEVEL=DEBUG.
     configure_logging()
-    if args.provider:
-        os.environ["AI_PROVIDER"] = args.provider
-    cerca_offerte(
-        query=args.query,
-        budget_max=args.budget,
-        prezzo_min=0,
-        filtri_ai=None,
-        top_n=args.top,
-        export_csv=(args.export == "csv"),
-        csv_filename=args.output,
-        condizione=args.condizione,
-        fonti=args.fonti,
-        categoria="altro",
-        cerebras_client=None,
-        app_id="",
-        cert_id="",
-    )
+    with providers.provider_override(args.provider):
+        cerca_offerte(
+            query=args.query,
+            budget_max=args.budget,
+            prezzo_min=0,
+            filtri_ai=None,
+            top_n=args.top,
+            export_csv=(args.export == "csv"),
+            csv_filename=args.output,
+            condizione=args.condizione,
+            fonti=args.fonti,
+            categoria="altro",
+            cerebras_client=None,
+            app_id="",
+            cert_id="",
+        )
 
 
 if __name__ == "__main__":

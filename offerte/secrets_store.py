@@ -31,6 +31,7 @@ from offerte.providers import PROVIDERS
 logger = logging.getLogger(__name__)
 
 NOME_FILE = "local_secrets.json"
+_applicate: dict[tuple[str, str], tuple[str | None, str]] = {}
 
 #: Cosa si può scrivere da qui, elencato apposta invece di accettare qualunque
 #: nome: il pannello parla con un file su disco, e una lista aperta vorrebbe
@@ -46,8 +47,8 @@ def percorso():
     return paths.data_dir() / NOME_FILE
 
 
-def carica() -> dict[str, str]:
-    """Il contenuto del file, o vuoto se non c'è o è illeggibile."""
+def _leggi_file() -> dict[str, Any]:
+    """Legge senza applicare o cancellare campi sconosciuti di versioni precedenti."""
     file = percorso()
     if not file.is_file():
         return {}
@@ -58,14 +59,19 @@ def carica() -> dict[str, str]:
         return {}
     if not isinstance(dati, dict):
         return {}
-    return {k: str(v) for k, v in dati.items() if k in CAMPI_AMMESSI and v}
+    return dati
+
+
+def carica() -> dict[str, str]:
+    """Solo campi attualmente ammessi; i legacy restano esclusi dall'ambiente."""
+    return {k: str(v) for k, v in _leggi_file().items() if k in CAMPI_AMMESSI and v}
 
 
 def salva(campo: str, valore: str) -> bool:
     """Scrive (o cancella, se `valore` è vuoto) un campo. False se non ammesso."""
     if campo not in CAMPI_AMMESSI:
         return False
-    dati = carica()
+    dati = _leggi_file()
     pulito = str(valore or "").strip()
     if pulito:
         dati[campo] = pulito
@@ -89,7 +95,24 @@ def applica_all_ambiente() -> None:
     """
     import os
 
-    for campo, valore in carica().items():
+    dati = carica()
+    origine = str(percorso())
+    for (file, campo), (esterno, applicato) in list(_applicate.items()):
+        if file != origine or campo in dati:
+            continue
+        # Ripristina solo il valore che avevamo applicato noi: un cambiamento
+        # esterno successivo non appartiene al pannello e va conservato.
+        if os.environ.get(campo) == applicato:
+            if esterno is None:
+                os.environ.pop(campo, None)
+            else:
+                os.environ[campo] = esterno
+        del _applicate[(file, campo)]
+    for campo, valore in dati.items():
+        identita = (origine, campo)
+        precedente = _applicate.get(identita)
+        esterno = precedente[0] if precedente else os.environ.get(campo)
+        _applicate[identita] = (esterno, valore)
         os.environ[campo] = valore
 
 

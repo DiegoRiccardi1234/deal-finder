@@ -43,7 +43,7 @@ def make_cache_key(
     """
     raw = json.dumps(
         {
-            "version": 2,
+            "version": 3,
             "query": str(query or "").strip().lower(),
             "prezzo_min": int(prezzo_min),
             "budget_max": int(budget_max),

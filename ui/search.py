@@ -8,6 +8,7 @@ import io
 import json
 import os
 import time
+from dataclasses import asdict
 from typing import Any
 
 import streamlit as st
@@ -18,6 +19,52 @@ except Exception:
     kb_manager = None  # type: ignore[assignment]
 
 from offerte_tech import Offerta, cerca_offerte
+from offerte import source_status
+from offerte.offer_warnings import get_offer_warnings
+from offerte.source_registry import SOURCE_REGISTRY
+
+SNAPSHOT_SCHEMA = 3
+
+
+def make_search_snapshot(
+    offers: list[Offerta],
+    sources: list[str],
+    params: dict,
+    log: str = "",
+    *,
+    searched_at: float | None = None,
+) -> dict:
+    """Payload JSON autosufficiente, utilizzabile anche per ogni confronto."""
+    return {
+        "schema": SNAPSHOT_SCHEMA,
+        "offers": [asdict(offer) for offer in offers],
+        "statuses": {key: asdict(status) for key, status in source_status.snapshot().items()},
+        "searched_at": time.time() if searched_at is None else searched_at,
+        "sources": list(sources),
+        "params": copy.deepcopy(params),
+        "log": log,
+    }
+
+
+def _restore_snapshot(snapshot: object, origin: str) -> bool:
+    if not isinstance(snapshot, dict) or snapshot.get("schema") != SNAPSHOT_SCHEMA:
+        return False
+    try:
+        offers = [Offerta(**item) for item in snapshot["offers"]]
+        if not isinstance(snapshot["statuses"], dict) or not isinstance(snapshot["sources"], list):
+            return False
+        if not isinstance(snapshot["searched_at"], (int, float)):
+            return False
+        for status in snapshot["statuses"].values():
+            source_status.SourceStatus(**status)
+    except (KeyError, TypeError, ValueError):
+        return False
+    st.session_state["risultati"] = offers
+    st.session_state["log_ricerca"] = snapshot.get("log", "")
+    st.session_state["search_snapshot"] = copy.deepcopy(snapshot)
+    st.session_state["search_cache_origin"] = origin
+    return True
+
 
 try:
     from search_history import load_history, save_search as _save_search
@@ -33,7 +80,6 @@ except ImportError:
 try:
     import price_history
     from offerte import cache as _disk_cache
-    from dataclasses import asdict as _asdict
 except Exception:
     price_history = None  # type: ignore[assignment]
     _disk_cache = None  # type: ignore[assignment]
@@ -66,6 +112,8 @@ def _run_search(
     st.session_state["auto_recommend_tried"] = False
     st.session_state["risultati"] = []
     st.session_state["log_ricerca"] = ""
+    st.session_state["search_snapshot"] = {}
+    st.session_state["search_cache_origin"] = ""
     st.session_state["prezzo_nuovo_minimo"] = False
     st.session_state["prezzo_minimo_prec"] = None
     st.session_state["prezzo_minimo_corrente"] = None
@@ -112,10 +160,21 @@ def _run_search(
         st.session_state["log_ricerca"] = (
             "[mock-mode] risultati generati localmente per la suite UI"
         )
+        source_status.reset()
+        for key in fonti_backend:
+            source_status.report_ok(key, sum(key in offer.fonte for offer in risultati))
+        st.session_state["search_snapshot"] = make_search_snapshot(
+            risultati,
+            fonti_backend,
+            st.session_state["_last_search_params"],
+            st.session_state["log_ricerca"],
+        )
+        st.session_state["search_cache_origin"] = "mock"
         return
 
     # ── Cache: stessa ricerca entro 5 minuti → riusa i risultati ──────────────
     _cache_key = (
+        SNAPSHOT_SCHEMA,
         query.strip().lower(),
         int(prezzo_min),
         int(budget_max),
@@ -132,10 +191,11 @@ def _run_search(
         and _cache.get("key") == _cache_key
         and (time.time() - float(_cache.get("ts", 0))) < 300
     ):
-        st.session_state["risultati"] = _cache["risultati"]
-        st.session_state["log_ricerca"] = _cache.get("log", "")
-        st.toast("⚡ Risultati dalla cache (< 5 min). Usa Aggiorna offerte per una nuova ricerca.")
-        return
+        if _restore_snapshot(_cache.get("snapshot"), "session"):
+            st.toast(
+                "⚡ Risultati dalla cache (< 5 min). Usa Aggiorna offerte per una nuova ricerca."
+            )
+            return
 
     # ── Cache su disco: persiste tra sessioni/riavvii ─────────────────────────
     _disk_key = (
@@ -155,14 +215,9 @@ def _run_search(
     )
     if _disk_key and not force_refresh:
         _disk_hit = _disk_cache.read(_disk_key, ttl=300)
-        if _disk_hit is not None:
-            try:
-                st.session_state["risultati"] = [Offerta(**_d) for _d in _disk_hit]
-                st.session_state["log_ricerca"] = "♻️ Risultati dalla cache su disco (< 5 min)."
-                st.toast("♻️ Risultati dalla cache su disco. Usa Aggiorna offerte per aggiornarli.")
-                return
-            except Exception:
-                pass
+        if _restore_snapshot(_disk_hit, "disk"):
+            st.toast("♻️ Risultati dalla cache su disco. Usa Aggiorna offerte per aggiornarli.")
+            return
 
     try:
         with st.status(
@@ -175,13 +230,20 @@ def _run_search(
                         f"✅ **{source_label}** → {count} {'risultato' if count == 1 else 'risultati'}"
                     )
                 elif count == -2:
-                    st.write(f"⚙️ **{source_label}** → non configurato (chiavi API mancanti)")
+                    key = next(
+                        (k for k, info in SOURCE_REGISTRY.items() if info.label == source_label), ""
+                    )
+                    status = source_status.get(key)
+                    st.write(
+                        f"⚙️ **{source_label}** → {status.describe() if status else 'fonte esclusa'}"
+                    )
                 elif count == -1:
                     st.write(f"❌ **{source_label}** → errore inatteso durante lo scraping")
                 else:
                     st.write(f"⚪ **{source_label}** → nessun risultato nel range selezionato")
 
             try:
+                source_status.reset()
                 with contextlib.redirect_stdout(log_buffer):
                     risultati = cerca_offerte(
                         query=query,
@@ -210,12 +272,16 @@ def _run_search(
 
         st.session_state["risultati"] = risultati
         st.session_state["log_ricerca"] = log_buffer.getvalue()
+        snapshot = make_search_snapshot(
+            risultati, fonti_backend, st.session_state["_last_search_params"], log_buffer.getvalue()
+        )
+        st.session_state["search_snapshot"] = snapshot
+        st.session_state["search_cache_origin"] = "live"
         # Salva in cache per 5 minuti
         st.session_state["_search_cache"] = {
             "key": _cache_key,
             "ts": time.time(),
-            "risultati": risultati,
-            "log": log_buffer.getvalue(),
+            "snapshot": copy.deepcopy(snapshot),
         }
         _save_search(
             query=query,
@@ -228,12 +294,15 @@ def _run_search(
         # Cache su disco + storico prezzo minimo (best-effort, non bloccante)
         if _disk_key and _disk_cache:
             try:
-                _disk_cache.write(_disk_key, [_asdict(o) for o in risultati])
+                _disk_cache.write(_disk_key, snapshot)
             except Exception:
                 pass
         if price_history is not None:
             try:
-                _min_price = min((o.prezzo for o in risultati if o.prezzo), default=None)
+                _min_price = min(
+                    (o.prezzo for o in risultati if o.prezzo and not get_offer_warnings(o.nome)),
+                    default=None,
+                )
                 if _min_price is not None:
                     # Rileva il nuovo minimo PRIMA di registrarlo (altrimenti
                     # sarebbe già nello storico e non risulterebbe più "nuovo").
@@ -248,6 +317,10 @@ def _run_search(
                 pass
     except Exception as exc:
         st.session_state["log_ricerca"] = log_buffer.getvalue()
+        st.session_state["search_snapshot"] = make_search_snapshot(
+            [], fonti_backend, st.session_state["_last_search_params"], log_buffer.getvalue()
+        )
+        st.session_state["search_cache_origin"] = "live"
         st.error(
             f"❌ Si e verificato un errore durante la ricerca:\n\n```\n{exc}\n```\n\n"
             "Verifica la connessione internet e riprova."

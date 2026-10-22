@@ -1,8 +1,8 @@
 Deal Finder
 ===========
 
-Le offerte di quattordici negozi e mercatini italiani, confrontate in una
-schermata sola.
+Le offerte dei negozi e mercatini selezionati, confrontate in una schermata.
+La disponibilita' delle singole fonti viene indicata dopo ogni ricerca.
 
 
 Come si avvia
@@ -43,9 +43,15 @@ Serve per tre cose: capire la richiesta scritta a parole ("un notebook da 14
 pollici sotto gli 800 euro"), scartare i risultati fuori tema e consigliarti
 alla fine. La ricerca su tutti i negozi funziona identica senza.
 
-Se la vuoi: apri Impostazioni e incolla la chiave di uno dei fornitori
-gratuiti elencati li'. Le chiavi restano su questo computer, nel file
-data/local_secrets.json, e non vengono mai rimostrate a schermo.
+Se la vuoi: apri Impostazioni e configura Google Gemini, il provider
+predefinito. Il free tier richiede una chiave di un progetto Google senza
+billing attivo e ha limiti di utilizzo. OpenRouter usa soltanto modelli :free;
+gli altri provider restano selezionabili esplicitamente. Non esiste un
+passaggio automatico a pagamento. Le chiavi restano su questo computer,
+nel file data/local_secrets.json, e non vengono mai rimostrate a schermo.
+
+Le specifiche non presenti negli annunci restano sconosciute. La guida alle
+domande non viene aggiornata automaticamente dall'AI come catalogo prodotti.
 
 
 Dove finiscono i tuoi dati
@@ -58,6 +64,9 @@ tranne le richieste ai negozi e, se l'hai accesa, al fornitore di IA che hai
 scelto.
 
 Gli aggiornamenti non toccano data/: quello che hai salvato resta.
+Prima delle sostituzioni viene preparato un backup. Se una copia fallisce,
+l'aggiornatore tenta di ripristinare i file precedenti; se non riesce,
+conserva backup e istruzioni e non riavvia un'installazione incompleta.
 
 
 Non toccare _internal

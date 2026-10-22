@@ -31,7 +31,7 @@ datas += collect_data_files("streamlit")
 # Streamlit legge la propria versione da `importlib.metadata`, che in un bundle
 # funziona solo se ci si porta dietro la cartella `.dist-info`. Senza, l'avvio
 # muore con `PackageNotFoundError` prima di aprire la porta.
-for _pacchetto in ("streamlit", "openai", "anthropic", "cerebras_cloud_sdk"):
+for _pacchetto in ("streamlit", "openai", "anthropic"):
     try:
         datas += copy_metadata(_pacchetto)
     except Exception:
@@ -87,6 +87,7 @@ excludes = [
     "numpy",
     # Roba da sviluppo o interfacce grafiche che non usiamo.
     "tests",
+    "cerebras",
     "matplotlib",
     "tkinter",
     "PyQt5",

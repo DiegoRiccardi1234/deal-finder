@@ -296,9 +296,14 @@ def test_is_relevant_corretto() -> None:
 
 
 def test_fetch_specs_ai_tech(cerebras_mock: MagicMock) -> None:
+    # L'AI può estrarre solo fatti presenti nel titolo: il modello del telefono
+    # da solo non autorizza a inventare display, processore o memoria.
     offerte = [
         Offerta(
-            nome="Apple iPhone 17 256GB", prezzo=999.0, negozio="Test", link="https://example.com"
+            nome="Apple iPhone 17 A19 RAM 8 GB storage 256 GB display 6.1 OLED iOS",
+            prezzo=999.0,
+            negozio="Test",
+            link="https://example.com",
         )
     ]
     risultati = fetch_specs_ai(offerte, "tech", cerebras_mock)
@@ -726,6 +731,26 @@ def _complete_presearch(page: Page) -> None:
     expect(page.locator("button", has_text="Cerca offerte")).to_be_visible(timeout=30000)
 
 
+@pytest.mark.parametrize(
+    "viewport", [{"width": 1366, "height": 900}, {"width": 390, "height": 844}]
+)
+def test_sidebar_can_reopen(page: Page, base_url: str, streamlit_server: str, viewport) -> None:
+    page.set_viewport_size(viewport)
+    _open_home(page, base_url)
+    reopen = page.get_by_test_id("stExpandSidebarButton")
+    close = page.get_by_test_id("stSidebarCollapseButton").get_by_role("button")
+    if reopen.is_visible():
+        reopen.click()
+    for _ in range(2):
+        expect(close).to_be_visible()
+        close.click()
+        expect(reopen).to_be_visible()
+        box = reopen.bounding_box()
+        assert box and box["width"] >= 30 and box["x"] >= 0
+        reopen.click()
+        expect(close).to_be_visible()
+
+
 def test_chat_prericerca_risponde(page: Page, base_url: str, streamlit_server: str) -> None:
     _open_home(page, base_url)
     initial_count = _assistant_messages(page).count()
@@ -770,7 +795,7 @@ def test_chat_finale_risponde(page: Page, base_url: str, streamlit_server: str) 
     expect(page.get_by_text("offerte trovate per")).to_be_visible(timeout=60000)
     expect(page.locator(".results-grid")).to_be_visible(timeout=60000)
 
-    main_text = page.locator("section[data-testid='stMain']").inner_text(timeout=30000)
+    main_text = page.get_by_test_id("stMain").inner_text(timeout=30000)
     if "Aggiungi CEREBRAS_API_KEY" in main_text:
         assert "Consiglio AI" in main_text
         return
@@ -801,7 +826,7 @@ def test_chat_finale_confronto_include_entrambi_modelli(
         advice_expander.first.click()
         page.wait_for_timeout(1000)
 
-    all_text = page.locator("section[data-testid='stMain']").inner_text(timeout=30000).lower()
+    all_text = page.get_by_test_id("stMain").inner_text(timeout=30000).lower()
     assert "iphone 16" in all_text
     assert "iphone 17" in all_text
 
@@ -816,7 +841,7 @@ def test_chat_refine_state2_non_crasha(page: Page, base_url: str, streamlit_serv
     )
 
     expect(page.get_by_role("button", name="Cerca offerte")).to_be_visible(timeout=10000)
-    body_text = page.locator("section[data-testid='stMain']").inner_text(timeout=15000).lower()
+    body_text = page.get_by_test_id("stMain").inner_text(timeout=15000).lower()
     assert "uncaught app execution" not in body_text
 
 

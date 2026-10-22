@@ -10,33 +10,18 @@ from __future__ import annotations
 import os
 
 # Versione del progetto (sorgente unica; usata dall'auto-update per il confronto).
-VERSION: str = "4.1.0"
+VERSION: str = "4.2.0"
 
-# La scelta del modello è DINAMICA: `offerte.ai.get_best_model()` interroga
-# `client.models.list()` e seleziona il migliore disponibile (per context_window,
-# esclusi i blacklistati). Nessun modello è hardcodato come "il" modello.
-#
-# Questi sono solo CANDIDATI DI FALLBACK in ordine di preferenza, usati quando
-# l'API non è raggiungibile (client assente, niente API key, errore di rete) e
-# quindi non si può interrogare la lista. Override del primo via env
-# CEREBRAS_FALLBACK_MODEL. NB: llama-3.3-70b è stato dismesso da Cerebras (2026-06).
-CEREBRAS_FALLBACK_MODELS: tuple[str, ...] = tuple(
-    dict.fromkeys(
-        m
-        for m in (
-            os.environ.get("CEREBRAS_FALLBACK_MODEL", "").strip(),
-            "zai-glm-4.7",
-            "gpt-oss-120b",
-        )
-        if m
-    )
-)
+# Fallback testuali di Google; i pool per compito sono in offerte.providers.
+# Il catalogo limita la scelta ai modelli ammessi, senza passaggi a pagamento.
+AI_FALLBACK_MODELS: tuple[str, ...] = ("gemini-3.1-flash-lite", "gemini-3.5-flash-lite")
+DEFAULT_AI_MODEL: str = AI_FALLBACK_MODELS[0]
+AI_MODEL_BLACKLIST: frozenset[str] = frozenset({"llama3.1-8b"})
 
-# Compat: primo candidato come singolo default per i consumatori legacy.
-DEFAULT_CEREBRAS_MODEL: str = CEREBRAS_FALLBACK_MODELS[0]
-
-# Modelli da escludere dal resolver (troppo piccoli / deprecati).
-CEREBRAS_MODEL_BLACKLIST: frozenset[str] = frozenset({"llama3.1-8b"})
+# Alias di import per le integrazioni precedenti; non abilitano Cerebras.
+CEREBRAS_FALLBACK_MODELS = AI_FALLBACK_MODELS
+DEFAULT_CEREBRAS_MODEL = DEFAULT_AI_MODEL
+CEREBRAS_MODEL_BLACKLIST = AI_MODEL_BLACKLIST
 
 
 def _env_float(name: str, default: float) -> float:
@@ -48,9 +33,8 @@ def _env_float(name: str, default: float) -> float:
 
 
 # Timeout (secondi) delle richieste ai provider AI. Senza questo gli SDK usano
-# il proprio default (o nessuno): l'updater della knowledge base gira in un
-# thread daemon e poteva restare appeso per sempre, e in Streamlit una chiamata
-# lenta blocca il rerun.
+# il proprio default (o nessuno), e una chiamata lenta blocca il rerun
+# di Streamlit.
 AI_REQUEST_TIMEOUT: float = _env_float("AI_REQUEST_TIMEOUT", 60.0)
 
 # Tetto (secondi) al tempo totale di una ricerca: oltre questo l'orchestrator

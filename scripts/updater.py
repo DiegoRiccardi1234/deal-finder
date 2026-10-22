@@ -27,7 +27,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import zipfile
 from pathlib import Path
 
 
@@ -54,7 +53,7 @@ def _prepara_import() -> None:
 
 _prepara_import()
 
-from update_sync import sincronizza  # noqa: E402
+from update_sync import ErroreSincronizzazione, estrai_bundle, sincronizza  # noqa: E402
 
 #: Quanto aspettare che il processo vecchio molli i suoi file.
 ATTESA_USCITA = 60.0
@@ -168,17 +167,13 @@ def main() -> int:
     with contextlib.closing(file_log):
         try:
             scrivi(f"aggiornamento da {args.zip} verso {dest}")
-            _aspetta(args.pid, scrivi)
-            time.sleep(RESPIRO)
-
             with tempfile.TemporaryDirectory(prefix="dealfinder-agg-") as temporaneo:
                 scompattato = Path(temporaneo) / "nuovo"
-                scompattato.mkdir()
-                with zipfile.ZipFile(Path(args.zip).resolve()) as archivio:
-                    archivio.extractall(scompattato)
+                radice = estrai_bundle(Path(args.zip).resolve(), scompattato)
                 scrivi(f"archivio scompattato in {scompattato}")
-
-                scritti = sincronizza(origine=_radice(scompattato), destinazione=dest)
+                _aspetta(args.pid, scrivi)
+                time.sleep(RESPIRO)
+                scritti = sincronizza(origine=radice, destinazione=dest)
                 scrivi(f"copiati {scritti} file, data/ intatta")
 
             # L'archivio scaricato ha finito il suo lavoro: sono ~78 MB accanto
@@ -190,7 +185,16 @@ def main() -> int:
                 scrivi("archivio scaricato rimosso")
         except Exception as exc:
             scrivi(f"FALLITO: {exc!r}")
-            scrivi("resta installata la versione di prima")
+            if isinstance(exc, ErroreSincronizzazione):
+                if exc.ripristinato:
+                    scrivi("ripristino verificato: resta installata la versione di prima")
+                else:
+                    scrivi(
+                        f"RIPRISTINO INCOMPLETO: non riavvio l'app. "
+                        f"Conservare il backup {exc.backup} e il relativo registro per il recupero."
+                    )
+            else:
+                scrivi("aggiornamento interrotto; consultare l'errore prima di riaprire l'app")
             with contextlib.suppress(OSError):
                 (dest / "data" / "aggiornamento.lock").unlink(missing_ok=True)
             return 1
@@ -220,15 +224,34 @@ def main() -> int:
         with contextlib.suppress(OSError):
             (dest / "data" / "aggiornamento.lock").unlink(missing_ok=True)
 
-        # La cartella da cui stiamo girando non si può cancellare da vivi: la
-        # affidiamo a un comando staccato che aspetta e poi la toglie.
+        # Ripulire soltanto la nostra copia in TEMP, mai un percorso arbitrario
+        # ricevuto dalla riga di comando. PowerShell mantiene LiteralPath per
+        # tutta l'operazione ed evita la reinterpretazione dei nomi da cmd.exe.
         if args.temporaneo and sys.platform == "win32":
-            with contextlib.suppress(OSError):
-                subprocess.Popen(
-                    ["cmd", "/c", f'timeout /t 6 /nobreak >nul & rmdir /s /q "{args.temporaneo}"'],
-                    close_fds=True,
-                    creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
-                )
+            pulizia = Path(args.temporaneo).resolve()
+            temp_root = Path(tempfile.gettempdir()).resolve()
+            if (
+                pulizia.parent == temp_root
+                and pulizia.name.startswith("dealfinder-agg-")
+                and Path(sys.executable).resolve().parent == pulizia
+                and pulizia != dest
+            ):
+                with contextlib.suppress(OSError):
+                    letterale = str(pulizia).replace("'", "''")
+                    subprocess.Popen(
+                        [
+                            "powershell.exe",
+                            "-NoProfile",
+                            "-NonInteractive",
+                            "-WindowStyle",
+                            "Hidden",
+                            "-Command",
+                            f"Start-Sleep -Seconds 6; Remove-Item -LiteralPath '{letterale}' -Recurse -Force",
+                        ],
+                        close_fds=True,
+                        creationflags=subprocess.CREATE_NO_WINDOW
+                        | subprocess.CREATE_NEW_PROCESS_GROUP,
+                    )
         return 0
 
 

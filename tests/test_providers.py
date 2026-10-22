@@ -7,6 +7,20 @@ from unittest.mock import MagicMock
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def isolated_ai(monkeypatch):
+    from offerte import ai, providers, model_selector, secrets_store
+
+    monkeypatch.setattr(secrets_store, "applica_all_ambiente", lambda: None)
+    providers._catalog_cache.clear()
+    model_selector.dimentica_penalita()
+    ai.invalidate_model()
+    yield
+    providers._catalog_cache.clear()
+    model_selector.dimentica_penalita()
+    ai.invalidate_model()
+
+
 _ALL_KEYS = [
     "CEREBRAS_API_KEY",
     "GROQ_API_KEY",
@@ -25,15 +39,15 @@ def _clear_keys(monkeypatch):
 def test_registry_has_all_providers():
     from offerte import providers
 
-    for p in ["cerebras", "groq", "openai", "openrouter", "anthropic", "gemini"]:
+    for p in ["groq", "openai", "openrouter", "anthropic", "gemini"]:
         assert p in providers.PROVIDERS
 
 
-def test_active_provider_default_is_cerebras(monkeypatch):
+def test_active_provider_default_is_gemini(monkeypatch):
     _clear_keys(monkeypatch)
     from offerte import providers
 
-    assert providers.active_provider() == "cerebras"
+    assert providers.active_provider() == "gemini"
 
 
 def test_active_provider_from_env(monkeypatch):
@@ -44,12 +58,12 @@ def test_active_provider_from_env(monkeypatch):
     assert providers.active_provider() == "groq"
 
 
-def test_active_provider_invalid_falls_back_to_cerebras(monkeypatch):
+def test_active_provider_invalid_falls_back_to_gemini(monkeypatch):
     _clear_keys(monkeypatch)
     monkeypatch.setenv("AI_PROVIDER", "does-not-exist")
     from offerte import providers
 
-    assert providers.active_provider() == "cerebras"
+    assert providers.active_provider() == "gemini"
 
 
 def test_get_api_key_reads_provider_specific_env(monkeypatch):
@@ -169,40 +183,14 @@ def test_load_keys_from_does_not_override_existing_env(monkeypatch):
     assert os.environ.get("OPENAI_API_KEY") == "from-env"
 
 
-def test_il_contesto_piu_ampio_non_e_piu_il_criterio():
-    """Sostituisce la vecchia regola «vince il context_window più grande».
-
-    Era un cattivo indicatore: il modello con la finestra più larga è spesso un
-    reasoning-model, che sui compiti a JSON brucia il budget in ragionamento
-    nascosto e tronca la risposta — un fallimento silenzioso, perché il
-    dizionario esterno si chiude e `json.loads` passa lo stesso. Ora decidono la
-    taglia, la vocazione a seguire istruzioni e quello che il modello ha
-    combinato davvero.
-    """
+def test_pool_gemini_esclude_modelli_non_approvati():
     from offerte import providers
+    from types import SimpleNamespace as NS
 
-    client = MagicMock()
-    client.models.list.return_value = MagicMock(
-        data=[
-            MagicMock(id="qwq-32b-preview", context_window=128000),
-            MagicMock(id="gemma-3-27b-it", context_window=8000),
-        ]
+    client = NS(
+        models=NS(list=lambda: NS(data=[NS(id="gemini-3.1-flash-lite"), NS(id="gemini-9-pro")]))
     )
-    assert providers.best_model("cerebras", client) == "gemma-3-27b-it"
-
-
-def test_un_candidato_del_registry_resta_preferito():
-    """La lista scritta a mano conta, ma non è più l'unica cosa che conta."""
-    from offerte import providers
-
-    client = MagicMock()
-    client.models.list.return_value = MagicMock(
-        data=[
-            MagicMock(id="modello-a-caso-70b-instruct", context_window=8000),
-            MagicMock(id="zai-glm-4.7", context_window=8000),
-        ]
-    )
-    assert providers.best_model("cerebras", client) == "zai-glm-4.7"
+    assert providers.ranked_models("gemini", client) == ["gemini-3.1-flash-lite"]
 
 
 # --------------------------------------------------------------------------- #
@@ -264,9 +252,10 @@ def test_cli_provider_flag_selects_active_provider(monkeypatch):
     assert ns.provider == "openai"
     # le choices del flag combaciano col registry provider
     assert set(providers.PROVIDERS).issuperset({ns.provider})
-    # main() farebbe questo: il provider attivo diventa quello scelto
-    monkeypatch.setenv("AI_PROVIDER", ns.provider)
-    assert providers.active_provider() == "openai"
+    # main() limita la scelta alla ricerca, senza riscrivere preferenze o env.
+    with providers.provider_override(ns.provider):
+        assert providers.active_provider() == "openai"
+    assert providers.active_provider() == "gemini"
 
 
 # ===========================================================================
@@ -329,84 +318,39 @@ def test_retry_does_not_retry_fatal_errors(monkeypatch) -> None:
     assert dormite == [], "nessuna attesa su errore fatale"
 
 
-def test_retry_backs_off_exponentially_on_rate_limit(monkeypatch) -> None:
-    from offerte import ai
+def test_retry_fa_failover_su_429_e_rispetta_budget(monkeypatch):
+    from offerte import ai, providers
+    from types import SimpleNamespace as NS
 
-    dormite: list[float] = []
-
-    class _Client:
-        class chat:  # noqa: N801
-            class completions:  # noqa: N801
-                @staticmethod
-                def create(**kwargs):
-                    raise _HttpErr(429, "slow down")
-
-    monkeypatch.setattr(ai.time, "sleep", lambda s: dormite.append(s))
-    # Jitter deterministico per poter asserire sui valori.
+    used = []
+    sleeps = []
+    monkeypatch.setattr(providers, "ranked_models", lambda *a, **kw: ["a", "b", "c", "d", "e"])
+    monkeypatch.setattr(ai.time, "sleep", sleeps.append)
     monkeypatch.setattr(ai.random, "random", lambda: 0.5)
 
+    def create(**kwargs):
+        used.append(kwargs["model"])
+        raise _HttpErr(429)
+
+    client = NS(chat=NS(completions=NS(create=create)))
     with pytest.raises(_HttpErr):
-        ai.cerebras_chat_with_retry(
-            _Client(), [{"role": "user", "content": "x"}], model="m", max_retries=4, base_delay=2.0
-        )
-
-    # 3 attese fra 4 tentativi, ognuna il doppio della precedente.
-    assert len(dormite) == 3
-    assert dormite == [2.0, 4.0, 8.0]
+        ai.chat_with_retry(client, [], max_retries=99)
+    assert used == ["a", "b", "c", "d"]
+    assert sleeps == [2.0, 4.0, 8.0]
 
 
-def test_retry_renegotiates_model_on_404_without_burning_an_attempt(monkeypatch) -> None:
-    """Un 404 significa "modello sbagliato", non "riprova identico"."""
-    from offerte import ai
+def test_retry_404_consuma_budget_e_cambia_modello(monkeypatch):
+    from offerte import ai, providers
+    from types import SimpleNamespace as NS
 
-    tentativi = {"n": 0}
-    modelli_usati: list[str] = []
+    used = []
+    monkeypatch.setattr(providers, "ranked_models", lambda *a, **kw: ["a", "b", "c", "d", "e"])
 
-    class _Client:
-        class chat:  # noqa: N801
-            class completions:  # noqa: N801
-                @staticmethod
-                def create(model=None, **kwargs):
-                    modelli_usati.append(model)
-                    tentativi["n"] += 1
-                    if tentativi["n"] == 1:
-                        raise _HttpErr(404, "model_not_found")
-                    return "ok"
+    def create(**kwargs):
+        used.append(kwargs["model"])
+        raise _HttpErr(404)
 
-    monkeypatch.setattr(ai.time, "sleep", lambda s: None)
-    monkeypatch.setattr(ai, "invalidate_model", lambda: None)
-    monkeypatch.setattr(ai, "get_best_model", lambda **kw: "modello-nuovo")
-
-    out = ai.cerebras_chat_with_retry(
-        _Client(), [{"role": "user", "content": "x"}], model="modello-morto", max_retries=2
-    )
-
-    assert out == "ok"
-    assert modelli_usati == ["modello-morto", "modello-nuovo"]
-
-
-def test_retry_stops_renegotiating_after_a_few_404s(monkeypatch) -> None:
-    """Il 404 non consuma tentativi: senza un tetto si ciclerebbe all'infinito."""
-    from offerte import ai
-
-    chiamate = {"n": 0}
-
-    class _Client:
-        class chat:  # noqa: N801
-            class completions:  # noqa: N801
-                @staticmethod
-                def create(**kwargs):
-                    chiamate["n"] += 1
-                    raise _HttpErr(404, "model_not_found")
-
-    monkeypatch.setattr(ai.time, "sleep", lambda s: None)
-    monkeypatch.setattr(ai, "invalidate_model", lambda: None)
-    monkeypatch.setattr(ai, "get_best_model", lambda **kw: "sempre-lo-stesso")
-
+    client = NS(chat=NS(completions=NS(create=create)))
     with pytest.raises(_HttpErr):
-        ai.cerebras_chat_with_retry(
-            _Client(), [{"role": "user", "content": "x"}], model="m", max_retries=3
-        )
-
-    # Limitato: 2 rinegoziazioni + i tentativi normali, non un ciclo infinito.
-    assert chiamate["n"] <= 6
+        ai.chat_with_retry(client, [], max_retries=3)
+    assert used == ["a", "b", "c"]

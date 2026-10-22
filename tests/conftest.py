@@ -48,8 +48,14 @@ def _wait_for_server(url: str, timeout: float = 30.0) -> None:
 
 
 @pytest.fixture
-def cerebras_mock() -> MagicMock:
+def cerebras_mock(monkeypatch) -> MagicMock:
+    from offerte import providers
+
+    monkeypatch.setenv("AI_PROVIDER", "gemini")
     client = MagicMock()
+    client.models.list.return_value.data = [
+        MagicMock(id=model) for model in providers.PROVIDERS["gemini"].default_models
+    ]
     # La risposta deve essere in formato batch: {"1": {...specs...}}
     # perché fetch_specs_ai ora fa una singola chiamata per tutti i prodotti
     single_spec = {
@@ -64,7 +70,7 @@ def cerebras_mock() -> MagicMock:
     }
     content = json.dumps({"1": single_spec}, ensure_ascii=False)
     response = MagicMock()
-    response.choices = [MagicMock(message=MagicMock(content=content))]
+    response.choices = [MagicMock(message=MagicMock(content=content), finish_reason="stop")]
     client.chat.completions.create.return_value = response
     return client
 
@@ -75,10 +81,22 @@ def base_url() -> str:
 
 
 @pytest.fixture(scope="session")
-def streamlit_server(base_url: str) -> str:
+def streamlit_server(base_url: str, tmp_path_factory) -> str:
     env = os.environ.copy()
+    for key in list(env):
+        if key.endswith("_API_KEY") or key in {
+            "AI_PROVIDER",
+            "EBAY_APP_ID",
+            "EBAY_CERT_ID",
+            "APP_PASSWORD",
+        }:
+            env.pop(key, None)
     env["APP_TEST_MODE"] = "1"
     env.setdefault("PYTHONUNBUFFERED", "1")
+    workspace = tmp_path_factory.mktemp("browser-workspace")
+    env["DEAL_FINDER_WORKSPACE"] = str(workspace)
+    secrets_file = workspace / "empty-secrets.toml"
+    secrets_file.write_text("", encoding="utf-8")
 
     process = subprocess.Popen(
         [
@@ -91,6 +109,8 @@ def streamlit_server(base_url: str) -> str:
             "true",
             "--server.port",
             "9000",
+            "--secrets.files",
+            str(secrets_file),
         ],
         cwd=ROOT_DIR,
         env=env,

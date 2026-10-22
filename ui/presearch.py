@@ -525,6 +525,7 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
                     {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
                 ],
                 temperature=0.1,
+                compito="json",
             )
             result = _extract_json_object(raw)
         except Exception as exc:

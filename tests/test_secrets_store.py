@@ -21,14 +21,53 @@ def store(tmp_path, monkeypatch):
 
 
 def test_salva_e_rilegge(store) -> None:
-    assert store.salva("CEREBRAS_API_KEY", "  sk-123  ") is True
-    assert store.carica()["CEREBRAS_API_KEY"] == "sk-123", "lo spazio va tolto"
+    assert store.salva("GEMINI_API_KEY", "  sk-123  ") is True
+    assert store.carica()["GEMINI_API_KEY"] == "sk-123", "lo spazio va tolto"
 
 
 def test_stringa_vuota_cancella(store) -> None:
+    import os
+
     store.salva("GROQ_API_KEY", "gk-1")
     store.salva("GROQ_API_KEY", "")
     assert "GROQ_API_KEY" not in store.carica()
+    assert "GROQ_API_KEY" not in os.environ
+
+
+def test_rimuovere_la_chiave_del_pannello_ripristina_l_origine_esterna(store, monkeypatch):
+    import os
+
+    monkeypatch.setenv("GEMINI_API_KEY", "external-original")
+    store.salva("GEMINI_API_KEY", "panel-override")
+    store.salva("GEMINI_API_KEY", "replacement-override")
+    store.salva("GEMINI_API_KEY", "")
+    assert os.environ["GEMINI_API_KEY"] == "external-original"
+    assert store.riepilogo_provider()["gemini"]["origine"] == "ambiente"
+
+
+def test_cancellazione_non_tocca_un_nuovo_valore_esterno(store, monkeypatch):
+    import os
+
+    store.salva("GEMINI_API_KEY", "panel")
+    monkeypatch.setenv("GEMINI_API_KEY", "changed-externally")
+    store.salva("GEMINI_API_KEY", "")
+    assert os.environ["GEMINI_API_KEY"] == "changed-externally"
+
+
+def test_salvare_un_campo_preserva_i_legacy_senza_applicarli(store, monkeypatch):
+    import os
+
+    monkeypatch.delenv("CEREBRAS_API_KEY", raising=False)
+    store.percorso().write_text(
+        json.dumps({"CEREBRAS_API_KEY": "legacy-private-key", "AI_PROVIDER": "cerebras"}),
+        encoding="utf-8",
+    )
+    store.salva("GEMINI_API_KEY", "new-key")
+    raw = json.loads(store.percorso().read_text(encoding="utf-8"))
+    assert raw["CEREBRAS_API_KEY"] == "legacy-private-key"
+    assert raw["AI_PROVIDER"] == "cerebras"
+    assert "CEREBRAS_API_KEY" not in store.carica()
+    assert "CEREBRAS_API_KEY" not in os.environ
 
 
 def test_un_campo_non_ammesso_non_diventa_una_variabile(store, monkeypatch) -> None:
@@ -61,12 +100,12 @@ def test_un_file_illeggibile_non_rompe_l_avvio(store) -> None:
 
 
 def test_riepilogo_distingue_pannello_da_ambiente(store, monkeypatch) -> None:
-    monkeypatch.delenv("CEREBRAS_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setenv("GROQ_API_KEY", "dall-ambiente")
-    store.salva("CEREBRAS_API_KEY", "dal-pannello")
+    store.salva("GEMINI_API_KEY", "dal-pannello")
 
     riepilogo = store.riepilogo_provider()
 
-    assert riepilogo["cerebras"]["origine"] == "pannello"
+    assert riepilogo["gemini"]["origine"] == "pannello"
     assert riepilogo["groq"]["origine"] == "ambiente"
     assert riepilogo["openai"]["configurato"] is False

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import streamlit as st
+from offerte.source_registry import default_source_labels
 
 try:
     import knowledge_base as kb_manager
@@ -35,17 +36,9 @@ def _init_state() -> None:
         "ultimo_prezzo_min": 0,
         "ultimo_prezzo_max": 800,
         "ultimo_top_n": 20,
-        "fonti_selezionate": [
-            "Amazon",
-            "eBay",
-            "Vinted",
-            "Euronics",
-            "MediaWorld",
-            "Unieuro",
-            "Wallapop",
-            "Comet",
-            "Expert",
-        ],
+        "fonti_selezionate": default_source_labels(),
+        "search_snapshot": {},
+        "search_cache_origin": "",
         "price_min_input": 0,
         "budget_max_input": 800,
         "price_range_slider": (0, 800),

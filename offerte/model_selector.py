@@ -139,12 +139,9 @@ def ordina(
     if not modelli:
         return []
 
-    # I modelli che la verifica dà per morti finiscono **in fondo**, non fuori.
-    # Toglierli sembrava più pulito e non lo è: la verifica può sbagliarsi (un
-    # 404 su uno slug che non è di OpenRouter la fa fallire), e un candidato
-    # perso qui è un candidato che il failover non può più raggiungere. In coda
-    # non dà fastidio a nessuno e c'è se serve.
-    morti = {m for m in modelli if salute is not None and not getattr(salute.get(m), "alive", True)}
+    # Uno stato esplicitamente negativo esclude il modello. La salute non
+    # verificabile rimane invece ammessa: non è prova di indisponibilità.
+    modelli = [m for m in modelli if salute is None or getattr(salute.get(m), "alive", True)]
 
     uptime = [float(getattr((salute or {}).get(m, None), "uptime_5m", 0.0)) for m in modelli]
     fasce = tiers_o_zero(uptime)
@@ -160,7 +157,7 @@ def ordina(
             # successo davvero vale più di quello che credevamo.
             punti += 5.0 + (len(preferiti) - preferiti.index(modello)) * 0.1
         punti -= penalita_di(provider, modello, now=now)
-        return (1 if modello in morti else 0, fasce[indice], -punti)
+        return (0, fasce[indice], -punti)
 
     return [m for _, m in sorted(enumerate(modelli), key=lambda p: merito(p[0], p[1]))]
 

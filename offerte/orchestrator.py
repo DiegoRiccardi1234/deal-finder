@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import time
+import importlib.util
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout, as_completed
 from collections.abc import Callable
 
 from offerte._constants import *  # noqa: F401,F403
 from offerte.models import Offerta
 from offerte import source_status
+from offerte.source_registry import SOURCE_REGISTRY
 from offerte.config import SEARCH_TOTAL_TIMEOUT
 from offerte.log import get_logger
 from offerte.parsing import *  # noqa: F401,F403
@@ -20,18 +22,8 @@ log = get_logger(__name__)
 #: invece di derivata: "MediaWorld.it" → "mediaworld" funzionerebbe, ma
 #: "Trovaprezzi.it" → "trovaprezzi" e "eBay.it" → "ebay" no, e uno sbaglio qui
 #: si vedrebbe solo come uno stato fonte mancante nella UI.
-_LABEL_TO_KEY: dict[str, str] = {
-    "Amazon.it": "amazon",
-    "eBay.it": "ebay",
-    "Trovaprezzi.it": "trovaprezzi",
-    "Vinted.it": "vinted",
-    "Euronics.it": "euronics",
-    "Unieuro.it": "unieuro",
-    "MediaWorld.it": "mediaworld",
+_LABEL_TO_KEY = {info.label: key for key, info in SOURCE_REGISTRY.items()} | {
     "Wallapop": "wallapop",
-    "Comet.it": "comet",
-    "Expert.it": "expert",
-    "Subito.it": "subito",
     "AliExpress.com": "aliexpress",
     "Temu.com": "temu",
     "Alibaba.com": "alibaba",
@@ -116,31 +108,39 @@ def cerca_offerte(
     print(f"\n  🔑 Token di ricerca: {query_tokens}")
 
     fonti_norm = {f.strip().lower() for f in (fonti or []) if str(f).strip()}
-    if not fonti_norm:
+    if fonti is None:
         # subito/aliexpress/temu/alibaba sono bloccati da bot-protection — esclusi dal default
-        fonti_norm = {
-            "amazon",
-            "ebay",
-            "trovaprezzi",
-            "vinted",
-            "euronics",
-            "unieuro",
-            "mediaworld",
-            "wallapop",
-            "comet",
-            "expert",
-        }
+        fonti_norm = {key for key, info in SOURCE_REGISTRY.items() if info.default_enabled}
     log.info("Fonti attive: %s", ", ".join(sorted(fonti_norm)))
 
     # Lo stato per-fonte è per-ricerca: azzerarlo qui evita che la UI mostri il
     # blocco rimediato nella ricerca precedente.
-    source_status.reset()
+    registry = source_status.reset()
+    for key in list(fonti_norm):
+        info = SOURCE_REGISTRY.get(key)
+        reason = ""
+        if info is None:
+            reason = "fonte sconosciuta"
+        elif condizione not in info.conditions:
+            reason = f"esclusa: filtro '{condizione}' non verificabile su questa fonte"
+        elif info.credentials and not (app_id and cert_id):
+            reason = "non configurata: chiavi API mancanti"
+        elif (
+            info.optional_dependency and importlib.util.find_spec(info.optional_dependency) is None
+        ):
+            reason = f"non disponibile: dipendenza {info.optional_dependency} mancante"
+        if reason:
+            fonti_norm.remove(key)
+            source_status.report_disabled(key, reason)
+            print(f"    {info.label if info else key}: {reason}")
+            if progress_callback:
+                progress_callback(info.label if info else key, -2)
 
     # Lancio scraper in parallelo sulle fonti selezionate
     offerte: list[Offerta] = []
     future_to_label: dict = {}
 
-    def _timed_call(fn: Callable, label: str, *args, **kwargs):
+    def _timed_call_inner(fn: Callable, label: str, *args, **kwargs):
         """Cronometra lo scraper e registra l'esito della fonte.
 
         Qui si sa distinguere "è esploso" da "ha risposto": il caso *bloccato* lo
@@ -165,6 +165,10 @@ def cerca_offerte(
         else:
             source_status.report_empty(key)
         return res
+
+    def _timed_call(fn: Callable, label: str, *args, **kwargs):
+        with source_status.use_registry(registry):
+            return _timed_call_inner(fn, label, *args, **kwargs)
 
     # NB: executor esplicito, non `with`. Il context manager fa join di tutti i
     # thread all'uscita, quindi una fonte appesa bloccherebbe la ricerca per il
@@ -395,6 +399,7 @@ def cerca_offerte(
         # non li aspettiamo. Quelli non ancora partiti vengono annullati; quelli in
         # corso muoiono da soli allo scadere del timeout di `requests`.
         executor.shutdown(wait=False, cancel_futures=True)
+        source_status.finish()
 
     log.info("Totale risultati grezzi (post-filtro): %d", len(offerte))
 

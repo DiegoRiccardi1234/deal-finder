@@ -6,6 +6,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-10-22
+
+### Changed
+- Google Gemini is the default AI provider, with separate Flash-Lite JSON and
+  Flash advice pools. Cerebras support and its SDK have been removed; legacy
+  public aliases remain compatible and old saved credentials remain inert.
+- OpenRouter selects only free models and healthy zero-priced endpoints.
+- Local knowledge-base guidance no longer generates a product catalogue at startup.
+- Updated Streamlit, Pillow, Vinted and audited runtime dependencies.
+
+### Fixed
+- The sidebar can be reopened after collapsing it on desktop and mobile with
+  the updated Streamlit toolbar.
+- An explicit CLI provider takes precedence over saved preferences for that
+  search, without rewriting the user's settings.
+- Empty, truncated and incomplete AI responses are rejected; bounded failover
+  actually selects another model and caches respect provider, task and credentials.
+- Removing a saved key updates the running process without losing external credentials.
+- Source capabilities and UI choices share one registry, including Trovaprezzi.
+  Cached results retain their source statuses and timestamps; late workers cannot
+  contaminate another search. Unsupported condition filters are explained.
+- Incomplete listings cannot create new historical lows or best-price summaries.
+  Metrics, export and advice follow the visible results, including empty filters.
+- Windows updates validate the archive before shutdown, back up replaced files
+  and restore on failed copies; an incomplete restoration preserves recovery data.
+
 ## [4.1.0] - 2026-10-02
 
 ### Added

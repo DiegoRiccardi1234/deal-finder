@@ -26,6 +26,7 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 
 logger = logging.getLogger(__name__)
 
@@ -79,12 +80,32 @@ def _parse(slug: str, payload: object) -> Health:
     data = payload.get("data") if isinstance(payload, dict) else None
     endpoints = data.get("endpoints") if isinstance(data, dict) else None
 
-    if not isinstance(endpoints, list) or not endpoints:
+    if not isinstance(endpoints, list):
+        return Health(slug, True, detail="salute non disponibile")
+    if not endpoints:
         return Health(slug, False, detail="nessun provider serve più il modello")
 
-    sani = [e for e in endpoints if isinstance(e, dict) and e.get("status") in (0, None)]
+    sani = [e for e in endpoints if isinstance(e, dict) and e.get("status") == 0]
+    if slug.endswith(":free"):
+
+        def prezzo_zero(endpoint: dict) -> bool:
+            prezzi = endpoint.get("pricing")
+            if not isinstance(prezzi, dict):
+                return False
+            for campo in ("prompt", "completion"):
+                valore = prezzi.get(campo)
+                if valore is None or isinstance(valore, bool):
+                    return False
+                try:
+                    if Decimal(str(valore)) != 0:
+                        return False
+                except InvalidOperation:
+                    return False
+            return True
+
+        sani = [e for e in sani if prezzo_zero(e)]
     if not sani:
-        return Health(slug, False, detail="tutti gli endpoint sono in errore")
+        return Health(slug, False, detail="nessun endpoint operativo con prezzo ammesso")
 
     def uptime(endpoint: dict, chiave: str) -> float:
         valore = endpoint.get(chiave)
@@ -95,7 +116,8 @@ def _parse(slug: str, payload: object) -> Health:
     best_1d = max(uptime(e, "uptime_last_1d") for e in sani)
     nomi = tuple(str(e.get("provider_name")) for e in sani if e.get("provider_name"))
 
-    if best_5m and best_5m < MIN_UPTIME_5M:
+    uptime_noto = any(isinstance(e.get("uptime_last_5m"), (int, float)) for e in sani)
+    if uptime_noto and best_5m < MIN_UPTIME_5M:
         return Health(
             slug,
             False,

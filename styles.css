@@ -757,7 +757,6 @@ div[data-baseweb="base-input"] > div,
 
 /* ── Nascondi chrome Streamlit ── */
 #MainMenu, footer,
-[data-testid="stToolbar"],
 [data-testid="stDecoration"],
 [data-testid="stStatusWidget"],
 [data-testid="stAppDeployButton"],
@@ -788,7 +787,8 @@ a[href*="share.streamlit"] {
 }
 
 /* ── Sidebar collapse button: un solo cerchio pulito + chevron CSS ── */
-[data-testid="stBaseButton-headerNoPadding"] {
+[data-testid="stBaseButton-headerNoPadding"],
+[data-testid="stExpandSidebarButton"] {
     width: 34px;
     height: 34px;
     min-width: 34px;
@@ -801,7 +801,8 @@ a[href*="share.streamlit"] {
     transition: background 0.2s ease, border-color 0.2s ease;
 }
 
-[data-testid="stBaseButton-headerNoPadding"]:hover {
+[data-testid="stBaseButton-headerNoPadding"]:hover,
+[data-testid="stExpandSidebarButton"]:hover {
     border-color: var(--accent);
     background: var(--surface);
 }
@@ -815,12 +816,14 @@ a[href*="share.streamlit"] {
     box-shadow: none;
 }
 
-[data-testid="stSidebarCollapseButton"] [data-testid="stIconMaterial"] {
+[data-testid="stSidebarCollapseButton"] [data-testid="stIconMaterial"],
+[data-testid="stExpandSidebarButton"] [data-testid="stIconMaterial"] {
     font-size: 0;
     line-height: 0;
 }
 
-[data-testid="stSidebarCollapseButton"] [data-testid="stIconMaterial"]::before {
+[data-testid="stSidebarCollapseButton"] [data-testid="stIconMaterial"]::before,
+[data-testid="stExpandSidebarButton"] [data-testid="stIconMaterial"]::before {
     content: "";
     display: inline-block;
     width: 7px;
@@ -831,18 +834,19 @@ a[href*="share.streamlit"] {
     margin-left: 2px;
 }
 
-section[data-testid="stSidebar"][aria-expanded="false"] { overflow: visible; }
-section[data-testid="stSidebar"][aria-expanded="false"] [data-testid="stSidebarContent"] { overflow: visible; }
+/* Streamlit 1.66 mette il pulsante di riapertura nella toolbar dell'header. */
+[data-testid="stToolbar"] {
+    pointer-events: none;
+}
 
-section[data-testid="stSidebar"][aria-expanded="false"] [data-testid="stSidebarCollapseButton"] {
+[data-testid="stExpandSidebarButton"] {
     position: fixed;
     top: 0.6rem;
     left: 0.6rem;
-    transform: translateX(300px);
     z-index: 1110;
 }
 
-section[data-testid="stSidebar"][aria-expanded="false"] [data-testid="stIconMaterial"]::before {
+[data-testid="stExpandSidebarButton"] [data-testid="stIconMaterial"]::before {
     transform: rotate(-135deg);
     margin-left: -2px;
 }

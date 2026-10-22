@@ -24,6 +24,9 @@ Results are cached on disk with a TTL (`offerte/cache.py`) so repeated searches
 do not re-scrape and do not burn through rate limits.
 Both cache keys include the result limit, category, technical requirements and
 AI availability because the stored offers have already been filtered and ranked.
+Schema 3 stores offers, source statuses, timestamp and parameters together.
+Each search owns a source-status registry, explicitly shared with its workers
+and frozen at completion; late responses cannot alter a subsequent search.
 The UI's **Aggiorna offerte** button bypasses both caches, using a snapshot of
 the last search parameters rather than unapplied edits in the form.
 
@@ -63,20 +66,23 @@ backwards compatibility with earlier import paths.
 `offerte/providers.py` is the seam that makes the engine LLM-agnostic. The
 `PROVIDERS` registry maps a provider name to how its client is built:
 
-- **OpenAI-compatible** (Cerebras, Groq, OpenAI, OpenRouter) share a single
+- **OpenAI-compatible** (Gemini, Groq, OpenAI, OpenRouter) share a single
   client implementation and differ only by base URL and key.
-- **Anthropic** and **Google Gemini** are wrapped in thin adapters that expose
+- **Anthropic** is wrapped in a thin adapter exposing
   the same call surface.
 
 The active provider comes from the `AI_PROVIDER` env var (or `--provider` on the
 CLI, or the sidebar selector). SDKs are imported lazily, so a provider you do
 not use costs nothing and needs no dependency installed.
 
-**No model is hardcoded.** `offerte.ai.get_best_model()` queries the provider's
-model list at runtime and picks the best available by context window, minus a
-blacklist. The candidates in `config.CEREBRAS_FALLBACK_MODELS` are used *only*
-when that list cannot be fetched (no key, no network). A regression test asserts
-that no model literal creeps back into the code.
+**Task-aware selection.** Gemini is the default provider. JSON extraction uses
+an explicit Flash-Lite pool with minimal thinking; advice uses a Flash pool.
+The provider catalogue determines availability within those pools. OpenRouter
+admits only `:free` models with zero-priced healthy endpoints. Selection caches
+are scoped to provider, task and credential identity. Empty/truncated responses
+and 404/429 failures cause a different model to be tried, with four calls total.
+There is no automatic provider switch. Legacy Cerebras names remain import
+aliases only; its provider and SDK have been removed.
 
 ## `ui/` — Streamlit interface
 
@@ -176,8 +182,8 @@ full request timeout.
 
 Everything mutable lives in one SQLite database, `data/deal_finder.db`, opened
 through `offerte/db.py`. The connection uses `check_same_thread=False` because
-Streamlit serves reruns from different threads and the knowledge-base updater runs
-in a daemon thread; a `threading.RLock` serialises writes, and WAL journalling
+Streamlit serves reruns from different threads; a `threading.RLock`
+serialises writes, and WAL journalling
 lets readers proceed during a write. `offerte/migrations.py` owns the schema,
 versioned via `PRAGMA user_version`.
 
@@ -197,7 +203,7 @@ upgrading does not lose a watchlist or a price history.
 | `watchlist.py` | `watchlist` — favourites; the link is the primary key, so de-duplication is a constraint |
 | `search_history.py` | `search_history` — normalised query as primary key, capped at `MAX_ENTRIES` |
 | `ui/auth.py` | `auth_sessions` — session fingerprint to expiry |
-| `knowledge_base.py` | `kb_state`, `kb_unknown_items` — product KB refreshed in a background thread |
+| `knowledge_base.py` | `kb_state`, `kb_unknown_items` — local guidance for questions; no automatic model-generated catalogue refresh |
 
 `data/knowledge_base.json` is still tracked in git, but only as a **read-only
 seed** used when `kb_state` is empty. It used to be rewritten by the updater,

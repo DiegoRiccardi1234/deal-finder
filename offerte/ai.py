@@ -6,17 +6,11 @@ import json
 import random
 import re
 import time
-
-
-try:
-    from cerebras.cloud.sdk import Cerebras
-except Exception:
-    Cerebras = None
+import hashlib
 
 
 from offerte._constants import *  # noqa: F401,F403
 from offerte.models import Offerta
-from offerte.config import CEREBRAS_FALLBACK_MODELS, CEREBRAS_MODEL_BLACKLIST
 from offerte.log import get_logger
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import _hard_spec_mismatch_reasons
@@ -32,23 +26,20 @@ def _cerebras_model(client=None) -> str:
 
 
 def _cerebras_chat(
-    client, messages: list, temperature: float = 0.1, max_retries: int = 4
+    client,
+    messages: list,
+    temperature: float = 0.1,
+    max_retries: int = 4,
+    *,
+    compito: str = "json",
 ) -> object:
     """Wrapper con retry automatico (404 modello + 429 rate limit)."""
-    if _cerebras_chat_lib is not None:
-        return _cerebras_chat_lib(
-            client=client,
-            messages=messages,
-            model=None,
-            max_retries=max_retries,
-            base_delay=2.0,
-            temperature=temperature,
-        )
-    # Fallback diretto senza retry
-    return client.chat.completions.create(
-        model=_cerebras_model(client),
+    return chat_with_retry(
+        client=client,
         messages=messages,
+        max_retries=max_retries,
         temperature=temperature,
+        compito=compito,
     )
 
 
@@ -56,7 +47,7 @@ def _get_ai_api_key() -> str:
     """Key del provider AI attivo (multi-provider via offerte.providers).
 
     Carica prima gli eventuali secret Streamlit in env, poi legge la key del
-    provider attivo (`AI_PROVIDER`, default cerebras).
+    provider attivo (`AI_PROVIDER`, default Gemini).
     """
     from offerte import providers
 
@@ -65,11 +56,14 @@ def _get_ai_api_key() -> str:
             providers.load_keys_from(st.secrets)
         except Exception:
             pass
+    from offerte import secrets_store
+
+    secrets_store.applica_all_ambiente()
     return providers.get_api_key(providers.active_provider())
 
 
 def _get_ai_client() -> object | None:
-    """Client del provider AI attivo (Cerebras/Groq/OpenAI/OpenRouter/Anthropic/
+    """Client del provider AI attivo (Groq/OpenAI/OpenRouter/Anthropic/
     Gemini via offerte.providers). None se non configurato o SDK mancante.
     """
     from offerte import providers
@@ -79,6 +73,9 @@ def _get_ai_client() -> object | None:
             providers.load_keys_from(st.secrets)
         except Exception:
             pass
+    from offerte import secrets_store
+
+    secrets_store.applica_all_ambiente()
     return providers.build_client(providers.active_provider())
 
 
@@ -112,8 +109,13 @@ def fetch_specs_ai(
     nomi = [o.nome for o in offerte]
     elenco = "\n".join(f"{i + 1}. {n}" for i, n in enumerate(nomi))
     batch_prompt = (
-        "Sei un database prodotti. Per ciascun prodotto nell'elenco numerato "
-        "restituisci SOLO un oggetto JSON valido con indici 1,2,3…\n"
+        "Estrai esclusivamente informazioni esplicite nei titoli delle offerte. "
+        "Non dedurre specifiche dalla conoscenza del modello e non aggiungere fatti esterni. "
+        "Per ciascun prodotto nell'elenco numerato "
+        "restituisci SOLO UN UNICO oggetto JSON valido. Le chiavi esterne sono "
+        "gli indici come stringhe e i valori sono oggetti di specifiche. "
+        "Non restituire blocchi numerati del tipo 1. {...}, 2. {...}.\n"
+        f"Struttura esterna obbligatoria: {json.dumps({str(i + 1): {} for i in range(len(offerte))})}\n"
         "Ogni valore è un oggetto con le specifiche più rilevanti per quella categoria di prodotto.\n"
         "Esempi: tech → processore, ram, storage, display, os; "
         "abbigliamento → brand, taglia, colore, materiale; "
@@ -135,10 +137,26 @@ def fetch_specs_ai(
         )
         # Il JSON ritornato è tipo {"1": {...}, "2": {...}}
         outer = _extract_json_object(content)
+        if set(outer) != {str(i + 1) for i in range(len(offerte))} or not all(
+            isinstance(value, dict) for value in outer.values()
+        ):
+            raise ValueError("Specifiche incomplete o con indici inattesi")
         for i, offerta in enumerate(offerte):
             key = str(i + 1)
             specs = outer.get(key, {})
-            offerta.specs = specs if isinstance(specs, dict) else {}
+            if not isinstance(specs, dict):
+                raise ValueError("Specifiche AI non valide")
+            # L'AI propone campi, ma un valore è mostrabile solo se è presente
+            # nel titolo dell'offerta. Non basta conoscere il prodotto.
+            titolo = "|".join(re.findall(r"[a-z]+|\d+(?:[.,]\d+)?", offerta.nome.casefold()))
+            offerta.specs = {
+                str(k): value
+                for k, value in specs.items()
+                if value is not None
+                and not isinstance(value, (dict, list, bool))
+                and (tokens := re.findall(r"[a-z]+|\d+(?:[.,]\d+)?", str(value).casefold()))
+                and f"|{'|'.join(tokens)}|" in f"|{titolo}|"
+            }
     except Exception:
         for offerta in offerte:
             offerta.specs = {}
@@ -745,8 +763,11 @@ def filtra_risultati_con_ai(risultati: list[Offerta], filtri: dict[str, str]) ->
             for row in payload.get("scores", []):
                 idx = int(row.get("idx", 0)) - 1
                 score = int(float(str(row.get("score", 0))))
-                if 0 <= idx < len(risultati):
-                    scores_map[idx] = max(0, min(10, score))
+                if idx in scores_map or not 0 <= idx < len(risultati) or not 0 <= score <= 10:
+                    raise ValueError("Indici o punteggi AI non validi")
+                scores_map[idx] = score
+            if set(scores_map) != set(range(len(risultati))):
+                raise ValueError("Punteggi AI incompleti")
 
             for idx, offerta in enumerate(risultati):
                 scored.append((scores_map.get(idx, 0), offerta))
@@ -867,36 +888,34 @@ def filtra_risultati_con_ai(risultati: list[Offerta], filtri: dict[str, str]) ->
     return [o for _, o in filtered]
 
 
-# === Cerebras model resolver + chat-with-retry (ex cerebras_model.py) ======== #
-_BLACKLIST = CEREBRAS_MODEL_BLACKLIST
-# Candidati di fallback (lista ordinata), usati solo se non si può interrogare
-# l'API. La scelta normale è dinamica: vedi get_best_model().
-_FALLBACK_MODELS = CEREBRAS_FALLBACK_MODELS
-_FALLBACK_MODEL = _FALLBACK_MODELS[0]
-_cached_model: str | None = None
+# === Provider-agnostic model resolver and retry =========================== #
+_model_cache: dict[tuple[str, str, str], tuple[float, str]] = {}
 
 
-def get_best_model(client=None, force_refresh: bool = False) -> str:
+def get_best_model(client=None, force_refresh: bool = False, *, compito: str = "json") -> str:
     """Sceglie dinamicamente il miglior modello DISPONIBILE per il provider attivo.
 
-    Delega a `offerte.providers.best_model()`: preferisce un candidato noto del
-    provider effettivamente disponibile, altrimenti il modello col context_window
-    più ampio. Nessun modello hardcodato come scelta. Risultato in cache (svuota
-    con `invalidate_model()`, es. al cambio provider).
+    Usa il pool ammesso per compito, con cache breve separata per provider,
+    compito e credenziale. Una penalità rende subito rivalutabile la scelta.
     """
-    global _cached_model
-    if _cached_model and not force_refresh:
-        return _cached_model
-    from offerte import providers
+    from offerte import providers, model_selector
 
-    _cached_model = providers.best_model(client=client)
-    return _cached_model
+    provider = providers.active_provider()
+    credential = str(getattr(client, "api_key", "") or providers.get_api_key(provider))
+    identity = hashlib.sha256(credential.encode()).hexdigest()
+    key = (provider, compito, identity)
+    cached = _model_cache.get(key)
+    if cached and not force_refresh and time.monotonic() - cached[0] < 300:
+        if not model_selector.penalita_di(provider, cached[1]):
+            return cached[1]
+    selected = providers.best_model(provider, client, compito=compito)
+    _model_cache[key] = (time.monotonic(), selected)
+    return selected
 
 
 def invalidate_model() -> None:
     """Svuota la cache del modello (es. dopo un 404)."""
-    global _cached_model
-    _cached_model = None
+    _model_cache.clear()
 
 
 #: Esiti della classificazione di un errore del provider AI.
@@ -1009,67 +1028,87 @@ def _annota_errore(model: str, kind: str) -> None:
         pass
 
 
-def cerebras_chat_with_retry(
+class InvalidAICompletion(ValueError):
+    """Risposta vuota o troncata: non è un risultato utilizzabile."""
+
+
+def chat_with_retry(
     client,
     messages: list,
     model: str | None = None,
     max_retries: int = 4,
     base_delay: float = 2.0,
+    compito: str = "json",
     **kwargs,
 ):
     """Chiama `client.chat.completions.create()` con retry classificato.
 
-    Ritenta rate limit e errori transitori con backoff esponenziale + jitter,
-    rinegozia il modello su 404 senza consumare un tentativo, e propaga subito
-    gli errori fatali (auth, richiesta invalida).
+    Prova modelli distinti del solo provider attivo, con un budget complessivo
+    massimo di quattro chiamate. Vuoto e troncato non sono risultati validi;
+    gli errori fatali interrompono subito il tentativo.
     """
-    if model is None:
-        model = get_best_model(client=client)
+    from offerte import providers
 
-    last_exc: BaseException | None = None
-    attempt = 0
-    model_refreshes = 0
-    # Il 404 non consuma un tentativo, ma il numero di rinegoziazioni va limitato
-    # per non ciclare se il resolver continua a proporre un modello inesistente.
-    max_model_refreshes = 2
-
-    while attempt < max_retries:
+    provider = providers.active_provider()
+    candidates = providers.ranked_models(provider, client, compito=compito)
+    if model is not None:
+        if provider == "openrouter" and not model.endswith(":free"):
+            raise ValueError("OpenRouter ammette soltanto modelli :free")
+        candidates = list(dict.fromkeys([model] + candidates))
+    if not candidates:
+        raise RuntimeError("Nessun modello AI ammesso disponibile; usa la ricerca senza AI")
+    last_exc: BaseException = InvalidAICompletion("Nessuna risposta AI utilizzabile")
+    # Ogni chiamata, inclusi 404 e risposte vuote, consuma lo stesso budget.
+    limit = max(1, min(4, max_retries))
+    for attempt, model in enumerate(candidates[:limit]):
+        request = dict(kwargs)
+        request.setdefault("max_tokens", 4096 if compito == "json" else 2048)
+        if provider == "openrouter":
+            # Vincolo applicato anche quando il controllo pubblico di salute
+            # non riesce: il routing deve rifiutare qualunque endpoint a costo >0.
+            body = dict(request.get("extra_body") or {})
+            routing = dict(body.get("provider") or {})
+            routing["max_price"] = {"prompt": 0, "completion": 0, "request": 0}
+            body["provider"] = routing
+            request["extra_body"] = body
+        if (
+            provider == "gemini"
+            and model in ("gemini-3.1-flash-lite", "gemini-3.5-flash-lite")
+            and compito == "json"
+        ):
+            # Parametro OpenAI-compatible ufficiale: evita l'ambiguità fra
+            # extra_body dell'SDK Python e il campo omonimo del JSON Google.
+            request.setdefault("reasoning_effort", "minimal")
+        elif provider == "gemini" and compito == "consiglio":
+            request.setdefault("reasoning_effort", "low")
         try:
-            risposta = client.chat.completions.create(model=model, messages=messages, **kwargs)
+            risposta = client.chat.completions.create(model=model, messages=messages, **request)
             _annota_esito(model, risposta)
+            choices = getattr(risposta, "choices", None) or []
+            if not choices or not (getattr(choices[0].message, "content", "") or "").strip():
+                raise InvalidAICompletion("Risposta AI vuota")
+            if getattr(choices[0], "finish_reason", None) == "length":
+                raise InvalidAICompletion("Risposta AI troncata")
             return risposta
         except Exception as exc:
             last_exc = exc
+            if isinstance(exc, InvalidAICompletion):
+                invalidate_model()
+                continue
             kind = classify_ai_error(exc)
             _annota_errore(model, kind)
-
+            invalidate_model()
             if kind == AI_ERROR_FATAL:
-                log.warning("Chiamata AI non ritentabile (%s): %s", type(exc).__name__, exc)
                 raise
+            if attempt + 1 < min(limit, len(candidates)) and kind != AI_ERROR_MODEL_NOT_FOUND:
+                time.sleep(_backoff_delay(base_delay, attempt))
+    # Non registrare eccezioni complete: possono contenere prompt o dati provider.
+    log.warning("Nessuna risposta AI utilizzabile dal provider %s", provider)
+    raise last_exc
 
-            if kind == AI_ERROR_MODEL_NOT_FOUND and model_refreshes < max_model_refreshes:
-                model_refreshes += 1
-                log.info("Modello '%s' non disponibile: rinegozio (%d).", model, model_refreshes)
-                invalidate_model()
-                model = get_best_model(client=client, force_refresh=True)
-                continue
 
-            attempt += 1
-            if attempt >= max_retries:
-                break
-            wait = _backoff_delay(base_delay, attempt - 1)
-            log.info(
-                "Chiamata AI fallita (%s), tentativo %d/%d fra %.1fs: %s",
-                kind,
-                attempt,
-                max_retries,
-                wait,
-                exc,
-            )
-            time.sleep(wait)
-
-    log.warning("Chiamata AI fallita dopo %d tentativi: %s", max_retries, last_exc)
-    raise last_exc  # type: ignore[misc]
+# Compatibilità per chiamanti esterni; non implica supporto al provider rimosso.
+cerebras_chat_with_retry = chat_with_retry
 
 
 # =============================================================================

@@ -9,20 +9,19 @@ Le funzioni helper sono nel package `ui/`. Questo file contiene:
 import os
 import re
 import time
+from html import escape
+from datetime import datetime
 from typing import Any
 import streamlit as st
 from _shared import load_css, render_nav
 from offerte import paths
+from offerte.source_registry import default_source_labels, labels_to_keys, source_options
 from offerte.log import configure_logging
 
 # Idempotente: Streamlit ri-esegue lo script a ogni interazione, e senza la
 # guardia interna ogni rerun aggiungerebbe un handler duplicando le righe.
 configure_logging()
 
-try:
-    import knowledge_base as kb_manager
-except Exception:
-    kb_manager = None  # type: ignore[assignment]
 try:
     from offerte_tech import Offerta  # import-availability guard per offerte_tech
 except ImportError as _e:
@@ -77,6 +76,7 @@ from ui.presearch import (
 from ui.recommendation import (
     _call_final_recommendation,
 )
+from ui.results import comparable_offers, filter_visible_offers
 from ui.search import _run_search
 from ui.sources import _render_source_status_monitor
 from ui.state import (
@@ -156,49 +156,18 @@ api_key = _get_ai_api_key()
 render_nav(active_page="tool")
 _init_state()
 cerebras_client = _get_ai_client(api_key)
-if kb_manager is not None:
-    kb_manager.init_kb_on_startup(api_key)
 _presearch_done = st.session_state.get("presearch_ready", False)
 query_input: str = ""
 top_n_input: int = int(st.session_state.get("ultimo_top_n", 10))
 condizione: str = st.session_state.get("condizione", "tutti")
-_fonti_options = [
-    "Amazon",
-    "eBay",
-    "Vinted",
-    "Euronics",
-    "MediaWorld",
-    "Unieuro",
-    "Wallapop",
-    "Comet",
-    "Expert",
-    "AliExpress",
+_fonti_options = source_options()
+_fonti_def = default_source_labels()
+fonti_selezionate: list[str] = [
+    label
+    for label in st.session_state.get("fonti_selezionate", _fonti_def)
+    if label in _fonti_options
 ]
-_fonti_def = [
-    "Amazon",
-    "eBay",
-    "Vinted",
-    "Euronics",
-    "MediaWorld",
-    "Unieuro",
-    "Wallapop",
-    "Comet",
-    "Expert",
-]
-fonti_selezionate: list[str] = list(st.session_state.get("fonti_selezionate", _fonti_def))
-_fonti_map = {
-    "Amazon": "amazon",
-    "eBay": "ebay",
-    "Vinted": "vinted",
-    "Euronics": "euronics",
-    "Unieuro": "unieuro",
-    "MediaWorld": "mediaworld",
-    "Wallapop": "wallapop",
-    "Comet": "comet",
-    "Expert": "expert",
-    "AliExpress": "aliexpress",
-}
-fonti_backend: list[str] = [_fonti_map[f] for f in fonti_selezionate if f in _fonti_map]
+fonti_backend: list[str] = labels_to_keys(fonti_selezionate)
 avvia_ricerca: bool = False
 _flush_pending_price_sync()
 _history = load_history()
@@ -230,20 +199,9 @@ if _history:
 if not _presearch_done:
     # Unica sorgente delle fonti mostrate, così il conteggio nel testo sotto non
     # può divergere dai chip (diceva "7 siti" mentre i chip erano 9).
-    sources = [
-        "Amazon",
-        "eBay",
-        "Trovaprezzi",
-        "Vinted",
-        "Euronics",
-        "Unieuro",
-        "MediaWorld",
-        "Wallapop",
-        "Comet",
-        "Expert",
-    ]
+    sources = _fonti_def
     st.markdown(
-        "<div class='source-strip'><span class='source-strip-label'>Monitoraggio in tempo reale su</span>"
+        "<div class='source-strip'><span class='source-strip-label'>Fonti disponibili per la ricerca</span>"
         + "".join(f"<span>{s}</span>" for s in sources)
         + "</div>",
         unsafe_allow_html=True,
@@ -261,7 +219,7 @@ if not _presearch_done:
         st.markdown(
             "<div class='section-heading'><h3>Trova le migliori offerte</h3>"
             "<p>Descrivi cosa cerchi: la AI genera query ottimizzata, budget e filtri tecnici. "
-            f"Dettagli completi al primo messaggio? Avviamo subito lo scraping su {len(sources)} siti.</p></div>",
+            "Puoi anche cercare direttamente, senza una chiave AI.</p></div>",
             unsafe_allow_html=True,
         )
     with _chat_hdr[1]:
@@ -275,8 +233,8 @@ if not _presearch_done:
         # editare, e mandarcelo era un vicolo cieco.
         st.info(
             "💡 La chat assistita ha bisogno di una chiave AI. "
-            "Aprila da **⚙️ Impostazioni** nella barra laterale: ci sono quattro "
-            "fornitori gratuiti, nessuno chiede una carta."
+            "Configura Google Gemini da **⚙️ Impostazioni** nella barra laterale. "
+            "La ricerca manuale qui sotto funziona già senza chiavi."
         )
 
     c_left, c_mid, c_right = st.columns([1, 6, 1])
@@ -301,10 +259,8 @@ if not _presearch_done:
 
     st.divider()
 
-    with st.expander("🔧 Cerca senza chat (inserimento manuale)", expanded=False):
-        st.caption(
-            "Per risultati migliori usa la chat sopra. Qui puoi fare una ricerca diretta con query breve (3–6 parole)."
-        )
+    with st.expander("🔧 Cerca senza chat (inserimento manuale)", expanded=cerebras_client is None):
+        st.caption("Inserisci una query breve (3–6 parole), il budget e le fonti da consultare.")
         query_input = st.text_input(
             "Query prodotto",
             placeholder="es. notebook 14 pollici",
@@ -366,7 +322,7 @@ if not _presearch_done:
                 key="fonti_ms_manual",
             )
             st.session_state["fonti_selezionate"] = fonti_selezionate
-            fonti_backend = [_fonti_map[f] for f in fonti_selezionate if f in _fonti_map]
+            fonti_backend = labels_to_keys(fonti_selezionate)
             avvia_ricerca = st.button(
                 "🔍 Cerca offerte", type="primary", width="stretch", key="btn_manual_cerca"
             )
@@ -385,9 +341,9 @@ else:
         _q_label = " vs ".join(_cmp_qs) if _cmp_qs else _q_opt
     else:
         _q_label = _q_opt
-    _parts = [f"**{_q_label}**", f"{_bmin_p}€–{_bmax_p}€", _cond_p]
+    _parts = [f"<strong>{escape(_q_label)}</strong>", f"{_bmin_p}€–{_bmax_p}€", escape(_cond_p)]
     if _filtri_str:
-        _parts.append(_filtri_str)
+        _parts.append(escape(_filtri_str))
 
     _hcol1, _hcol2 = st.columns([5, 1])
     with _hcol1:
@@ -461,7 +417,7 @@ else:
         default=st.session_state.get("fonti_selezionate", _fonti_def),
     )
     st.session_state["fonti_selezionate"] = fonti_selezionate
-    fonti_backend = [_fonti_map[f] for f in fonti_selezionate if f in _fonti_map]
+    fonti_backend = labels_to_keys(fonti_selezionate)
 
     avvia_ricerca = st.button(
         "🔍 Cerca offerte", type="primary", width="stretch", disabled=not query_input
@@ -469,8 +425,9 @@ else:
     st.caption(
         "💬 Puoi affinare la query o il budget scrivendo nell'input in basso prima di cercare."
     )
-    if kb_manager is not None:
-        st.caption(f"🧠 {kb_manager.get_status()}")
+    st.caption(
+        "Le specifiche e i prezzi vengono dalle offerte; la guida AI non è un catalogo aggiornato."
+    )
 if not st.session_state.get("ricerca_effettuata", False):
     _pre_placeholder = (
         "Descrivi prodotto, uso, vincoli e preferenze"
@@ -554,6 +511,22 @@ if st.session_state.get("ricerca_effettuata", False):
             st.code(st.session_state.get("log_ricerca", ""), language=None)
 
     offerte: list[Offerta] = st.session_state.get("risultati", [])
+    _snapshot = st.session_state.get("search_snapshot", {})
+    _snapshot_sources = _snapshot.get("sources", fonti_backend)
+    _render_source_status_monitor(
+        offerte, _snapshot_sources, st.session_state.get("log_ricerca", "")
+    )
+    if _snapshot.get("searched_at"):
+        _searched_label = datetime.fromtimestamp(_snapshot["searched_at"]).strftime(
+            "%d/%m/%Y %H:%M"
+        )
+        _origin = st.session_state.get("search_cache_origin", "live")
+        _origin_label = (
+            "Risultati dalla cache" if _origin in {"session", "disk"} else "Ricerca eseguita"
+        )
+        st.caption(
+            f"{_origin_label} il {_searched_label}. Prezzi del prodotto; verifica spedizione e totale sul negozio."
+        )
     if not offerte:
         st.warning(
             "⚠️ Nessuna offerta trovata. Prova ad allargare il range prezzo, semplificare la query o ripetere il tentativo tra qualche secondo."
@@ -599,35 +572,28 @@ if st.session_state.get("ricerca_effettuata", False):
                 horizontal=True,
             )
 
-        def _infer_cond_offerta(o: Offerta) -> str:
-            if o.fonte in ("vinted.it",):
-                return "usato"
-            _nl = o.nome.lower()
-            if any(
-                _k in _nl for _k in ("usato", "ricondizionato", "refurbished", "rigenerato", "used")
-            ):
-                return "usato"
-            return "nuovo"
-
-        offerte_vis = [
-            o
-            for o in offerte
-            if (not _filtro_fonti or o.fonte in _filtro_fonti)
-            and _filtro_prezzo[0] <= o.prezzo <= _filtro_prezzo[1]
-            and (_filtro_cond == "tutti" or _infer_cond_offerta(o) == _filtro_cond)
-        ]
-
-        _metriche_src = offerte_vis if offerte_vis else offerte
-        prezzo_min_ris = min(o.prezzo for o in _metriche_src)
-        negozio_min = next(o.negozio for o in _metriche_src if o.prezzo == prezzo_min_ris)
-        fonti_uniche = len({o.fonte for o in _metriche_src})
+        offerte_vis = filter_visible_offers(
+            offerte,
+            sources=_filtro_fonti,
+            price_range=_filtro_prezzo,
+            condition=_filtro_cond,
+            searched_condition=_snapshot.get("params", {}).get("condizione", "tutti"),
+        )
+        _metriche_src = comparable_offers(offerte_vis)
+        prezzo_min_ris = min((o.prezzo for o in _metriche_src), default=None)
+        negozio_min = next((o.negozio for o in _metriche_src if o.prezzo == prezzo_min_ris), "n.d.")
+        fonti_uniche = len({o.fonte for o in offerte_vis})
         _n_vis, _n_tot = len(offerte_vis), len(offerte)
         _label_count = f"{_n_vis}/{_n_tot}" if _n_vis < _n_tot else str(_n_vis)
 
         st.subheader(
             f"{_label_count} offerte trovate per \u201c{st.session_state.get('ultima_query', '')}\u201d"
         )
-        if st.session_state.get("prezzo_nuovo_minimo"):
+        if (
+            st.session_state.get("prezzo_nuovo_minimo")
+            and prezzo_min_ris is not None
+            and prezzo_min_ris == st.session_state.get("prezzo_minimo_corrente")
+        ):
             _pmc = st.session_state.get("prezzo_minimo_corrente")
             _pmp = st.session_state.get("prezzo_minimo_prec")
             _msg_low = (
@@ -639,34 +605,16 @@ if st.session_state.get("ricerca_effettuata", False):
             st.success(_msg_low)
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Risultati", _label_count)
-        m2.metric("Prezzo piu basso", _format_price(prezzo_min_ris))
-        m3.metric("Negozio migliore", negozio_min)
+        m2.metric(
+            "Prezzo piu basso",
+            _format_price(prezzo_min_ris) if prezzo_min_ris is not None else "n.d.",
+        )
+        m3.metric("Negozio col prezzo più basso", negozio_min)
         m4.metric("Fonti attive", str(fonti_uniche))
 
-        _prices_sorted = sorted([o.prezzo for o in _metriche_src])
-        _top_1 = _prices_sorted[0] if _prices_sorted else 0.0
-        _top_2 = _prices_sorted[1] if len(_prices_sorted) > 1 else _top_1
-        _top_3 = _prices_sorted[2] if len(_prices_sorted) > 2 else _top_2
-        _delta_12 = ((_top_2 - _top_1) / _top_1 * 100.0) if _top_1 > 0 else 0.0
-        _delta_13 = ((_top_3 - _top_1) / _top_1 * 100.0) if _top_1 > 0 else 0.0
-
-        _ins_l, _ins_r = st.columns([1.55, 1], gap="large")
-        with _ins_l:
-            st.markdown(
-                "<div class='market-snapshot-card'>"
-                "<p class='market-kicker'>Snapshot mercato</p>"
-                f"<h4>{_format_price(_top_1)}</h4>"
-                f"<p>Delta top #1-#2: <strong>+{_delta_12:.1f}%</strong> · "
-                f"Delta top #1-#3: <strong>+{_delta_13:.1f}%</strong></p>"
-                "<small>Ranking: prezzo, affidabilita fonte, spedizione.</small>"
-                "</div>",
-                unsafe_allow_html=True,
-            )
-        with _ins_r:
-            _fonti_selected_ui = list(st.session_state.get("fonti_selezionate", _fonti_def))
-            _fonti_selected_backend = [_fonti_map[f] for f in _fonti_selected_ui if f in _fonti_map]
-            _render_source_status_monitor(
-                offerte, _fonti_selected_backend, st.session_state.get("log_ricerca", "")
+        if offerte_vis and not _metriche_src:
+            st.info(
+                "Gli annunci visibili richiedono verifica: non sono usati per il prezzo più basso."
             )
 
         if not offerte_vis:
@@ -697,7 +645,9 @@ if st.session_state.get("ricerca_effettuata", False):
                 _hist = price_history.history_for(_wl_query)
                 _low = price_history.lowest_ever(_wl_query)
                 if _low is not None and len(_hist) >= 2:
-                    _cur_min = min((o.prezzo for o in offerte_vis if o.prezzo), default=None)
+                    _cur_min = min(
+                        (o.prezzo for o in comparable_offers(offerte_vis) if o.prezzo), default=None
+                    )
                     _trend = f"📊 Minimo storico per “{_wl_query}”: {_format_price(_low)}"
                     if _cur_min is not None:
                         _trend += f" · ora {_format_price(_cur_min)}"
@@ -757,7 +707,7 @@ if st.session_state.get("ricerca_effettuata", False):
             with st.expander("🔬 Specs rilevate", expanded=False):
                 _render_specs_grid(offerte_vis)
 
-        _offerte_export = offerte_vis if offerte_vis else offerte
+        _offerte_export = offerte_vis
         _copy_query = st.session_state.get("ultima_query", "")
         _copy_text = _offerte_to_copy_text(_offerte_export, _copy_query)
         with st.expander(
@@ -769,11 +719,23 @@ if st.session_state.get("ricerca_effettuata", False):
             st.code(_copy_text, language=None)
 
         st.write("")
+        _advice_signature = tuple((offer.link, offer.prezzo) for offer in offerte_vis)
+        _previous_advice_signature = st.session_state.get("advice_visible_signature")
+        if (
+            _previous_advice_signature is not None
+            and _previous_advice_signature != _advice_signature
+        ):
+            st.session_state["final_chat_messages"] = []
+            # Cambiare un filtro non deve avviare nuove chiamate AI da solo.
+            st.session_state["auto_recommend_tried"] = True
+        st.session_state["advice_visible_signature"] = _advice_signature
         with st.expander("💬 Consiglio AI", expanded=True):
             st.caption(
                 "Chiedi quale prodotto ti conviene tra quelli trovati, in base al tuo uso e budget."
             )
-            if cerebras_client is None:
+            if not offerte_vis:
+                st.info("Modifica i filtri per mostrare le offerte da confrontare con l'AI.")
+            elif cerebras_client is None:
                 st.info(
                     "💡 Apri ⚙️ Impostazioni per configurare un provider AI e ottenere il consiglio."
                 )
@@ -792,7 +754,7 @@ if st.session_state.get("ricerca_effettuata", False):
                             auto_messages = [{"role": "user", "content": auto_query}]
                             risposta_auto = _call_final_recommendation(
                                 cerebras_client,
-                                offerte,
+                                offerte_vis,
                                 st.session_state.get("preferenze_utente", {}),
                                 auto_messages,
                             )
@@ -826,7 +788,7 @@ if st.session_state.get("ricerca_effettuata", False):
                         try:
                             risposta = _call_final_recommendation(
                                 cerebras_client,
-                                offerte,
+                                offerte_vis,
                                 st.session_state.get("preferenze_utente", {}),
                                 st.session_state.get("final_chat_messages", []),
                             )

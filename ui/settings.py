@@ -42,10 +42,17 @@ def _campo_chiave(nome: str, info: dict) -> None:
                     st.success("Salvata. È già attiva, non serve riavviare.")
                     st.rerun()
         with col_rimuovi:
-            if st.button("Rimuovi", key=f"rimuovi_{nome}", use_container_width=True):
+            if st.button(
+                "Rimuovi",
+                key=f"rimuovi_{nome}",
+                use_container_width=True,
+                disabled=info["origine"] == "ambiente",
+            ):
                 secrets_store.salva(cfg.key_env, "")
                 _dimentica_modello()
                 st.rerun()
+        if info["origine"] == "ambiente":
+            st.caption("Questa chiave proviene dalla configurazione esterna: rimuovila alla fonte.")
         if cfg.signup_url:
             st.caption(f"[Ottieni una chiave]({cfg.signup_url})")
 
@@ -75,28 +82,38 @@ def render_settings() -> None:
 
         riepilogo = secrets_store.riepilogo_provider()
 
-        attivi = [n for n, i in riepilogo.items() if i["configurato"]]
+        corrente = providers.active_provider()
+        attivi = [corrente] + [
+            n for n, i in riepilogo.items() if i["configurato"] and n != corrente
+        ]
         if attivi:
             # Il selettore c'è **solo** se c'è più di una scelta possibile, ma
             # non sparisce più quando le chiavi sono zero: in quel caso sotto
             # c'è comunque il pannello per metterne una.
-            corrente = providers.active_provider()
-            indice = attivi.index(corrente) if corrente in attivi else 0
+            indice = 0
             scelto = st.selectbox(
                 "Provider AI",
                 attivi,
                 index=indice,
-                format_func=lambda n: providers.PROVIDERS[n].label,
+                format_func=lambda n: (
+                    providers.PROVIDERS[n].label
+                    + (" — aggiungi una chiave" if not riepilogo[n]["configurato"] else "")
+                ),
                 key="settings_provider",
             )
             if scelto != corrente:
                 secrets_store.salva("AI_PROVIDER", scelto)
                 _dimentica_modello()
                 st.rerun()
-        else:
+        if not riepilogo[corrente]["configurato"]:
             st.info("Nessuna chiave: l'IA è spenta. Aggiungine una qui sotto.")
 
-        st.markdown("**Gratuiti — nessuna carta**")
+        st.caption(
+            "Gemini usa il tier gratuito se la chiave appartiene a un progetto senza billing. "
+            "I limiti dipendono dal tuo account. OpenRouter usa soltanto modelli :free; "
+            "gli altri provider a pagamento si attivano solo se li scegli tu."
+        )
+        st.markdown("**Con tier gratuito**")
         for nome, info in riepilogo.items():
             if providers.PROVIDERS[nome].free:
                 _campo_chiave(nome, info)
@@ -107,7 +124,10 @@ def render_settings() -> None:
                 _campo_chiave(nome, info)
 
         st.markdown("**eBay** — facoltativo")
-        st.caption("Senza queste, eBay funziona lo stesso leggendo le pagine HTML.")
+        st.caption(
+            "eBay usa l'API ufficiale: senza queste credenziali la fonte è disabilitata. "
+            "Le altre fonti restano disponibili."
+        )
         stato = secrets_store.status()
         for campo in ("EBAY_APP_ID", "EBAY_CERT_ID"):
             segno = "🟢" if stato.get(campo) else "⚪"

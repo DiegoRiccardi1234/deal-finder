@@ -55,7 +55,7 @@ def test_la_penalita_e_per_coppia_provider_modello() -> None:
 
     model_selector.registra_penalita("openrouter", "gpt-oss-120b", "troncato")
     assert model_selector.penalita_di("openrouter", "gpt-oss-120b") > 0
-    assert model_selector.penalita_di("cerebras", "gpt-oss-120b") == 0
+    assert model_selector.penalita_di("groq", "gpt-oss-120b") == 0
 
 
 def test_il_429_scade_prima_delle_altre_penalita() -> None:
@@ -126,7 +126,7 @@ def test_uptime_basso_esclude() -> None:
     assert endpoint_health.check("fiacco", fetch=lambda url: _R()).alive is False
 
 
-def test_un_modello_dato_per_morto_finisce_in_coda_non_fuori() -> None:
+def test_un_modello_dato_per_morto_e_escluso() -> None:
     """Toglierlo sembrava più pulito e non lo è.
 
     La verifica può sbagliarsi — basta uno slug che non è di OpenRouter e la
@@ -141,5 +141,4 @@ def test_un_modello_dato_per_morto_finisce_in_coda_non_fuori() -> None:
     }
     ordinati = model_selector.ordina(list(salute), provider="openrouter", salute=salute)
 
-    assert ordinati == ["vivo-30b-instruct", "morto-70b-instruct"]
-    assert len(ordinati) == 2, "nessun candidato deve sparire dalla lista"
+    assert ordinati == ["vivo-30b-instruct"]

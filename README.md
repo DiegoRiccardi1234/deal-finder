@@ -1,6 +1,6 @@
 # 🛒 Deal Finder
 
-> AI-assisted price-comparison tool that scrapes Italian e-commerce sites in parallel and recommends the best deal through a conversational interface — with a **pluggable AI backend** (Cerebras, Groq, OpenAI, OpenRouter, Anthropic, Google Gemini).
+> AI-assisted price comparison for Italian shops and marketplaces, with optional conversational search. **Google Gemini is the default**, with Groq, OpenRouter, OpenAI and Anthropic available by explicit selection.
 
 [![CI](https://github.com/DiegoRiccardi1234/deal-finder/actions/workflows/ci.yml/badge.svg)](https://github.com/DiegoRiccardi1234/deal-finder/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11-blue)
@@ -8,7 +8,7 @@
 [![Release](https://img.shields.io/github/v/release/DiegoRiccardi1234/deal-finder?label=release)](https://github.com/DiegoRiccardi1234/deal-finder/releases/latest)
 ![License](https://img.shields.io/badge/license-MIT-green)
 [![Ruff](https://img.shields.io/badge/lint-ruff-261230?logo=ruff&logoColor=white)](https://github.com/astral-sh/ruff)
-![AI providers](https://img.shields.io/badge/AI-6%20providers-blueviolet)
+![AI providers](https://img.shields.io/badge/AI-5%20providers-blueviolet)
 
 **📦 Download:** [latest release](https://github.com/DiegoRiccardi1234/deal-finder/releases/latest) — `DealFinder-windows.zip`: unzip, double-click, no Python, no terminal window, updates itself. See the GIF below for what it does.
 
@@ -37,8 +37,8 @@ Describe what you want in plain language — the AI turns it into an optimized q
 ### ✨ Features
 
 - **Conversational search** — an LLM extracts query, budget and hardware specs from a free-text request, then auto-generates a ranked top-3 recommendation.
-- **Pluggable multi-provider AI** — switch the LLM backend at runtime from the sidebar: **Cerebras, Groq, OpenAI, OpenRouter, Anthropic (Claude), Google Gemini**. Set the key of any provider you own; the best available model is picked dynamically.
-- **10 live sources scraped in parallel** — aggregated, de-duplicated and price-ranked. See [Sources](#-sources) for exactly which ones answer today and which are blocked by bot protection.
+- **Optional multi-provider AI** — Google Gemini by default, with task-specific Flash/Lite models and bounded model failover. No automatic provider changes; OpenRouter uses only healthy free endpoints.
+- **Parallel sources** — aggregated, de-duplicated and price-ranked. Availability and supported conditions are reported for each search, including empty searches and cached results.
 - **Watchlist** — save products and review them even before running a new search.
 - **Listing checks** — explicit title warnings for empty boxes, broken items,
   deposits and monthly prices, also passed to the AI recommendation. Offers
@@ -55,6 +55,11 @@ Describe what you want in plain language — the AI turns it into an optimized q
 Scraping public sites is not a stable contract: markup changes and bot protection comes and goes. Rather than claim a headline number, here is the measured state — reproduce it yourself with `python tests/probe_scrapers.py --query "iphone 15" --budget 900`.
 
 **Last verified: 2026-07-30** (query `iphone 15`, budget €900)
+
+This table is a historical snapshot. The current maintenance review and dated
+live results are in [the October 22 report](docs/REVIEW-2026-10-22.md).
+Vinted's updated 5.1 adapter passed a live search on October 22; availability
+still depends on the source and the client network.
 
 | Source | Status | Notes |
 |---|---|---|
@@ -113,14 +118,20 @@ Copy `.streamlit/secrets.toml.example` to `.streamlit/secrets.toml`. Everything 
 
 | Provider | Secret | Get a key |
 |---|---|---|
-| Cerebras (default) | `CEREBRAS_API_KEY` | https://cloud.cerebras.ai |
+| Google Gemini (default) | `GEMINI_API_KEY` | https://aistudio.google.com |
 | Groq | `GROQ_API_KEY` | https://console.groq.com |
 | OpenAI | `OPENAI_API_KEY` | https://platform.openai.com |
 | OpenRouter | `OPENROUTER_API_KEY` | https://openrouter.ai |
 | Anthropic (Claude) | `ANTHROPIC_API_KEY` | https://console.anthropic.com |
-| Google Gemini | `GEMINI_API_KEY` | https://aistudio.google.com |
 
 Other settings: `APP_PASSWORD` (dashboard login), `EBAY_APP_ID` / `EBAY_CERT_ID` (eBay Browse API).
+
+Gemini's free tier requires a project without active billing; model availability
+does not identify the billing tier of a key. Limits vary by project and model.
+OpenRouter is restricted to `:free` models and zero-priced healthy endpoints.
+OpenAI and Anthropic require explicit selection. With no key, manual search is
+available immediately. Cerebras configurations fall back to Gemini without
+deleting the old saved credential or selecting a paid provider.
 
 ### 🖥️ CLI
 
@@ -144,7 +155,7 @@ app.py        entry point (page config, auth gate, render flow)
 updater.py, watchlist.py, price_history.py, search_history.py   features & persistence
 tests/        unit suite (monkeypatched) + Playwright E2E
 ```
-The LLM backend is abstracted in [`offerte/providers.py`](offerte/providers.py): OpenAI-compatible providers share one client, while Anthropic and Gemini are wrapped in thin adapters exposing the same interface — so the rest of the codebase is provider-agnostic. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full module map.
+The LLM backend is abstracted in [`offerte/providers.py`](offerte/providers.py): Gemini, Groq, OpenAI and OpenRouter share the OpenAI-compatible client; Anthropic has a thin adapter. The local knowledge base guides questions and is not an automatically generated catalogue of current products. Missing specifications stay unknown. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ### ✅ Tests & CI
 
@@ -160,7 +171,7 @@ GitHub Actions runs three jobs on every push and PR: **lint** (ruff, blocking),
 
 ### 🛠️ Tech stack
 
-Python 3.11 · Streamlit · BeautifulSoup / requests · Playwright · ThreadPoolExecutor · Cerebras / OpenAI / Anthropic / Google SDKs · pytest. Licensed under [MIT](LICENSE).
+Python 3.11 · Streamlit · BeautifulSoup / requests · Playwright · ThreadPoolExecutor · OpenAI-compatible and Anthropic SDKs · pytest. Licensed under [MIT](LICENSE).
 
 ---
 
@@ -171,8 +182,8 @@ Descrivi cosa cerchi in linguaggio naturale — l'AI lo trasforma in query ottim
 ### ✨ Funzionalità
 
 - **Ricerca conversazionale** — un LLM estrae query, budget e specifiche da una richiesta in testo libero e genera in automatico una raccomandazione top-3.
-- **AI multi-provider modulare** — cambia il backend LLM al volo dalla sidebar: **Cerebras, Groq, OpenAI, OpenRouter, Anthropic (Claude), Google Gemini**. Imposti la chiave del provider che hai; il modello migliore disponibile è scelto dinamicamente.
-- **10 fonti attive in parallelo** — aggregate, deduplicate e ordinate per prezzo. La tabella [Sources](#-sources) dice quali rispondono oggi e quali sono bloccate dalla bot-protection.
+- **AI facoltativa, Google predefinito** — Gemini Flash/Lite scelti per compito, con tentativi limitati e modelli alternativi. Nessun cambio automatico di provider; OpenRouter usa soltanto endpoint gratuiti sani.
+- **Fonti in parallelo** — aggregate, deduplicate e ordinate per prezzo. Stati e condizioni supportate sono mostrati anche senza risultati e quando si usa la cache.
 - **Preferiti** — salva i prodotti e riguardali anche prima di avviare una nuova ricerca.
 - **Storico prezzi + alert** — traccia il prezzo minimo per query nel tempo e segnala nuovi minimi / offerte sotto soglia.
 - **Cache ricerche persistente** — rispetta filtri e numero di risultati, riducendo le richieste ripetute. **Aggiorna offerte** ripete subito la ricerca senza cache.
@@ -183,6 +194,15 @@ Descrivi cosa cerchi in linguaggio naturale — l'AI lo trasforma in query ottim
   Impostazioni. Se la preparazione usa regole locali senza AI, l'app lo dichiara.
 - **Modalità chiara e scura**, export CSV, confronto fianco a fianco, storico prezzi Amazon.
 - **Auto-update** — le installazioni locali controllano GitHub e si aggiornano con un click.
+
+Il percorso Gemini gratuito richiede un progetto Google senza billing attivo.
+Senza chiave la ricerca manuale è subito disponibile. Le specifiche provengono
+dagli annunci, non da un catalogo rigenerato dall'AI. Annunci per scatole,
+ricambi o pagamenti parziali restano visibili ma non alimentano nuovi minimi
+storici, metriche o badge di convenienza. Le credenziali Cerebras precedenti
+restano inerti e non vengono cancellate automaticamente.
+
+Verifiche aggiornate: [revisione del 22 ottobre](docs/REVIEW-2026-10-22.md).
 
 ### 🚀 Avvio rapido
 
@@ -238,4 +258,4 @@ GitHub Actions esegue tre job a ogni push/PR: **lint** (ruff, bloccante),
 
 ### 🛠️ Stack
 
-Python 3.11 · Streamlit · BeautifulSoup / requests · Playwright · ThreadPoolExecutor · SDK Cerebras / OpenAI / Anthropic / Google · pytest. Licenza [MIT](LICENSE).
+Python 3.11 · Streamlit · BeautifulSoup / requests · Playwright · ThreadPoolExecutor · SDK OpenAI-compatible e Anthropic · pytest. Licenza [MIT](LICENSE).

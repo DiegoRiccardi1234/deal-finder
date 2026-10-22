@@ -43,7 +43,9 @@ def _build_products_payload(offerte: list[Offerta]) -> list[dict[str, Any]]:
     ]
 
 
-def _build_comparison_payload() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def _build_comparison_payload(
+    visible_offers: list[Offerta] | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Prepara payload bilanciato per raccomandazione AI in modalità confronto."""
     if not st.session_state.get("comparison_mode"):
         return [], []
@@ -54,29 +56,32 @@ def _build_comparison_payload() -> tuple[list[dict[str, Any]], list[dict[str, An
 
     products_payload: list[dict[str, Any]] = []
     summary_payload: list[dict[str, Any]] = []
+    visible_links = {item.link for item in visible_offers} if visible_offers is not None else None
 
     for query, results in cmp_results.items():
         if not isinstance(results, list):
             continue
-        ordered = sorted(results, key=lambda item: item.prezzo)
-        if ordered:
-            best = next((item for item in ordered if not get_offer_warnings(item.nome)), None)
-            summary_payload.append(
-                {
-                    "query": str(query),
-                    "best_name": best.nome if best else None,
-                    "best_price": round(best.prezzo, 2) if best else None,
-                    "best_store": best.negozio if best else None,
-                    "count": len(ordered),
-                    "avvisi": []
-                    if best
-                    else list(
-                        dict.fromkeys(
-                            warning for item in ordered for warning in get_offer_warnings(item.nome)
-                        )
-                    ),
-                }
-            )
+        ordered = sorted(
+            [item for item in results if visible_links is None or item.link in visible_links],
+            key=lambda item: item.prezzo,
+        )
+        best = next((item for item in ordered if not get_offer_warnings(item.nome)), None)
+        summary_payload.append(
+            {
+                "query": str(query),
+                "best_name": best.nome if best else None,
+                "best_price": round(best.prezzo, 2) if best else None,
+                "best_store": best.negozio if best else None,
+                "count": len(ordered),
+                "avvisi": []
+                if best
+                else list(
+                    dict.fromkeys(
+                        warning for item in ordered for warning in get_offer_warnings(item.nome)
+                    )
+                ),
+            }
+        )
 
         # Bilancia il contesto: massimo 4 offerte per ogni query del confronto.
         for offerta in ordered[:4]:
@@ -109,7 +114,7 @@ def _call_final_recommendation(
     context_block = f"PREFERENZE UTENTE: {contesto_utente}\n"
     if trascrizione:
         context_block += f"CONVERSAZIONE PRE-RICERCA (usa per capire tono e priorita dell'utente):\n{trascrizione}\n"
-    comparison_products, comparison_summary = _build_comparison_payload()
+    comparison_products, comparison_summary = _build_comparison_payload(offerte)
     products_payload = (
         comparison_products if comparison_products else _build_products_payload(offerte)
     )
@@ -138,4 +143,4 @@ def _call_final_recommendation(
         "Sii diretto e concreto."
     )
     payload = [{"role": "system", "content": system_prompt}] + messages
-    return _ai_chat_with_retry(cerebras_client, payload, temperature=0.2)
+    return _ai_chat_with_retry(cerebras_client, payload, temperature=0.2, compito="consiglio")

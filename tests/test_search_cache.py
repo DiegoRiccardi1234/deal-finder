@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from offerte import cache
+from offerte import source_status
 from offerte.models import Offerta
 from ui import search
 
@@ -143,3 +144,61 @@ def test_cache_key_canonicalizes_filter_and_source_order():
         filtri_ai={"storage": "1tb", "ram": "16gb"},
     )
     assert first == second
+
+
+@pytest.mark.parametrize("restart", [False, True])
+def test_cache_restores_search_status_and_timestamp_after_another_search(
+    search_ui, monkeypatch, restart
+):
+    ui, calls = search_ui
+    backend = search.cerca_offerte
+
+    def with_status(**kwargs):
+        source_status.reset()
+        if kwargs["query"] == "query A":
+            source_status.report_ok("comet", 5)
+        else:
+            source_status.report_blocked("comet", 403)
+        return backend(**kwargs)
+
+    monkeypatch.setattr(search, "cerca_offerte", with_status)
+    run_search(query="query A")
+    first = ui.session_state["search_snapshot"]
+    run_search(query="query B")
+    if restart:
+        ui.session_state.clear()
+        ui.session_state.update(filtri_ai={}, categoria="notebook")
+    run_search(query="query A")
+    restored = ui.session_state["search_snapshot"]
+    assert len(calls) == 2
+    assert restored["statuses"]["comet"]["state"] == "ok"
+    assert restored["searched_at"] == first["searched_at"]
+    assert restored["params"]["query"] == "query A"
+    assert ui.session_state["search_cache_origin"] == "disk"
+
+
+@pytest.mark.parametrize("all_flagged", [False, True])
+def test_flagged_listings_do_not_create_historical_lows(search_ui, monkeypatch, all_flagged):
+    ui, calls = search_ui
+    flagged = Offerta("Notebook solo scatola", 1, "Test", "https://test/box")
+    valid = Offerta("Notebook", 300, "Test", "https://test/laptop")
+    monkeypatch.setattr(
+        search, "cerca_offerte", lambda **kw: [flagged] if all_flagged else [flagged, valid]
+    )
+    history = SimpleNamespace(lowest_ever=MagicMock(return_value=400), record=MagicMock())
+    monkeypatch.setattr(search, "price_history", history)
+    run_search()
+    if all_flagged:
+        history.record.assert_not_called()
+        assert ui.session_state["prezzo_nuovo_minimo"] is False
+    else:
+        history.record.assert_called_once_with("notebook", 300)
+        assert ui.session_state["prezzo_minimo_corrente"] == 300
+
+
+def test_legacy_cache_payload_is_ignored(search_ui, monkeypatch):
+    ui, calls = search_ui
+    monkeypatch.setattr(search._disk_cache, "read", lambda *args, **kw: [{"nome": "old"}])
+    run_search()
+    assert len(calls) == 1
+    assert ui.session_state["search_cache_origin"] == "live"

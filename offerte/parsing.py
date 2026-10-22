@@ -20,11 +20,6 @@ import requests
 from bs4 import BeautifulSoup
 
 try:
-    from cerebras.cloud.sdk import Cerebras
-except Exception:
-    Cerebras = None
-
-try:
     from offerte.ai import (
         get_best_model as _get_best_model,
         cerebras_chat_with_retry as _cerebras_chat_lib,
@@ -328,7 +323,6 @@ __all__ = [
     "urlparse",
     "requests",
     "BeautifulSoup",
-    "Cerebras",
     "_get_best_model",
     "_cerebras_chat_lib",
     "parse_price",

@@ -4,28 +4,12 @@ from __future__ import annotations
 
 import json
 import os
-import random
 import re
-import time
 from typing import Any
 
 import streamlit as st
 
-try:
-    from cerebras.cloud.sdk import Cerebras
-except Exception:
-    Cerebras = None
-
-try:
-    from offerte.ai import (
-        get_best_model as _get_best_model,
-        cerebras_chat_with_retry as _cerebras_chat_lib,
-    )
-except Exception:
-    _get_best_model = None  # type: ignore[assignment]
-    _cerebras_chat_lib = None  # type: ignore[assignment]
-
-from offerte.config import DEFAULT_CEREBRAS_MODEL as CEREBRAS_MODEL
+from offerte.ai import chat_with_retry as _chat_lib
 
 try:
     import knowledge_base as kb_manager
@@ -115,7 +99,7 @@ class _MockCompletionResponse:
 
 class _MockChatCompletions:
     def create(
-        self, model: str, messages: list[dict[str, str]], temperature: float = 0.0
+        self, model: str, messages: list[dict[str, str]], temperature: float = 0.0, **kwargs
     ) -> object:
         system_prompt = next(
             (message.get("content", "") for message in messages if message.get("role") == "system"),
@@ -220,48 +204,22 @@ def _ai_chat_with_retry(
     messages: list[dict[str, str]],
     temperature: float = 0.1,
     max_retries: int = 4,
+    *,
+    compito: str = "json",
 ) -> str:
     """Chiama il provider AI attivo con retry automatico.
     - 404 (modello non trovato): invalida cache, sceglie nuovo modello, riprova.
     - 429 (rate limit): backoff esponenziale fino a max_retries volte.
     """
-    if _cerebras_chat_lib is not None:
-        completion = _cerebras_chat_lib(
-            client=client,
-            messages=messages,
-            model=None,  # auto-select dal modulo
-            max_retries=max_retries,
-            base_delay=2.0,
-            temperature=temperature,
-        )
-        content = completion.choices[0].message.content if completion and completion.choices else ""
-        return str(content or "").strip()
-
-    # Fallback se il modulo non è disponibile
-    last_exc: BaseException | None = None
-    for attempt in range(1 + max_retries):
-        try:
-            _model = _get_best_model(client) if _get_best_model else CEREBRAS_MODEL
-            completion = client.chat.completions.create(  # type: ignore[attr-defined]
-                model=_model,
-                messages=messages,
-                temperature=temperature,
-            )
-            content = (
-                completion.choices[0].message.content if completion and completion.choices else ""
-            )
-            return str(content or "").strip()
-        except Exception as exc:
-            last_exc = exc
-            exc_str = str(exc).lower()
-            is_rate_limit = "429" in exc_str or "too_many" in exc_str or "queue" in exc_str
-            if is_rate_limit and attempt < max_retries:
-                time.sleep(random.uniform(2.0, 3.5))
-                continue
-            raise
-    if last_exc is not None:
-        raise last_exc
-    return ""
+    completion = _chat_lib(
+        client=client,
+        messages=messages,
+        max_retries=max_retries,
+        temperature=temperature,
+        compito=compito,
+    )
+    content = completion.choices[0].message.content if completion and completion.choices else ""
+    return str(content or "").strip()
 
 
 # Alias storici provider-agnostici → i nomi *_cerebras_* restano per retro-compat.

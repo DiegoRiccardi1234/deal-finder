@@ -1,11 +1,11 @@
 """Astrazione multi-provider per i modelli AI.
 
-Obiettivo: poter scegliere il backend LLM (Cerebras, Groq, OpenAI, OpenRouter,
-Anthropic, Google Gemini) senza toccare i decine di call-site che usano la forma
+Obiettivo: poter scegliere il backend LLM (Gemini, Groq, OpenAI, OpenRouter,
+Anthropic) senza toccare i call-site che usano la forma
 OpenAI `client.chat.completions.create(...).choices[0].message.content`.
 
-- Cerebras / Groq / OpenAI / OpenRouter / Gemini sono OpenAI-compatible → un
-  unico client `openai.OpenAI(base_url=...)` (o l'SDK Cerebras nativo) funziona
+- Groq / OpenAI / OpenRouter / Gemini sono OpenAI-compatible → un
+  unico client `openai.OpenAI(base_url=...)` funziona
   senza modifiche.
 - Anthropic ha un'API diversa → un adapter sottile che espone la stessa forma
   (`.chat.completions.create` e `.models.list`).
@@ -18,9 +18,12 @@ con grazia (provider non disponibile) invece di rompere l'import.
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import dataclass
+from contextlib import contextmanager
+from contextvars import ContextVar
 
-from offerte.config import CEREBRAS_MODEL_BLACKLIST, DEFAULT_CEREBRAS_MODEL
+from offerte.config import AI_MODEL_BLACKLIST
 
 
 @dataclass(frozen=True)
@@ -37,18 +40,10 @@ class Provider:
     #: Dove si ottiene la chiave. Senza il link, «incolla la tua chiave» è un
     #: vicolo cieco per chi non sa già dove andare.
     signup_url: str = ""
+    advice_models: tuple[str, ...] = ()
 
 
 PROVIDERS: dict[str, Provider] = {
-    "cerebras": Provider(
-        "Cerebras",
-        "CEREBRAS_API_KEY",
-        "openai",
-        "https://api.cerebras.ai/v1",
-        ("zai-glm-4.7", "gpt-oss-120b"),
-        free=True,
-        signup_url="https://cloud.cerebras.ai",
-    ),
     "groq": Provider(
         "Groq",
         "GROQ_API_KEY",
@@ -71,7 +66,7 @@ PROVIDERS: dict[str, Provider] = {
         "OPENROUTER_API_KEY",
         "openai",
         "https://openrouter.ai/api/v1",
-        ("anthropic/claude-3.5-sonnet", "google/gemini-flash-1.5"),
+        (),  # Il catalogo :free è l'unica fonte: nessun ripiego a pagamento.
         free=True,
         signup_url="https://openrouter.ai/keys",
     ),
@@ -86,7 +81,7 @@ PROVIDERS: dict[str, Provider] = {
     # Gemini passa dall'endpoint OpenAI-compatible di Google, non dall'SDK
     # `google-generativeai`. Due ragioni, entrambe concrete: quell'SDK trascina
     # `googleapiclient` e `grpc` — 111 MB nel bundle Windows, per un provider
-    # che è uno di sei — e il suo adapter non sapeva elencare i modelli, quindi
+    # che è uno di cinque — e il suo adapter non sapeva elencare i modelli, quindi
     # su Gemini la scelta automatica leggeva una lista finta invece del catalogo
     # vero. Da qui `models.list()` funziona come per tutti gli altri.
     "gemini": Provider(
@@ -94,14 +89,18 @@ PROVIDERS: dict[str, Provider] = {
         "GEMINI_API_KEY",
         "openai",
         "https://generativelanguage.googleapis.com/v1beta/openai/",
-        ("gemini-2.0-flash", "gemini-2.5-pro"),
+        ("gemini-3.1-flash-lite", "gemini-3.5-flash-lite"),
         free=True,
         signup_url="https://aistudio.google.com/apikey",
+        advice_models=("gemini-3.8-flash", "gemini-3.5-flash-lite"),
     ),
 }
 
-DEFAULT_PROVIDER = "cerebras"
-_BLACKLIST = set(CEREBRAS_MODEL_BLACKLIST)
+DEFAULT_PROVIDER = "gemini"
+_BLACKLIST = set(AI_MODEL_BLACKLIST)
+_catalog_cache: dict[tuple[str, str], tuple[float, list[str]]] = {}
+CATALOG_TTL = 300.0
+_provider_override: ContextVar[str | None] = ContextVar("ai_provider_override", default=None)
 
 
 # --------------------------------------------------------------------------- #
@@ -110,9 +109,21 @@ _BLACKLIST = set(CEREBRAS_MODEL_BLACKLIST)
 
 
 def active_provider() -> str:
-    """Provider attivo da env `AI_PROVIDER` (default cerebras; invalido → default)."""
-    name = os.environ.get("AI_PROVIDER", "").strip().lower()
+    """Provider esplicito; assente, rimosso o invalido → Gemini, mai un paid implicito."""
+    name = _provider_override.get() or os.environ.get("AI_PROVIDER", "").strip().lower()
     return name if name in PROVIDERS else DEFAULT_PROVIDER
+
+
+@contextmanager
+def provider_override(provider: str | None):
+    """Scelta esplicita limitata alla singola operazione, sopra le preferenze salvate."""
+    if provider is not None and provider not in PROVIDERS:
+        raise ValueError("Provider AI non supportato")
+    token = _provider_override.set(provider)
+    try:
+        yield
+    finally:
+        _provider_override.reset(token)
 
 
 def get_api_key(provider: str) -> str:
@@ -158,13 +169,14 @@ class _Message:
 
 
 class _Choice:
-    def __init__(self, content: str) -> None:
+    def __init__(self, content: str, finish_reason: str = "stop") -> None:
         self.message = _Message(content)
+        self.finish_reason = finish_reason
 
 
 class _Completion:
-    def __init__(self, content: str) -> None:
-        self.choices = [_Choice(content)]
+    def __init__(self, content: str, finish_reason: str = "stop") -> None:
+        self.choices = [_Choice(content, finish_reason)]
 
 
 class _ModelInfo:
@@ -229,7 +241,8 @@ class _AnthropicAdapter:
             temperature=temperature,
         )
         text = "".join(getattr(b, "text", "") for b in (resp.content or []))
-        return _Completion(text)
+        reason = "length" if getattr(resp, "stop_reason", None) == "max_tokens" else "stop"
+        return _Completion(text, reason)
 
 
 # --------------------------------------------------------------------------- #
@@ -273,14 +286,6 @@ def build_client(provider: str | None = None):
         return None
 
     if cfg.kind == "openai":
-        # Cerebras: preferisci l'SDK nativo (comportamento storico), poi openai-compat.
-        if provider == "cerebras":
-            try:
-                from cerebras.cloud.sdk import Cerebras
-
-                return _construct(Cerebras, api_key=key)
-            except Exception:
-                pass
         try:
             from openai import OpenAI
         except Exception:
@@ -318,19 +323,49 @@ def ranked_models(provider: str | None = None, client=None, *, compito: str = "j
 
     provider = provider or active_provider()
     cfg = PROVIDERS.get(provider)
-    candidates = cfg.default_models if cfg else (DEFAULT_CEREBRAS_MODEL,)
+    if cfg is None:
+        return []
+    candidates = (
+        cfg.advice_models if compito == "consiglio" and cfg.advice_models else cfg.default_models
+    )
     if client is None:
         client = build_client(provider)
     if client is None:
         return list(candidates)
 
-    try:
-        data = list(getattr(client.models.list(), "data", []) or [])
-        ids = [m.id for m in data if getattr(m, "id", None) and m.id not in _BLACKLIST]
-    except Exception:
-        return list(candidates)
+    # Il catalogo OpenRouter è grande e cambia spesso: una sola lettura ogni 5m.
+    # La chiave identifica la configurazione senza finire in log o su disco.
+    import hashlib
+
+    credential = str(getattr(client, "api_key", "") or get_api_key(provider))
+    identity = hashlib.sha256(credential.encode()).hexdigest()
+    cache_key = (provider, identity)
+    cached = _catalog_cache.get(cache_key) if provider == "openrouter" else None
+    if cached and time.monotonic() - cached[0] < CATALOG_TTL:
+        ids = cached[1]
+    else:
+        try:
+            data = list(getattr(client.models.list(), "data", []) or [])
+            ids = [
+                m.id
+                for m in data
+                if isinstance(getattr(m, "id", None), str) and m.id not in _BLACKLIST
+            ]
+            if provider == "gemini":
+                # /models espone resource name (models/...), mentre chat usa
+                # lo slug breve dei pool ufficiali e delle richieste OpenAI-compatible.
+                ids = [model.removeprefix("models/") for model in ids]
+            if provider == "openrouter":
+                ids = [m for m in ids if m.endswith(":free")]
+                _catalog_cache[cache_key] = (time.monotonic(), ids)
+        except Exception:
+            ids = list(candidates)
+    if provider != "openrouter":
+        # Solo pool verificati per compito: niente modelli costosi o reasoning
+        # scelti incidentalmente da un catalogo più ampio.
+        ids = [m for m in candidates if m in ids]
     if not ids:
-        return list(candidates)
+        return []
 
     ordinati = model_selector.ordina(
         ids, provider=provider, preferiti=tuple(candidates), compito=compito
@@ -350,13 +385,14 @@ def ranked_models(provider: str | None = None, client=None, *, compito: str = "j
     riordinata = model_selector.ordina(
         testa, provider=provider, preferiti=tuple(candidates), compito=compito, salute=salute
     )
-    return riordinata + ordinati[MAX_DA_VERIFICARE:]
+    # Non usare la coda non verificata: una richiesta di inferenza non deve
+    # diventare il test di salute dei candidati che sappiamo già essere morti.
+    return riordinata
 
 
-def best_model(provider: str | None = None, client=None) -> str:
+def best_model(provider: str | None = None, client=None, *, compito: str = "json") -> str:
     """Il modello da usare adesso per questo provider."""
-    ordinati = ranked_models(provider, client)
+    ordinati = ranked_models(provider, client, compito=compito)
     if ordinati:
         return ordinati[0]
-    cfg = PROVIDERS.get(provider or active_provider())
-    return (cfg.default_models if cfg else (DEFAULT_CEREBRAS_MODEL,))[0]
+    raise RuntimeError("Nessun modello ammesso disponibile per il provider e il compito scelti")

@@ -29,6 +29,12 @@ except ImportError:
 
 
 from ui.state import _format_price
+from ui.results import comparable_offers
+from ui.search import make_search_snapshot
+from ui.ai_client import _is_test_mode
+from ui.test_mode import _build_mock_results
+from offerte import source_status
+from offerte.offer_warnings import get_offer_warnings
 
 
 def _extract_comparison_spec_keys(
@@ -104,7 +110,15 @@ def _render_comparison_board(cmp_results: dict[str, list[Offerta]]) -> None:
             spread_cells.append("<td>n.d.</td>")
             best_offer_cells.append("<td>Nessun risultato</td>")
             continue
-        best = rows[0]
+        comparable = comparable_offers(rows)
+        if not comparable:
+            price_cells.append(
+                "<td><span class='value'>n.d.</span><span class='meta'>Annunci da verificare</span></td>"
+            )
+            spread_cells.append("<td>n.d.</td>")
+            best_offer_cells.append("<td>Verifica contenuto e prezzo totale</td>")
+            continue
+        best = comparable[0]
         price_cells.append(
             "<td>"
             f"<span class='value'>{_format_price(best.prezzo)}</span>"
@@ -112,12 +126,12 @@ def _render_comparison_board(cmp_results: dict[str, list[Offerta]]) -> None:
             "</td>"
         )
 
-        if len(rows) >= 3 and rows[0].prezzo > 0:
-            spread = ((rows[2].prezzo - rows[0].prezzo) / rows[0].prezzo) * 100.0
+        if len(comparable) >= 3 and best.prezzo > 0:
+            spread = ((comparable[2].prezzo - best.prezzo) / best.prezzo) * 100.0
             spread_label = f"+{spread:.1f}%"
             spread_detail = "dal #1 al #3"
-        elif len(rows) >= 2 and rows[0].prezzo > 0:
-            spread = ((rows[1].prezzo - rows[0].prezzo) / rows[0].prezzo) * 100.0
+        elif len(comparable) >= 2 and best.prezzo > 0:
+            spread = ((comparable[1].prezzo - best.prezzo) / best.prezzo) * 100.0
             spread_label = f"+{spread:.1f}%"
             spread_detail = "dal #1 al #2"
         else:
@@ -143,7 +157,7 @@ def _render_comparison_board(cmp_results: dict[str, list[Offerta]]) -> None:
         label = _html.escape(str(key).replace("_", " ").capitalize())
         values = []
         for query in comparison_queries:
-            rows = ordered_by_query[query]
+            rows = comparable_offers(ordered_by_query[query])
             value = _spec_value_for_key(rows[0], key) if rows else "n.d."
             values.append(f"<td>{_html.escape(value)}</td>")
         specs_rows_html += f"<tr><td>{label}</td>{''.join(values)}</tr>"
@@ -179,12 +193,15 @@ def _render_comparison_board(cmp_results: dict[str, list[Offerta]]) -> None:
         stack_items = []
         for rank, offerta in enumerate(rows[:3], start=1):
             nome = offerta.nome[:62] + ("..." if len(offerta.nome) > 62 else "")
+            avvisi = " ".join(get_offer_warnings(offerta.nome))
+            warning_html = f"<small>⚠️ {_html.escape(avvisi)}</small>" if avvisi else ""
             stack_items.append(
                 "<div class='comparison-pick'>"
                 f"<span class='rank'>#{rank}</span>"
                 f"<span class='pick-price'>{_format_price(offerta.prezzo)}</span>"
                 f"<a href='{_html.escape(offerta.link, quote=True)}' target='_blank' rel='noopener noreferrer'>{_html.escape(nome)}</a>"
                 f"<small>{_html.escape(offerta.negozio)} · {_html.escape(offerta.fonte)}</small>"
+                f"{warning_html}"
                 "</div>"
             )
         stack_html = (
@@ -208,13 +225,17 @@ def _render_manual_comparison_matrix(offerte: list[Offerta]) -> None:
     if len(offerte) < 2:
         return
 
-    best_price = min(offerta.prezzo for offerta in offerte)
+    best_price = min((offerta.prezzo for offerta in comparable_offers(offerte)), default=None)
     spec_keys = _extract_comparison_spec_keys({"manual": offerte}, max_keys=8)
 
     header_cells = []
     for offerta in offerte:
         name = offerta.nome[:48] + ("..." if len(offerta.nome) > 48 else "")
-        best_class = " is-best" if offerta.prezzo == best_price else ""
+        best_class = (
+            " is-best"
+            if offerta.prezzo == best_price and not get_offer_warnings(offerta.nome)
+            else ""
+        )
         header_cells.append(f"<th class='{best_class.strip()}'>{_html.escape(name)}</th>")
 
     rows_html = ""
@@ -222,6 +243,14 @@ def _render_manual_comparison_matrix(offerte: list[Offerta]) -> None:
         "<tr><td>Prezzo</td>"
         + "".join(
             f"<td class='num'>{_html.escape(_format_price(offerta.prezzo))}</td>"
+            for offerta in offerte
+        )
+        + "</tr>"
+    )
+    rows_html += (
+        "<tr><td>Verifiche annuncio</td>"
+        + "".join(
+            f"<td>{_html.escape(' '.join(get_offer_warnings(offerta.nome)) or 'Nessun segnale esplicito nel titolo')}</td>"
             for offerta in offerte
         )
         + "</tr>"
@@ -308,6 +337,9 @@ def _run_comparison_search(
     st.session_state["filtri_ai_ultima_ricerca"] = copy.deepcopy(filtri_ai)
     st.session_state.pop("_last_search_params", None)
     st.session_state["comparison_results"] = {}
+    st.session_state["comparison_snapshots"] = {}
+    st.session_state["search_snapshot"] = {}
+    st.session_state["search_cache_origin"] = "live"
     st.session_state["risultati"] = []
     st.session_state["log_ricerca"] = ""
     st.session_state["final_chat_messages"] = []
@@ -326,6 +358,7 @@ def _run_comparison_search(
 
     categoria = str(st.session_state.get("categoria", "altro") or "altro")
     all_results: dict[str, list[Offerta]] = {}
+    snapshots: dict[str, dict] = {}
     combined_log = ""
 
     with st.status(
@@ -334,27 +367,39 @@ def _run_comparison_search(
         for q in queries:
             st.write(f"🔍 Cercando **{q}**...")
             log_buf = io.StringIO()
+            source_status.reset()
             try:
                 with contextlib.redirect_stdout(log_buf):
-                    res = cerca_offerte(
-                        query=q,
-                        filtri_ai=copy.deepcopy(filtri_ai),
-                        budget_max=float(budget_max),
-                        prezzo_min=float(prezzo_min),
-                        top_n=top_n,
-                        condizione=condizione,
-                        fonti=fonti_backend,
-                        categoria=categoria,
-                        cerebras_client=cerebras_client,
-                        app_id=ebay_app_id,
-                        cert_id=ebay_cert_id,
-                    )
+                    if _is_test_mode():
+                        res = _build_mock_results(q, categoria, prezzo_min, budget_max)[:top_n]
+                        for key in fonti_backend:
+                            source_status.report_ok(key, 0)
+                    else:
+                        res = cerca_offerte(
+                            query=q,
+                            filtri_ai=copy.deepcopy(filtri_ai),
+                            budget_max=float(budget_max),
+                            prezzo_min=float(prezzo_min),
+                            top_n=top_n,
+                            condizione=condizione,
+                            fonti=fonti_backend,
+                            categoria=categoria,
+                            cerebras_client=cerebras_client,
+                            app_id=ebay_app_id,
+                            cert_id=ebay_cert_id,
+                        )
                 all_results[q] = res
                 combined_log += f"\n--- {q} ---\n" + log_buf.getvalue()
                 st.write(f"  ✅ **{q}** → {len(res)} risultati")
             except Exception as exc:
                 all_results[q] = []
                 st.write(f"  ❌ **{q}** → errore: {exc}")
+            snapshots[q] = make_search_snapshot(
+                all_results[q],
+                fonti_backend,
+                {"query": q, "condizione": condizione},
+                log_buf.getvalue(),
+            )
 
         total = sum(len(v) for v in all_results.values())
         cmp_status.update(
@@ -364,6 +409,7 @@ def _run_comparison_search(
         )
 
     st.session_state["comparison_results"] = all_results
+    st.session_state["comparison_snapshots"] = snapshots
     st.session_state["log_ricerca"] = combined_log
     # Popola anche risultati flat (utile per export CSV e raccomandazione AI)
     flat = []
@@ -371,3 +417,39 @@ def _run_comparison_search(
         flat.extend(results_list)
     flat.sort(key=lambda o: o.prezzo)
     st.session_state["risultati"] = flat
+    aggregate = make_search_snapshot(
+        flat,
+        fonti_backend,
+        {"queries": list(queries), "condizione": condizione},
+        combined_log,
+    )
+    statuses = {}
+    for key in fonti_backend:
+        rows = [snap["statuses"][key] for snap in snapshots.values() if key in snap["statuses"]]
+        if not rows:
+            continue
+        count = sum(row.get("results", 0) for row in rows)
+        problems = [
+            row for row in rows if row["state"] in {source_status.ERROR, source_status.BLOCKED}
+        ]
+        if problems:
+            detail = "; ".join(dict.fromkeys(row.get("detail", "") for row in problems))
+            statuses[key] = {
+                "fonte": key,
+                "state": source_status.ERROR,
+                "detail": f"{len(problems)}/{len(rows)} ricerche non riuscite: {detail}",
+                "results": count,
+            }
+        elif count:
+            statuses[key] = {
+                "fonte": key,
+                "state": source_status.OK,
+                "detail": "",
+                "results": count,
+            }
+        else:
+            statuses[key] = copy.deepcopy(rows[0])
+    aggregate["statuses"] = statuses
+    st.session_state["search_snapshot"] = aggregate
+    if _is_test_mode():
+        st.session_state["search_cache_origin"] = "mock"

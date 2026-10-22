@@ -48,7 +48,7 @@ DEFAULT_PREZZO_MIN = 0.0
 SECRETS_PATH = Path(__file__).parent.parent / ".streamlit" / "secrets.toml"
 
 
-_SECRET_KEYS = ("EBAY_APP_ID", "EBAY_CERT_ID", "CEREBRAS_API_KEY", "APP_PASSWORD")
+_SECRET_KEYS = ("EBAY_APP_ID", "EBAY_CERT_ID")
 
 
 def _load_secrets() -> dict[str, str]:
@@ -66,7 +66,9 @@ def _load_secrets() -> dict[str, str]:
         try:
             with SECRETS_PATH.open("rb") as fh:
                 raw = tomllib.load(fh)
-            secrets.update({k: v for k, v in raw.items() if isinstance(v, str)})
+            secrets.update(
+                {k: v for k, v in raw.items() if k in _SECRET_KEYS and isinstance(v, str)}
+            )
         except (OSError, tomllib.TOMLDecodeError) as exc:
             print(f"  ⚠️  secrets.toml illeggibile ({exc}); proseguo senza chiavi.")
     for key in _SECRET_KEYS:

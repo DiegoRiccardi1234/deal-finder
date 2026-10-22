@@ -12,6 +12,7 @@ except Exception:
     kb_manager = None  # type: ignore[assignment]
 
 from offerte import source_status
+from offerte.source_registry import SOURCE_REGISTRY
 from offerte_tech import Offerta
 
 try:
@@ -25,25 +26,15 @@ except ImportError:
         return None
 
 
-_FONTE_LABELS: dict[str, str] = {
-    "amazon": "Amazon.it",
-    "ebay": "eBay.it",
-    "trovaprezzi": "Trovaprezzi.it",
-    "vinted": "Vinted.it",
-    "euronics": "Euronics.it",
-    "unieuro": "Unieuro.it",
-    "mediaworld": "MediaWorld.it",
-    "wallapop": "Wallapop.it",
-    "comet": "Comet.it",
-    "expert": "Expert.it",
-    "aliexpress": "AliExpress",
-}
+_FONTE_LABELS = {key: info.label for key, info in SOURCE_REGISTRY.items()}
 
 
 def _status_rows_for_sources(
     offerte: list[Offerta],
     fonti_backend: list[str],
     log_text: str,
+    *,
+    snapshot: dict | None = None,
 ) -> list[dict[str, str]]:
     """Costruisce righe stato fonti per pannello monitor.
 
@@ -61,7 +52,16 @@ def _status_rows_for_sources(
         fonte = str(o.fonte or "").lower()
         counts_by_source[fonte] = counts_by_source.get(fonte, 0) + 1
 
-    statuses = source_status.snapshot()
+    statuses = (
+        {
+            key: source_status.SourceStatus(**status)
+            for key, status in snapshot.get("statuses", {}).items()
+        }
+        if snapshot is not None
+        else source_status.snapshot()
+    )
+    if snapshot is not None:
+        fonti_backend = snapshot.get("sources", fonti_backend)
     rows: list[dict[str, str]] = []
     for key in fonti_backend:
         label = _FONTE_LABELS.get(key, key.title())
@@ -86,6 +86,9 @@ def _status_rows_for_sources(
         elif found > 0:
             status, dot_class = "ONLINE", "is-ok"
             detail = f"{found} risultati"
+        elif state == source_status.OK:
+            status, dot_class = "ONLINE", "is-ok"
+            detail = "risposta ricevuta; nessuna offerta finale compatibile"
         elif state == source_status.EMPTY:
             status, dot_class = "ONLINE", "is-ok"
             detail = "nessun risultato per questa ricerca"
@@ -108,8 +111,12 @@ def _render_source_status_monitor(
     offerte: list[Offerta],
     fonti_backend: list[str],
     log_text: str,
+    *,
+    snapshot: dict | None = None,
 ) -> None:
-    rows = _status_rows_for_sources(offerte, fonti_backend, log_text)
+    if snapshot is None:
+        snapshot = st.session_state.get("search_snapshot", {})
+    rows = _status_rows_for_sources(offerte, fonti_backend, log_text, snapshot=snapshot)
     st.markdown("<div class='status-monitor-card'>", unsafe_allow_html=True)
     st.markdown("<h4>Stato fonti</h4>", unsafe_allow_html=True)
     if not rows:

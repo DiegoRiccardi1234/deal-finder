@@ -31,6 +31,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from update_sync import valida_archivio
+
 from offerte import paths
 from offerte.config import VERSION
 
@@ -155,14 +157,6 @@ def _installa_bundle(*, fetch: Callable | None = None) -> dict:
     if not asset:
         return {"ok": False, "mode": "bundle", "error": f"nessun {ASSET} nella release"}
 
-    cartella = paths.data_dir() / "aggiornamenti"
-    cartella.mkdir(parents=True, exist_ok=True)
-    archivio = cartella / ASSET
-    try:
-        _scarica_asset(str(asset["browser_download_url"]), archivio, fetch=fetch)
-    except Exception as exc:
-        return {"ok": False, "mode": "bundle", "error": f"scaricamento fallito: {exc}"}
-
     dest = Path(sys.executable).resolve().parent
     aggiornatore = dest / "Aggiorna.exe"
     if not aggiornatore.exists():
@@ -186,6 +180,23 @@ def _installa_bundle(*, fetch: Callable | None = None) -> dict:
                 "mode": "bundle",
                 "error": f"un aggiornamento è già in corso da {int(eta)} secondi",
             }
+        try:
+            lucchetto.unlink(missing_ok=True)
+        except OSError as exc:
+            return {"ok": False, "mode": "bundle", "error": f"lucchetto non rimovibile: {exc}"}
+
+    cartella = paths.data_dir() / "aggiornamenti"
+    cartella.mkdir(parents=True, exist_ok=True)
+    # Ogni tentativo possiede il suo archivio: due richieste simultanee non
+    # possono riscrivere lo ZIP che un updater sta già validando o estraendo.
+    archivio = cartella / f"{time.time_ns()}-{ASSET}"
+    try:
+        _scarica_asset(str(asset["browser_download_url"]), archivio, fetch=fetch)
+        # L'app deve restare aperta se GitHub restituisce HTML, uno ZIP troncato
+        # o un archivio con percorsi non sicuri. L'updater ricontrollerà lo ZIP.
+        valida_archivio(archivio)
+    except Exception as exc:
+        return {"ok": False, "mode": "bundle", "error": f"scaricamento o verifica fallita: {exc}"}
 
     # L'aggiornatore va lanciato da **una copia**, non da dove sta installato:
     # fra i file da sostituire c'è anche lui, e su Windows un eseguibile in
@@ -212,26 +223,35 @@ def _installa_bundle(*, fetch: Callable | None = None) -> dict:
     # Il lucchetto dice al programma «non partire, sto lavorando»: senza, un
     # doppio click durante l'aggiornamento riaprirebbe l'eseguibile vecchio e
     # ne bloccherebbe la sostituzione a metà.
-    lucchetto.write_text(str(os.getpid()), encoding="utf-8")
-
-    subprocess.Popen(
-        [
-            str(copia),
-            "--zip",
-            str(archivio),
-            "--dest",
-            str(dest),
-            "--exe",
-            str(Path(sys.executable).resolve()),
-            "--pid",
-            str(os.getpid()),
-            "--temporaneo",
-            str(temporaneo),
-        ],
-        cwd=str(temporaneo),
-        close_fds=True,
-        creationflags=getattr(subprocess, "DETACHED_PROCESS", 0),
-    )
+    try:
+        with lucchetto.open("x", encoding="utf-8") as file_lock:
+            file_lock.write(str(os.getpid()))
+    except FileExistsError:
+        return {"ok": False, "mode": "bundle", "error": "un altro aggiornamento è già partito"}
+    except OSError as exc:
+        return {"ok": False, "mode": "bundle", "error": f"lucchetto non scrivibile: {exc}"}
+    try:
+        subprocess.Popen(
+            [
+                str(copia),
+                "--zip",
+                str(archivio),
+                "--dest",
+                str(dest),
+                "--exe",
+                str(Path(sys.executable).resolve()),
+                "--pid",
+                str(os.getpid()),
+                "--temporaneo",
+                str(temporaneo),
+            ],
+            cwd=str(temporaneo),
+            close_fds=True,
+            creationflags=getattr(subprocess, "DETACHED_PROCESS", 0),
+        )
+    except OSError as exc:
+        lucchetto.unlink(missing_ok=True)
+        return {"ok": False, "mode": "bundle", "error": f"avvio aggiornatore fallito: {exc}"}
     logger.info("aggiornatore avviato, mi spengo")
     # Un istante di respiro perché la pagina riceva la risposta prima che il
     # server chiuda: altrimenti il browser vede la connessione cadere e scrive
