@@ -6,6 +6,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.2.2] - 2026-10-22
+
+### Fixed
+- Resolved all 42 Mypy findings across the backend and UI, including AI response
+  contracts, optional imports, HTTP parameters and nullable values.
+- Optional history fallbacks accept the same arguments as the real module;
+  malformed AI clarifying-question collections no longer break the UI.
+- Relative Vinted item URLs resolve to the real Vinted site instead of localhost.
+- Camera protectors and reference guides no longer distort device search minima;
+  explicitly requested accessories and guides remain eligible.
+- Search snapshots from the previous selection rules are recalculated instead
+  of reusing stale accessory results or relative links. User history is preserved.
+- Price minima come only from explicit monetary bounds. Presearch, fallback and
+  comparison no longer invent category floors or treat 128 GB as a price.
+- The Windows bundle includes the Vinted user-agent data required at startup.
+
+### Changed
+- Mypy errors now fail CI. The type-check job installs runtime dependencies so
+  that third-party SDK contracts are checked as well.
+
 ## [4.2.1] - 2026-10-22
 
 ### Fixed

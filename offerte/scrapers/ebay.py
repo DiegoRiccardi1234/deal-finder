@@ -44,7 +44,7 @@ def scrape_ebay(
     else:
         api_filter = price_filter
 
-    params = {
+    params: dict[str, str | int] = {
         "q": query,
         "limit": 50,
         "filter": api_filter,
@@ -81,7 +81,10 @@ def scrape_ebay(
                         continue
 
                     price_obj = item.get("price") or {}
-                    prezzo = float(price_obj.get("value"))
+                    raw_price = price_obj.get("value")
+                    if raw_price is None:
+                        continue
+                    prezzo = float(raw_price)
                     if not _within_price_range(prezzo, prezzo_min, budget_max):
                         continue
 

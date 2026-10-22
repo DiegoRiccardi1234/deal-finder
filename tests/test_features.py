@@ -463,6 +463,30 @@ def test_is_relevant_handles_spec_only_queries(query: str, nome: str, atteso: bo
         ("iphone 15", "APPLE - Custodia MagSafe iPhone 15-Trasparente", False),
         ("iphone 15", "Cellular Line Tempered Glass iPhone 15 Plus", False),
         ("iphone 15", "Cavo USB-C per iPhone 15", False),
+        # Falsi minimi osservati nella ricerca reale via UI del 22 ottobre.
+        ("iphone 15", "Protezione telecamera iPhone 15. Nuove", False),
+        ("iphone 15", "Protezione fotocamera iPhone 15", False),
+        (
+            "iphone 15",
+            "iPhone 15 Per Principianti: Una guida completa e facile da seguire",
+            False,
+        ),
+        ("iphone 15", "Manuale iPhone 15 illustrato", False),
+        ("iphone 15", "iPhone 15 User Guide", False),
+        # Un telefono venduto con il proprio manuale resta un dispositivo.
+        ("iphone 15", "Apple iPhone 15 128GB con manuale originale", True),
+        # Riferimenti e accessori cercati esplicitamente restano ammissibili.
+        ("guida iphone 15", "iPhone 15 Per Principianti: Una guida completa", True),
+        ("manuale iphone 15", "Manuale iPhone 15 illustrato", True),
+        # "Book" può essere parte del nome di un notebook, non una guida.
+        ("Samsung Galaxy Book 4", "Custodia per Samsung Galaxy Book 4", False),
+        ("Microsoft Surface Book 3", "Cover Microsoft Surface Book 3", False),
+        ("Samsung Galaxy Book 4", "Samsung Galaxy Book 4 Notebook 16GB", True),
+        (
+            "protezione telecamera iphone 15",
+            "Protezione telecamera iPhone 15. Nuove",
+            True,
+        ),
         # Il dispositivo deve passare.
         ("iphone 15", "Apple iPhone 15 128GB Nero", True),
         ("iphone 15", "APPLE - iPhone 15 Plus 128GB-Nero", True),

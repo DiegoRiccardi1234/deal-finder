@@ -18,10 +18,19 @@ try:
     from search_history import load_history, save_search as _save_search
 except ImportError:
 
-    def load_history() -> list[dict[str, Any]]:
+    def load_history(*, path: str = "") -> list[dict[str, Any]]:
         return []
 
-    def _save_search(**kw: Any) -> None:
+    def _save_search(
+        query: str,
+        budget_min: int,
+        budget_max: int,
+        condizione: str,
+        fonti: list[str],
+        results_count: int,
+        *,
+        path: str = "",
+    ) -> None:
         return None
 
 

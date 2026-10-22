@@ -52,6 +52,9 @@ _ACCESSORY_WORDS: frozenset[str] = frozenset(
         "lens protector",
         "protezione schermo",
         "protezione display",
+        "protezione telecamera",
+        "protezione fotocamera",
+        "camera protector",
         "protection kit",
         "screen glass",
         "glass",
@@ -139,6 +142,18 @@ _ACCESSORY_BRANDS: frozenset[str] = frozenset(
 )
 
 
+# Un manuale sul dispositivo non è il dispositivo. Le query che richiedono
+# esplicitamente questi contenuti restano ammesse; "con manuale" non è un libro.
+_DOCUMENT_QUERY_WORDS = frozenset(
+    {"libro", "libri", "guida", "guide", "manuale", "manuali", "book", "books", "handbook"}
+)
+_DOCUMENT_TITLE = re.compile(
+    r"^\W*(?:libro|manuale|guida|handbook|book|user manual)\b"
+    r"|\b(?:per principianti|for beginners|guida completa|guida illustrata|user guide)\b",
+    re.IGNORECASE,
+)
+
+
 def looks_like_accessory(nome: str, query_tokens: list[str]) -> bool:
     """True se `nome` è un accessorio ma la query cercava il dispositivo.
 
@@ -153,9 +168,12 @@ def looks_like_accessory(nome: str, query_tokens: list[str]) -> bool:
     che però rischia di scartare un affare vero: da valutare a parte.
     """
     query_text = " ".join(str(t).lower() for t in (query_tokens or []))
+    document_requested = bool(_DOCUMENT_QUERY_WORDS.intersection(query_text.split()))
     if any(w in query_text for w in (*_ACCESSORY_WORDS, *_ACCESSORY_STEMS)):
         return False
     nome_lower = str(nome or "").lower()
+    if not document_requested and _DOCUMENT_TITLE.search(nome_lower):
+        return True
     if any(stem in nome_lower for stem in _ACCESSORY_STEMS):
         return True
     for word in (*_ACCESSORY_WORDS, *_ACCESSORY_BRANDS):
@@ -198,8 +216,13 @@ def _hard_spec_mismatch_reasons(offerta: Offerta, filtri: dict[str, str]) -> lis
     if storage_target:
         target_values = _extract_gb_values(str(storage_target))
         m = re.search(r"(\d{2,4})", str(storage_target))
-        if target_values or m:
-            target = max(target_values) if target_values else int(m.group(1))
+        target_storage: int | None = None
+        if target_values:
+            target_storage = max(target_values)
+        elif m is not None:
+            target_storage = int(m.group(1))
+        if target_storage is not None:
+            target = target_storage
             gb_vals = _extract_storage_gb_values(search_lower)
             if not gb_vals:
                 gb_vals = _extract_gb_values(search_lower)

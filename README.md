@@ -163,10 +163,11 @@ The LLM backend is abstracted in [`offerte/providers.py`](offerte/providers.py):
 pytest tests/ -k "not playwright"     # fast offline unit + feature suite
 pytest tests/                          # full suite incl. Playwright E2E
 ruff check . && ruff format --check .  # lint + format
-mypy offerte ui                        # type-check (advisory)
+mypy offerte ui                        # type-check (required)
 ```
-GitHub Actions runs three jobs on every push and PR: **lint** (ruff, blocking),
-**type-check** (mypy, advisory) and **test** (full offline suite). See
+GitHub Actions runs **lint**, **type-check** and offline **tests** as required
+checks, plus advisory dependency-audit and Playwright jobs. Tests cover Python
+3.11, 3.12 and 3.13. See
 [`SECURITY.md`](SECURITY.md) and [`CHANGELOG.md`](CHANGELOG.md).
 
 ### 🛠️ Tech stack
@@ -250,10 +251,11 @@ e guida **tutto il motore** — CLI, orchestrator e UI, non solo la sidebar.
 pytest tests/ -k "not playwright"     # suite unit + feature, offline
 pytest tests/                          # suite completa con E2E Playwright
 ruff check . && ruff format --check .  # lint + formato
-mypy offerte ui                        # type-check (advisory)
+mypy offerte ui                        # type-check (bloccante)
 ```
-GitHub Actions esegue tre job a ogni push/PR: **lint** (ruff, bloccante),
-**type-check** (mypy, advisory) e **test** (suite offline completa). Vedi
+GitHub Actions esegue **lint**, **type-check** e **test offline** bloccanti,
+oltre ad audit dipendenze e Playwright advisory. I test coprono Python
+3.11, 3.12 e 3.13. Vedi
 [`SECURITY.md`](SECURITY.md) e [`CHANGELOG.md`](CHANGELOG.md).
 
 ### 🛠️ Stack

@@ -23,10 +23,19 @@ try:
     from search_history import load_history, save_search as _save_search
 except ImportError:
 
-    def load_history() -> list[dict[str, Any]]:
+    def load_history(*, path: str = "") -> list[dict[str, Any]]:
         return []
 
-    def _save_search(**kw: Any) -> None:
+    def _save_search(
+        query: str,
+        budget_min: int,
+        budget_max: int,
+        condizione: str,
+        fonti: list[str],
+        results_count: int,
+        *,
+        path: str = "",
+    ) -> None:
         return None
 
 
@@ -80,6 +89,25 @@ def _infer_categoria_from_query(query: str) -> str:
     return "altro"
 
 
+def _explicit_price_min(transcript: str) -> int:
+    """Solo limiti monetari dichiarati: capacità e modelli non sono prezzi."""
+    amount = r"(\d{1,5})(?!\d|[.,]\d)"
+    unit_guard = r"(?!\s*(?:gb|tb|mb|ram|pollici|inch|hz|mah|mp|w)\b)"
+    money = rf"(?:€\s*)?{amount}{unit_guard}(?:\s*(?:€|euro\b|eur\b))?"
+    patterns = (
+        rf"\b(?:da|tra|fra)\s+{money}\s*(?:a|e|[-–])\s*{money}",
+        rf"\b(?:budget|prezzo|spesa)\s*(?:di\s*)?{money}\s*[-–/]\s*{money}",
+        rf"\b(?:minimo|min|prezzo minimo|a partire da)\s*(?:di\s*)?{money}",
+        rf"\bda\s*€\s*{amount}{unit_guard}",
+        rf"\bda\s*{amount}{unit_guard}\s*(?:€|euro\b|eur\b)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, transcript.lower())
+        if match is not None:
+            return int(match.group(1))
+    return 0
+
+
 def _sanitize_presearch_payload(payload: dict[str, Any], transcript: str) -> dict[str, Any]:
     raw_query = str(payload.get("query", "") or "").strip()
     query = " ".join(raw_query.split())
@@ -91,10 +119,7 @@ def _sanitize_presearch_payload(payload: dict[str, Any], transcript: str) -> dic
     if not categoria:
         categoria = _infer_categoria_from_query(query)
 
-    try:
-        prezzo_min = int(float(str(payload.get("prezzo_min", 0) or 0)))
-    except Exception:
-        prezzo_min = 0
+    prezzo_min = _explicit_price_min(transcript)
 
     try:
         budget_max = int(float(str(payload.get("budget_max", 800) or 800)))
@@ -196,21 +221,17 @@ def _presearch_fallback() -> dict[str, Any]:
     turni = int(st.session_state.get("presearch_question_count", 0))
 
     # Estrai budget dal transcript
-    prezzo_min = 0
+    prezzo_min = _explicit_price_min(transcript)
     budget_max = 800
-    m_min = re.search(r"(?:min(?:imo)?|da|partire da)\s*(\d{2,5})", transcript)
     m_max = re.search(r"(?:max(?:imo)?|massimo|fino a|budget)\s*(\d{2,5})", transcript)
     m_range = re.search(r"(\d{2,5})\s*[-/a]\s*(\d{2,5})", transcript)
     if m_range:
-        prezzo_min = int(m_range.group(1))
         budget_max = int(m_range.group(2))
     else:
-        if m_min:
-            prezzo_min = int(m_min.group(1))
         if m_max:
             budget_max = int(m_max.group(1))
 
-    has_budget = m_range or m_min or m_max
+    has_budget = m_range or prezzo_min > 0 or m_max
     has_product = any(
         kw in transcript
         for kw in (
@@ -246,26 +267,6 @@ def _presearch_fallback() -> dict[str, Any]:
             "profumo",
         )
     )
-
-    # Stima prezzo_min ragionevole in base al tipo prodotto rilevato nel transcript
-    if prezzo_min == 0 and has_product:
-        _is_used = bool(re.search(r"\busato\b|ricondizionato|second.hand", transcript))
-        if "iphone" in transcript or "macbook" in transcript:
-            prezzo_min = 300 if _is_used else 700
-        elif any(kw in transcript for kw in ("notebook", "laptop", "pc")):
-            prezzo_min = 200 if _is_used else 250
-        elif any(kw in transcript for kw in ("smartphone", "telefono", "samsung", "xiaomi")):
-            prezzo_min = 80 if _is_used else 150
-        elif any(kw in transcript for kw in ("tablet",)):
-            prezzo_min = 80 if _is_used else 100
-        elif any(kw in transcript for kw in ("tv", "televisore")):
-            prezzo_min = 150 if _is_used else 200
-        elif any(kw in transcript for kw in ("console",)):
-            prezzo_min = 100 if _is_used else 200
-        elif any(kw in transcript for kw in ("smartwatch",)):
-            prezzo_min = 40 if _is_used else 80
-        elif any(kw in transcript for kw in ("cuffie", "auricolari")):
-            prezzo_min = 15 if _is_used else 30
 
     # Estrai filtri_ai (specs) dal transcript
     filtri_ai: dict[str, str] = {}
@@ -373,7 +374,10 @@ def _pick_clarifying_question(transcript: str, asked: set[str]) -> str | None:
         return None
     if info.get("preferenze_chiare"):
         return None
-    for q in info.get("domande") or []:
+    questions = info.get("domande")
+    if not isinstance(questions, (list, tuple)):
+        return None
+    for q in questions:
         q = str(q or "").strip()
         if q and q not in asked:
             return q
@@ -409,17 +413,7 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
             _cond = "nuovo"
         elif re.search(r"\busat[oai]\b", cleaned.lower()):
             _cond = "usato"
-        # Stima prezzo_min in base al tipo prodotto
-        _pmin = 0
-        _combined_lower = " ".join(comp_queries).lower()
-        if "iphone" in _combined_lower:
-            _pmin = 500 if _cond != "usato" else 200
-        elif any(kw in _combined_lower for kw in ("macbook", "laptop", "notebook")):
-            _pmin = 400 if _cond != "usato" else 200
-        elif any(kw in _combined_lower for kw in ("samsung", "galaxy", "pixel")):
-            _pmin = 300 if _cond != "usato" else 150
-        elif any(kw in _combined_lower for kw in ("ipad", "tablet")):
-            _pmin = 200 if _cond != "usato" else 100
+        _pmin = _explicit_price_min(transcript)
 
         _cq_label = " · ".join(comp_queries)
         _comp_display = " vs ".join(comp_queries)
@@ -493,11 +487,8 @@ def _run_presearch_step(user_message: str, api_key: str) -> None:
             "- NON chiedere cose gia' dette\n"
             "- Dopo max 3 domande vai sempre a pronto:true\n"
             "REGOLE QUERY:\n"
-            "- Il campo 'prezzo_min' DEVE essere REALISTICO in base a tipo prodotto + condizione:\n"
-            "  iPhone nuovo→700, usato→300 | MacBook/laptop gaming nuovo→900, usato→400\n"
-            "  Smartphone Android top→400, fascia media→150 | Laptop base/office→250\n"
-            '  Smartwatch→80 | Tablet→100 | TV 50+"→300 | Cuffie→30 | Console→200\n'
-            "  NON usare MAI 0 come prezzo_min — stima sempre un minimo ragionevole\n"
+            "- Il campo 'prezzo_min' è 0 se l'utente non dichiara un prezzo minimo o un range monetario.\n"
+            "  Non stimare minimi dal prodotto o dalla condizione; 128 GB è una capacità, non un prezzo.\n"
             "- Il campo 'query' deve essere BREVE: tipo/dimensione/marca, MAX 5 parole, NO frasi, NO budget\n"
             "- Se l'utente menziona due modelli alternativi (es 'iphone 16 o 17', 'notebook 14 o 15'): usa la query PIU' GENERICA\n"
             "  che li cattura entrambi. Non fissare il numero di modello specifico — lascia che lo scraper trovi entrambi.\n"

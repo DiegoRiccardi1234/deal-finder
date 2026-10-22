@@ -76,7 +76,7 @@ def scrape_aliexpress(
                             href = card.get_attribute("href") or ""
                             if not href:
                                 link_el = card.query_selector("a[href*='/item/']")
-                                href = link_el.get_attribute("href") if link_el else ""
+                                href = (link_el.get_attribute("href") or "") if link_el else ""
                             if not href or "/item/" not in href:
                                 continue
                             link = (

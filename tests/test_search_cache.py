@@ -105,6 +105,24 @@ def test_identical_search_reuses_cache_and_explicit_refresh_fetches_again(search
     assert len(calls) == 2
 
 
+def test_upgrade_rejects_cached_offers_from_the_old_selection_rules(search_ui):
+    ui, calls = search_ui
+    # Chiave reale prodotta dalla 4.2.1 per i parametri di run_search().
+    previous_key = "54f3f9bda39d4da2644a4f481413c724a82dd40a"
+    previous_snapshot = search.make_search_snapshot(
+        [Offerta("Custodia per notebook", 1, "Negozio", "https://example.com/old", "comet.it")],
+        ["comet"],
+        {},
+    )
+    previous_snapshot["schema"] = 3
+    search._disk_cache.write(previous_key, previous_snapshot)
+
+    run_search()
+
+    assert len(calls) == 1
+    assert ui.session_state["risultati"][0].nome.startswith("Notebook ricerca 1")
+
+
 def test_cached_search_resets_obsolete_result_filters_and_keeps_filter_snapshot(search_ui):
     ui, calls = search_ui
     filters = {"ram": "16gb"}

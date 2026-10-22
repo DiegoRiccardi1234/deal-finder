@@ -27,6 +27,7 @@ datas = [
 # Il frontend compilato di Streamlit (`streamlit/static`) e i file di
 # configurazione: senza, il server risponde ma la pagina resta bianca.
 datas += collect_data_files("streamlit")
+datas += collect_data_files("vinted_scraper")
 
 # Streamlit legge la propria versione da `importlib.metadata`, che in un bundle
 # funziona solo se ci si porta dietro la cartella `.dist-info`. Senza, l'avvio

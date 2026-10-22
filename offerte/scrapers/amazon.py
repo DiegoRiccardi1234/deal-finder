@@ -15,7 +15,7 @@ from offerte._constants import *  # noqa: F401,F403
 from offerte.models import Offerta
 from offerte.http import fetch_with_retry, get_headers, _random_delay
 from offerte.parsing import *  # noqa: F401,F403
-from offerte.filters import is_relevant
+from offerte.filters import is_relevant, looks_like_accessory
 from offerte.log import get_logger
 from offerte.source_status import report_blocked, report_error
 
@@ -251,6 +251,12 @@ def scrape_amazon(
 
                 # ----- Filtri -----
                 if not is_relevant(nome, query_tokens, strict_specs=False):
+                    continue
+                # Il titolo può essere abbreviato a "Compatibile con iPhone 15",
+                # mentre l'URL prodotto conserva "Custodia". Usa quell'evidenza
+                # soltanto per escludere accessori, senza inventare un titolo.
+                product_path = unquote(urlparse(link).path).replace("-", " ").replace("_", " ")
+                if looks_like_accessory(f"{nome} {product_path}", query_tokens):
                     continue
                 if not _within_price_range(prezzo, prezzo_min, budget_max):
                     continue

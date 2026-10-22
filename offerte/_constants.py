@@ -4,16 +4,31 @@ from __future__ import annotations
 import os
 import random
 import re
+from types import ModuleType
+from typing import TYPE_CHECKING, TypedDict
+
+if TYPE_CHECKING:
+    from fake_useragent.fake import FakeUserAgent
+    from vinted_scraper import VintedScraper as VintedScraperClass
+
+st: ModuleType | None
+VintedScraper: type[VintedScraperClass] | None
+UserAgent: type[FakeUserAgent] | None
+_UA: FakeUserAgent | None
 
 try:
-    import streamlit as st
+    import streamlit as _streamlit
+
+    st = _streamlit
 except Exception:
     st = None
 
 try:
-    from vinted_scraper import VintedScraper
+    from vinted_scraper import VintedScraper as _vinted_scraper_class
+
+    VintedScraper = _vinted_scraper_class
 except ImportError:
-    VintedScraper = None  # type: ignore[assignment,misc]
+    VintedScraper = None
 
 # ---------------------------------------------------------------------------
 # Tentativo di importare fake_useragent; fallback a lista statica se assente
@@ -28,20 +43,21 @@ _FALLBACK_UAS = [
     "(KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
 ]
 try:
-    from fake_useragent import UserAgent
+    from fake_useragent import UserAgent as _user_agent_class
 
-    _UA = UserAgent()
-
-    def _random_ua() -> str:
-        try:
-            return _UA.random
-        except Exception:
-            return random.choice(_FALLBACK_UAS)
+    UserAgent = _user_agent_class
+    _UA = _user_agent_class()
 except Exception:
-    UserAgent = None  # type: ignore[assignment,misc]
+    UserAgent = None
     _UA = None
 
-    def _random_ua() -> str:
+
+def _random_ua() -> str:
+    if _UA is None:
+        return random.choice(_FALLBACK_UAS)
+    try:
+        return _UA.random
+    except Exception:
         return random.choice(_FALLBACK_UAS)
 
 
@@ -54,7 +70,13 @@ DELAY_MAX = 2.0  # secondi — delay massimo tra richieste
 MAX_RETRIES = 2  # tentativi extra in caso di errore (tot: 1 + MAX_RETRIES)
 BACKOFF_BASE = 2.0  # secondi — base per il backoff esponenziale
 
-_EBAY_TOKEN_CACHE: dict[str, object] = {"token": None, "expires_at": 0.0}
+
+class _EbayTokenCache(TypedDict):
+    token: str | None
+    expires_at: float
+
+
+_EBAY_TOKEN_CACHE: _EbayTokenCache = {"token": None, "expires_at": 0.0}
 
 # Stopword da ignorare nel filtro di rilevanza.
 # Include anche unità di misura (pollici, gb, tb…): il numero associato è già

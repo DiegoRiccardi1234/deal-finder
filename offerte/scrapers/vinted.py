@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import contextlib
+from urllib.parse import urlsplit
 
 from offerte._constants import *  # noqa: F401,F403
 from offerte.models import Offerta
@@ -13,6 +14,27 @@ from offerte.log import get_logger
 from offerte.source_status import report_error, report_disabled, get as get_status
 
 log = get_logger(__name__)
+
+
+def _item_url(raw_url: str) -> str:
+    """Normalizza il path API senza trasformare link esterni in offerte affidabili."""
+    if any(character.isspace() or ord(character) < 32 for character in raw_url) or "\\" in raw_url:
+        return ""
+    candidate = "https://www.vinted.it" + raw_url if raw_url.startswith("/items/") else raw_url
+    try:
+        parsed = urlsplit(candidate)
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname not in {"www.vinted.it", "vinted.it"}
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.port not in (None, 443)
+            or not parsed.path.startswith("/items/")
+        ):
+            return ""
+    except ValueError:
+        return ""
+    return candidate
 
 
 def scrape_vinted(
@@ -42,14 +64,17 @@ def scrape_vinted(
                 nome = str(item.title or "").strip()
                 if not nome:
                     continue
-                prezzo = float(item.price)
+                raw_price = item.price
+                if raw_price is None:
+                    continue
+                prezzo = float(raw_price)
                 if not math.isfinite(prezzo) or prezzo <= 0:
                     continue
                 if not _within_price_range(prezzo, prezzo_min, budget_max):
                     continue
                 if not is_relevant(nome, query_tokens, strict_specs=False):
                     continue
-                link = str(item.url or "").strip()
+                link = _item_url(str(item.url or "").strip())
                 if not link:
                     continue
                 # 5.1 espone photos: list[VintedImage], mentre i vecchi oggetti

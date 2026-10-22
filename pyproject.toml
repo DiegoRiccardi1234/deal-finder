@@ -76,7 +76,7 @@ ignore = [
 # da tenere fuori dal repo.
 
 [tool.mypy]
-# Advisory, non-strict: obiettivo segnale, non blocco della CI.
+# Non-strict; gli errori rilevati bloccano la CI.
 python_version = "3.11"
 ignore_missing_imports = true
 warn_unused_ignores = false

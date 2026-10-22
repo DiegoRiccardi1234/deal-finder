@@ -11,6 +11,7 @@ import hashlib
 
 from offerte._constants import *  # noqa: F401,F403
 from offerte.models import Offerta
+from offerte.ai_types import CompletionResponse
 from offerte.log import get_logger
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.filters import _hard_spec_mismatch_reasons
@@ -32,7 +33,7 @@ def _cerebras_chat(
     max_retries: int = 4,
     *,
     compito: str = "json",
-) -> object:
+) -> CompletionResponse:
     """Wrapper con retry automatico (404 modello + 429 rate limit)."""
     return chat_with_retry(
         client=client,
@@ -1040,7 +1041,7 @@ def chat_with_retry(
     base_delay: float = 2.0,
     compito: str = "json",
     **kwargs,
-):
+) -> CompletionResponse:
     """Chiama `client.chat.completions.create()` con retry classificato.
 
     Prova modelli distinti del solo provider attivo, con un budget complessivo

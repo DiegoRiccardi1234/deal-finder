@@ -102,6 +102,48 @@ def test_scrape_amazon_retry_second_attempt_with_open_session(
     assert "iphone 16" in risultati[0].nome.lower()
 
 
+@pytest.mark.parametrize(
+    ("query", "title", "slug", "eligible"),
+    [
+        (
+            "iphone 15",
+            "Compatibile con iPhone 15",
+            "Compatibile-Custodia-Antiurto-Trasparente-Stellato/dp/B0DJ9KCKW4",
+            False,
+        ),
+        ("iphone 15", "Apple iPhone 15 128GB", "Apple-iPhone-15-128/dp/B0PHONE123", True),
+        (
+            "custodia iphone 15",
+            "Custodia compatibile con iPhone 15",
+            "Compatibile-Custodia-Antiurto/dp/B0DJ9KCKW4",
+            True,
+        ),
+    ],
+)
+def test_amazon_uses_product_url_to_identify_accessories_when_the_title_is_incomplete(
+    monkeypatch, query, title, slug, eligible
+):
+    """Titolo e URL del primo caso provengono dalla ricerca reale, non dal markup."""
+    from offerte.parsing import tokenize_query
+    from offerte.scrapers.amazon import scrape_amazon
+
+    html = (
+        '<div data-component-type="s-search-result">'
+        f'<h2><span class="a-text-normal">{title}</span></h2>'
+        '<span class="a-price"><span class="a-offscreen">11,36 €</span></span>'
+        f'<a class="a-link-normal" href="/{slug}"></a></div>'
+    )
+    monkeypatch.setattr(
+        "offerte.scrapers.amazon.fetch_with_retry", lambda *a, **kw: _FakeResponse(html)
+    )
+    monkeypatch.setattr("offerte.scrapers.amazon.requests.Session", _FakeSession)
+    monkeypatch.setattr("offerte.scrapers.amazon._random_delay", lambda: None)
+    monkeypatch.setattr("offerte.scrapers.amazon.time.sleep", lambda *_: None)
+
+    offers = scrape_amazon(query, 0, 900, tokenize_query(query))
+    assert bool(offers) is eligible
+
+
 def test_scrape_amazon_does_not_use_broken_rh_condition_filter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

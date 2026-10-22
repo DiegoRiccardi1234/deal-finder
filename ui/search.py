@@ -23,7 +23,9 @@ from offerte import source_status
 from offerte.offer_warnings import get_offer_warnings
 from offerte.source_registry import SOURCE_REGISTRY
 
-SNAPSHOT_SCHEMA = 3
+# Le snapshot precedenti possono contenere accessori fuori tema e link relativi.
+# Si ricalcola la ricerca senza cancellare storico, preferiti o altri dati utente.
+SNAPSHOT_SCHEMA = 4
 
 
 def make_search_snapshot(
@@ -70,10 +72,19 @@ try:
     from search_history import load_history, save_search as _save_search
 except ImportError:
 
-    def load_history() -> list[dict[str, Any]]:
+    def load_history(*, path: str = "") -> list[dict[str, Any]]:
         return []
 
-    def _save_search(**kw: Any) -> None:
+    def _save_search(
+        query: str,
+        budget_min: int,
+        budget_max: int,
+        condizione: str,
+        fonti: list[str],
+        results_count: int,
+        *,
+        path: str = "",
+    ) -> None:
         return None
 
 

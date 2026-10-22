@@ -19,10 +19,19 @@ try:
     from search_history import load_history, save_search as _save_search
 except ImportError:
 
-    def load_history() -> list[dict[str, Any]]:
+    def load_history(*, path: str = "") -> list[dict[str, Any]]:
         return []
 
-    def _save_search(**kw: Any) -> None:
+    def _save_search(
+        query: str,
+        budget_min: int,
+        budget_max: int,
+        condizione: str,
+        fonti: list[str],
+        results_count: int,
+        *,
+        path: str = "",
+    ) -> None:
         return None
 
 
@@ -74,13 +83,13 @@ def _status_rows_for_sources(
         st_entry = statuses.get(key)
         state = st_entry.state if st_entry else None
 
-        if state == source_status.BLOCKED:
+        if st_entry is not None and state == source_status.BLOCKED:
             status, dot_class = "BLOCCATA", "is-error"
             detail = st_entry.describe()
-        elif state == source_status.ERROR:
+        elif st_entry is not None and state == source_status.ERROR:
             status, dot_class = "ERRORE", "is-error"
             detail = st_entry.describe()
-        elif state == source_status.DISABLED:
+        elif st_entry is not None and state == source_status.DISABLED:
             status, dot_class = "DISATTIVATA", "is-warn"
             detail = st_entry.describe()
         elif found > 0:

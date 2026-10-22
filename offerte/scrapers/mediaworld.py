@@ -274,7 +274,7 @@ def scrape_mediaworld(
 
         if cards:
             print(f"    ✅ Trovate {len(cards)} card su MediaWorld.it")
-            seen_links: set[str] = set()
+            seen_links = set()
             for card in cards:
                 try:
                     nome_tag = (

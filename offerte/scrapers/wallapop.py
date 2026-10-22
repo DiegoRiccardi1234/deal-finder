@@ -56,14 +56,15 @@ def scrape_wallapop(
         "trackinguserid": "-3421950124112390907",
     }
     try:
+        components_params: dict[str, str | float] = {
+            "keywords": query,
+            "latitude": 41.9028,
+            "longitude": 12.4964,
+            "source": "search_box",
+        }
         r1 = requests.get(
             _WALLAPOP_COMPONENTS_URL,
-            params={
-                "keywords": query,
-                "latitude": 41.9028,
-                "longitude": 12.4964,
-                "source": "search_box",
-            },
+            params=components_params,
             headers=_headers,
             timeout=TIMEOUT,
         )
@@ -80,7 +81,7 @@ def scrape_wallapop(
             print("    ⚠️  Wallapop: search_id non trovato nella risposta components.")
             return risultati
 
-        params2: dict = {
+        params2: dict[str, str | int | float] = {
             "keywords": query,
             "source": "search_box",
             "search_id": search_id,

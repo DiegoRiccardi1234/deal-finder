@@ -85,7 +85,7 @@ def scrape_euronics(
 
         # ── Strategia 1: CSS selettori div.new-product-tile.flex-fill ──
         # Seleziona solo le card griglia (evita duplicati della list-view: .new-product-tile-list)
-        cards = soup.select("div.new-product-tile.flex-fill")
+        cards = list(soup.select("div.new-product-tile.flex-fill"))
         if not cards:
             # Fallback: qualsiasi tile con classe new-product-tile (esclude esplicitamente list)
             cards = [
