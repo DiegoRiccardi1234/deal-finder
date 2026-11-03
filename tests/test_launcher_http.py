@@ -7,6 +7,28 @@ from pathlib import Path
 import subprocess
 import sys
 import textwrap
+import pytest
+
+
+def test_requested_port_survives_restart_and_explicit_cli_wins(monkeypatch):
+    from scripts import launch_tray
+
+    monkeypatch.delenv("DEAL_FINDER_PORT", raising=False)
+    assert launch_tray._requested_port(None) is None
+    monkeypatch.setenv("DEAL_FINDER_PORT", "8540")
+    assert launch_tray._requested_port(None) == 8540
+    assert launch_tray._requested_port(8541) == 8541
+    monkeypatch.setenv("DEAL_FINDER_PORT", "invalid")
+    assert launch_tray._requested_port(8541) == 8541
+
+
+@pytest.mark.parametrize("raw", ["invalid", "0", "65536", "-1"])
+def test_invalid_restart_port_is_explicit_error(monkeypatch, raw):
+    from scripts import launch_tray
+
+    monkeypatch.setenv("DEAL_FINDER_PORT", raw)
+    with pytest.raises(ValueError, match="porta"):
+        launch_tray._requested_port(None)
 
 
 def test_launcher_serve_http_con_namespace_httptools_residuo(tmp_path):

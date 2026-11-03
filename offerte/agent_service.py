@@ -62,7 +62,7 @@ def _acquire_owner(directory: Path) -> str:
                 handle.flush()
             handle.seek(0)
             if os.name == "nt":
-                import msvcrt
+                msvcrt = importlib.import_module("msvcrt")
 
                 msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
             else:

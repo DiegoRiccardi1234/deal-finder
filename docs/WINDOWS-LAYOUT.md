@@ -33,6 +33,8 @@ avvia il runtime in `app`, mantenendo l'icona nell'area di notifica. Gli
 argomenti `--no-browser` e `--port` vengono inoltrati, anche se il percorso
 contiene spazi o caratteri non ASCII. Spostare l'intera cartella, conservando
 programma e dati insieme; non spostare i singoli eseguibili interni.
+La porta scelta viene conservata nel processo per il riavvio dell'updater
+tramite `DEAL_FINDER_PORT`; un nuovo `--port` esplicito ha precedenza.
 
 La prima apertura può creare i dati locali sotto `state`: database, preferiti,
 storico, connessioni, chiavi, cache e log. Il percorso è direttamente

@@ -42,6 +42,8 @@ Includes the previously unreleased 4.2.2 fixes.
   uses separate prose instructions and renders recognized analysis-shaped replies.
 - Legacy intent preparation follows the selected planning route independently
   of offer analysis and saved API credentials.
+- Windows update restarts preserve an explicitly selected UI port instead of
+  reopening a different running installation.
 - Resolved all 42 Mypy findings across the backend and UI, including AI response
   contracts, optional imports, HTTP parameters and nullable values.
 - Optional history fallbacks accept the same arguments as the real module;

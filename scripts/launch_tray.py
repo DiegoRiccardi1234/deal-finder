@@ -119,6 +119,20 @@ PORT_SPAN = 20
 PROBE_PATH = "/_stcore/health"
 
 
+def _requested_port(cli_port: int | None) -> int | None:
+    """A requested address survives updater restart; explicit CLI wins."""
+    raw = cli_port if cli_port is not None else os.environ.get("DEAL_FINDER_PORT", "").strip()
+    if raw == "":
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        raise ValueError("DEAL_FINDER_PORT deve essere una porta tra 1 e 65535") from None
+    if not 1 <= value <= 65535:
+        raise ValueError("DEAL_FINDER_PORT deve essere una porta tra 1 e 65535")
+    return value
+
+
 def _setup_logging() -> None:
     """Log su file, deciso **prima** di importare l'app.
 
@@ -381,6 +395,10 @@ def main() -> int:
     )
     parser.add_argument("--no-browser", action="store_true", help="non aprire il browser all'avvio")
     args = parser.parse_args()
+    try:
+        requested_port = _requested_port(args.port)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     _setup_logging()
     log = logging.getLogger(__name__)
@@ -402,16 +420,22 @@ def main() -> int:
     # Se Deal Finder gira già, non se ne avvia un secondo: si apre quello. È
     # anche la guardia contro il doppio click ripetuto sull'icona di avvio.
     # Chi chiede una porta esplicita guarda solo quella.
-    da_controllare = [args.port] if args.port else range(DEFAULT_PORT, DEFAULT_PORT + PORT_SPAN + 1)
+    da_controllare = (
+        [requested_port]
+        if requested_port is not None
+        else range(DEFAULT_PORT, DEFAULT_PORT + PORT_SPAN + 1)
+    )
     for port in da_controllare:
         if is_free(port):
             continue
         if deal_finder_at(port):
             log.info("Deal Finder è già in ascolto sulla %d: apro il browser", port)
-            webbrowser.open(f"http://127.0.0.1:{port}/")
+            if not args.no_browser:
+                webbrowser.open(f"http://127.0.0.1:{port}/")
             return 0
 
-    port = args.port if args.port else pick_port()
+    port = requested_port if requested_port is not None else pick_port()
+    os.environ["DEAL_FINDER_PORT"] = str(port)
     url = f"http://127.0.0.1:{port}/"
 
     _avvia_streamlit(port)
