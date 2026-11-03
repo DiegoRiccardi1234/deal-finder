@@ -261,7 +261,7 @@ def is_relevant(nome: str, query_tokens: list[str], strict_specs: bool = True) -
     100% dei prodotti da ogni fonte, mentre con tre token-spec il ramo AND
     accettava qualunque cosa per verità vacua, perfino un frullatore.
     """
-    nome_lower = nome.lower()
+    nome_lower = re.sub(r"(?<=\w)\+", " plus ", nome.lower())
     # Un accessorio che nomina il modello passerebbe qualunque controllo sui token:
     # va escluso prima, altrimenti domina l'ordinamento per prezzo crescente.
     if looks_like_accessory(nome, query_tokens):

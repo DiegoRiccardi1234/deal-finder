@@ -42,6 +42,7 @@ py-modules = [
     "search_history",
     "watchlist",
     "update_sync",
+    "install_layout",
 ]
 
 [tool.ruff]

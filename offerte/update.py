@@ -32,6 +32,13 @@ from pathlib import Path
 from typing import Any
 
 from update_sync import valida_archivio
+from install_layout import (
+    LEGACY_ASSET,
+    installation_root,
+    is_organized,
+    release_asset_name,
+    runtime_dir,
+)
 
 from offerte import paths
 from offerte.config import VERSION
@@ -44,7 +51,7 @@ RELEASES_URL = f"https://github.com/{_REPO}/releases/latest"
 
 #: Il nome dell'asset costruito da `scripts/build_exe.py`. Se non combaciano,
 #: l'aggiornamento non parte e lo dice: meglio di scaricare l'archivio sbagliato.
-ASSET = "DealFinder-windows.zip"
+ASSET = LEGACY_ASSET  # Historical public name; organized installs select their own asset.
 
 #: Quanto un lucchetto è da prendere sul serio. Deve superare il caso peggiore
 #: dell'aggiornatore — attesa dell'uscita (60 s), respiro (3 s), copia con i
@@ -153,12 +160,13 @@ def _installa_bundle(*, fetch: Callable | None = None) -> dict:
     if dati is None:
         return {"ok": False, "mode": "bundle", "error": "release non raggiungibile"}
 
-    asset = next((a for a in (dati.get("assets") or []) if a.get("name") == ASSET), None)
+    dest = installation_root(Path(sys.executable))
+    asset_name = release_asset_name(dest)
+    asset = next((a for a in (dati.get("assets") or []) if a.get("name") == asset_name), None)
     if not asset:
-        return {"ok": False, "mode": "bundle", "error": f"nessun {ASSET} nella release"}
+        return {"ok": False, "mode": "bundle", "error": f"nessun {asset_name} nella release"}
 
-    dest = Path(sys.executable).resolve().parent
-    aggiornatore = dest / "Aggiorna.exe"
+    aggiornatore = runtime_dir(dest) / "Aggiorna.exe"
     if not aggiornatore.exists():
         return {
             "ok": False,
@@ -189,12 +197,12 @@ def _installa_bundle(*, fetch: Callable | None = None) -> dict:
     cartella.mkdir(parents=True, exist_ok=True)
     # Ogni tentativo possiede il suo archivio: due richieste simultanee non
     # possono riscrivere lo ZIP che un updater sta già validando o estraendo.
-    archivio = cartella / f"{time.time_ns()}-{ASSET}"
+    archivio = cartella / f"{time.time_ns()}-{asset_name}"
     try:
         _scarica_asset(str(asset["browser_download_url"]), archivio, fetch=fetch)
         # L'app deve restare aperta se GitHub restituisce HTML, uno ZIP troncato
         # o un archivio con percorsi non sicuri. L'updater ricontrollerà lo ZIP.
-        valida_archivio(archivio)
+        valida_archivio(archivio, expected_layout="organized" if is_organized(dest) else "legacy")
     except Exception as exc:
         return {"ok": False, "mode": "bundle", "error": f"scaricamento o verifica fallita: {exc}"}
 
@@ -239,15 +247,17 @@ def _installa_bundle(*, fetch: Callable | None = None) -> dict:
                 "--dest",
                 str(dest),
                 "--exe",
-                str(Path(sys.executable).resolve()),
+                str(dest / "DealFinder.exe"),
                 "--pid",
                 str(os.getpid()),
+                "--launcher-pid",
+                os.environ.get("DEAL_FINDER_LAUNCHER_PID", "0"),
                 "--temporaneo",
                 str(temporaneo),
             ],
             cwd=str(temporaneo),
             close_fds=True,
-            creationflags=getattr(subprocess, "DETACHED_PROCESS", 0),
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except OSError as exc:
         lucchetto.unlink(missing_ok=True)

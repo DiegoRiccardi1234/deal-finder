@@ -28,7 +28,7 @@ CACHE_FILE = DEFAULT_DB_PATH
 def make_cache_key(
     query: str,
     prezzo_min: int,
-    budget_max: int,
+    budget_max: int | None,
     condizione: str,
     fonti: list[str] | tuple[str, ...] | None,
     *,
@@ -36,6 +36,11 @@ def make_cache_key(
     categoria: str = "altro",
     filtri_ai: dict[str, Any] | None = None,
     ai_enabled: bool = False,
+    analysis_mode: str = "auto",
+    connection_id: str = "",
+    task: str = "",
+    variant_mode: str = "auto",
+    excluded_variants: list[str] | None = None,
 ) -> str:
     """Identifica i risultati già filtrati e troncati, non solo la query.
 
@@ -43,16 +48,21 @@ def make_cache_key(
     """
     raw = json.dumps(
         {
-            "version": 3,
+            "version": 4,
             "query": str(query or "").strip().lower(),
             "prezzo_min": int(prezzo_min),
-            "budget_max": int(budget_max),
+            "budget_max": int(budget_max) if budget_max is not None else None,
             "condizione": str(condizione or "tutti"),
             "fonti": sorted(set(str(f) for f in (fonti or []))),
             "top_n": top_n,
             "categoria": categoria,
             "filtri_ai": filtri_ai or {},
             "ai_enabled": ai_enabled,
+            "analysis_mode": analysis_mode,
+            "connection_id": connection_id,
+            "task": task,
+            "variant_mode": variant_mode,
+            "excluded_variants": sorted(excluded_variants or []),
         },
         sort_keys=True,
         ensure_ascii=False,

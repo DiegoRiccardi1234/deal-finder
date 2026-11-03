@@ -30,6 +30,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
 
+      - name: Verifica versione del tag
+        if: github.event_name == 'push'
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $version = python -c "from offerte.config import VERSION; print(VERSION)"
+          if ($env:RELEASE_TAG -cne "v$version") {
+            throw "Tag e versione applicazione non corrispondono"
+          }
+
       - name: Costruisci il bundle
         # Lo script fallisce da solo se l'archivio esce troncato: meglio una
         # release senza allegato che una con un allegato rotto.
@@ -56,8 +67,12 @@ jobs:
         if: github.event_name == 'push'
         uses: softprops/action-gh-release@v3
         with:
-          files: dist/DealFinder-windows.zip
+          files: |
+            dist/DealFinder-windows.zip
+            dist/DealFinder-organized-windows.zip
           body_path: release-notes.md
+          # Pubblicare soltanto dopo download e prove dei due asset effettivi.
+          draft: true
           # Se il bundle non c'è la release deve fallire, non uscire vuota:
           # una release senza allegato manda l'utente a scaricare il nulla.
           fail_on_unmatched_files: true
@@ -67,5 +82,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: DealFinder-windows
-          path: dist/DealFinder-windows.zip
+          path: |
+            dist/DealFinder-windows.zip
+            dist/DealFinder-organized-windows.zip
           retention-days: 14

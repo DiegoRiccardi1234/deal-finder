@@ -106,7 +106,9 @@ def render_settings() -> None:
                 _dimentica_modello()
                 st.rerun()
         if not riepilogo[corrente]["configurato"]:
-            st.info("Nessuna chiave: l'IA è spenta. Aggiungine una qui sotto.")
+            st.info(
+                "Nessuna chiave per questo provider. Puoi aggiungerla qui oppure usare un account nativo in AI e assistenti."
+            )
 
         st.caption(
             "Gemini usa il tier gratuito se la chiave appartiene a un progetto senza billing. "
@@ -140,6 +142,10 @@ def render_settings() -> None:
                     st.rerun()
 
         st.caption(
-            "Le chiavi restano su questo computer, in `data/local_secrets.json`, "
+            "Le chiavi restano nello stato privato su questo computer "
             "e non vengono mai rimostrate a schermo. Gli aggiornamenti non le toccano."
         )
+
+    from ui.ai_settings import render_ai_settings
+
+    render_ai_settings()

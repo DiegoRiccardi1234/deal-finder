@@ -296,7 +296,8 @@ def tokenize_query(query: str) -> list[str]:
     Normalizza in lowercase.
     Es: "notebook 14 pollici 16GB RAM" → ["notebook", "14", "pollici", "16gb", "ram"]
     """
-    tokens = re.findall(r"[\w]+", query.lower())
+    # A trailing + is a model suffix (Galaxy S26+), not punctuation to discard.
+    tokens = re.findall(r"[\w]+", re.sub(r"(?<=\w)\+", " plus ", query.lower()))
     return [t for t in tokens if t not in _STOPWORDS and len(t) > 1]
 
 

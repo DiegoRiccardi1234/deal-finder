@@ -23,6 +23,8 @@ import os
 import sys
 from pathlib import Path
 
+from install_layout import installation_root, state_dir
+
 #: Chi lancia l'applicazione può imporre la cartella di lavoro. Il launcher del
 #: bundle la dichiara **prima** di importare qualsiasi modulo dell'applicazione:
 #: i percorsi qui sotto sono costanti di modulo nei consumatori, quindi si
@@ -57,13 +59,13 @@ def workspace() -> Path:
     if is_frozen():
         # Accanto all'exe, non accanto a questo file: da congelato `__file__`
         # punta dentro `_MEIPASS`, che è proprio la cartella da evitare.
-        return Path(sys.executable).resolve().parent
+        return installation_root(Path(sys.executable))
     return Path(__file__).resolve().parent.parent
 
 
 def data_dir() -> Path:
     """`<workspace>/data`, creata se manca."""
-    path = workspace() / "data"
+    path = state_dir(workspace())
     path.mkdir(parents=True, exist_ok=True)
     return path
 

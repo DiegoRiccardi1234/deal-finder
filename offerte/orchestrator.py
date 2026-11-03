@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import time
 import importlib.util
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout, as_completed
+import threading
+from concurrent.futures import ThreadPoolExecutor, FIRST_COMPLETED, wait
 from collections.abc import Callable
 
 from offerte._constants import *  # noqa: F401,F403
@@ -15,6 +16,8 @@ from offerte.config import SEARCH_TOTAL_TIMEOUT
 from offerte.log import get_logger
 from offerte.parsing import *  # noqa: F401,F403
 from offerte.dedup import _deduplica
+from offerte.filters import _passes_hard_spec_filters
+from offerte.product_constraints import matches_product
 
 log = get_logger(__name__)
 
@@ -66,6 +69,10 @@ def cerca_offerte(
     app_id: str = "",
     cert_id: str = "",
     progress_callback: Callable[[str, int], None] | None = None,
+    analysis_mode: str = "auto",
+    cancel_event: threading.Event | None = None,
+    variant_mode: str = "auto",
+    excluded_variants: list[str] | None = None,
 ) -> list[Offerta]:
     """
     Cerca offerte tech su amazon.it, ebay.it, euronics.it e mediaworld.it.
@@ -88,6 +95,12 @@ def cerca_offerte(
     Returns:
         Lista di Offerta ordinata per prezzo crescente (max top_n elementi).
     """
+    if analysis_mode not in {"auto", "collect"}:
+        raise ValueError("Modalità analisi non valida")
+    if variant_mode not in {"auto", "family", "exact"}:
+        raise ValueError("Modalità variante non valida")
+    if cancel_event is not None and cancel_event.is_set():
+        return []
     if not query or not query.strip():
         print("❌ La query di ricerca non può essere vuota.")
         return []
@@ -168,6 +181,8 @@ def cerca_offerte(
 
     def _timed_call(fn: Callable, label: str, *args, **kwargs):
         with source_status.use_registry(registry):
+            if cancel_event is not None and cancel_event.is_set():
+                return []
             return _timed_call_inner(fn, label, *args, **kwargs)
 
     # NB: executor esplicito, non `with`. Il context manager fa join di tutti i
@@ -362,10 +377,16 @@ def cerca_offerte(
         # trascinava l'intera ricerca finché non scadevano i retry di `requests`
         # (TIMEOUT × (1+MAX_RETRIES)) — e il `with` non poteva chiudersi.
         _deadline = time.monotonic() + SEARCH_TOTAL_TIMEOUT
-        try:
-            for future in as_completed(
-                future_to_label, timeout=max(1.0, _deadline - time.monotonic())
-            ):
+        pending = set(future_to_label)
+        while pending and time.monotonic() < _deadline:
+            if cancel_event is not None and cancel_event.is_set():
+                break
+            completed, pending = wait(
+                pending,
+                timeout=min(0.2, max(0.0, _deadline - time.monotonic())),
+                return_when=FIRST_COMPLETED,
+            )
+            for future in completed:
                 label = future_to_label[future]
                 try:
                     new_results = future.result()
@@ -376,7 +397,7 @@ def cerca_offerte(
                     log.warning("%s: errore inatteso: %s", label, exc)
                     if progress_callback:
                         progress_callback(label, -1)
-        except FutureTimeout:
+        if pending:
             # Restituire i parziali è meglio che restituire niente: le fonti che
             # hanno risposto sono già in `offerte`.
             _pendenti = [lbl for fut, lbl in future_to_label.items() if not fut.done()]
@@ -391,7 +412,12 @@ def cerca_offerte(
                 # Va registrato come errore, non lasciato a `empty`: la fonte non
                 # ha risposto in tempo, e `report()` impedisce che il `report_empty`
                 # tardivo del thread ancora in corso sovrascriva questo motivo.
-                source_status.report_error(_LABEL_TO_KEY.get(lbl, lbl.lower()), "timeout ricerca")
+                reason = (
+                    "ricerca annullata"
+                    if cancel_event is not None and cancel_event.is_set()
+                    else "timeout ricerca"
+                )
+                source_status.report_error(_LABEL_TO_KEY.get(lbl, lbl.lower()), reason)
                 if progress_callback:
                     progress_callback(lbl, -1)
     finally:
@@ -407,14 +433,21 @@ def cerca_offerte(
     offerte = [
         o
         for o in offerte
-        if o.prezzo >= prezzo_min and (budget_max is None or o.prezzo <= budget_max)
+        if o.prezzo >= prezzo_min
+        and (budget_max is None or o.prezzo <= budget_max)
+        and matches_product(
+            o.nome, query, variant_mode=variant_mode, excluded_variants=excluded_variants
+        )
     ]
     print(f"  🧹 Dopo filtro range prezzo: {len(offerte)}")
 
     filtri_ai_effettivi = {
         k: v for k, v in (filtri_ai or {}).items() if str(k).strip() and str(v).strip()
     }
-    if filtri_ai_effettivi:
+    cancelled = cancel_event is not None and cancel_event.is_set()
+    if filtri_ai_effettivi and analysis_mode == "collect":
+        offerte = [o for o in offerte if _passes_hard_spec_filters(o, filtri_ai_effettivi)]
+    elif filtri_ai_effettivi and not cancelled:
         offerte = filtra_risultati_con_ai(offerte, filtri_ai_effettivi)
         print(f"  🎯 Dopo filtro/ranking AI: {len(offerte)}")
 
@@ -443,7 +476,7 @@ def cerca_offerte(
 
     # Ordinamento finale con ranking basato su spec tokens trovati nei titoli.
     spec_tokens = {t for t in query_tokens if _is_spec_token(t)}
-    if not filtri_ai_effettivi:
+    if not filtri_ai_effettivi or analysis_mode == "collect":
         if spec_tokens:
 
             def _spec_score(o: Offerta) -> int:
@@ -459,7 +492,7 @@ def cerca_offerte(
     # Tronca a top_n
     offerte_top = offerte[:top_n]
 
-    if offerte_top:
+    if offerte_top and analysis_mode != "collect" and not cancelled:
         fetch_specs_ai(offerte_top, categoria, cerebras_client)
 
     # Output terminale

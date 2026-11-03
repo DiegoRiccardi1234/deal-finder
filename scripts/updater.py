@@ -44,7 +44,8 @@ def _prepara_import() -> None:
     candidati = [Path(sys.executable).resolve().parent / "_internal"]
     for indice, argomento in enumerate(sys.argv):
         if argomento == "--dest" and indice + 1 < len(sys.argv):
-            candidati.append(Path(sys.argv[indice + 1]).resolve() / "_internal")
+            root = Path(sys.argv[indice + 1]).resolve()
+            candidati.extend((root / "app" / "_internal", root / "_internal"))
     for candidato in candidati:
         if candidato.exists():
             sys.path.insert(0, str(candidato))
@@ -54,6 +55,7 @@ def _prepara_import() -> None:
 _prepara_import()
 
 from update_sync import ErroreSincronizzazione, estrai_bundle, sincronizza  # noqa: E402
+from install_layout import installation_root, state_dir  # noqa: E402
 
 #: Quanto aspettare che il processo vecchio molli i suoi file.
 ATTESA_USCITA = 60.0
@@ -115,7 +117,7 @@ def _aspetta(pid: int, scrivi) -> None:
             scrivi(f"il processo {pid} è uscito")
             return
         time.sleep(0.3)
-    scrivi(f"il processo {pid} non è uscito entro {ATTESA_USCITA:.0f}s: provo lo stesso")
+    raise TimeoutError(f"il processo {pid} non è uscito entro {ATTESA_USCITA:.0f}s")
 
 
 def _radice(scompattato: Path) -> Path:
@@ -150,6 +152,7 @@ def main() -> int:
     parser.add_argument("--dest", required=True)
     parser.add_argument("--exe", default="")
     parser.add_argument("--pid", type=int, default=0)
+    parser.add_argument("--launcher-pid", type=int, default=0)
     parser.add_argument(
         "--temporaneo",
         default="",
@@ -157,8 +160,9 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    dest = Path(args.dest).resolve()
-    file_log = _log(dest / "data" / "logs")
+    dest = installation_root(Path(args.dest))
+    user_state = state_dir(dest)
+    file_log = _log(user_state / "logs")
 
     def scrivi(messaggio: str) -> None:
         file_log.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}  {messaggio}\n")
@@ -172,9 +176,11 @@ def main() -> int:
                 radice = estrai_bundle(Path(args.zip).resolve(), scompattato)
                 scrivi(f"archivio scompattato in {scompattato}")
                 _aspetta(args.pid, scrivi)
+                if args.launcher_pid and args.launcher_pid != args.pid:
+                    _aspetta(args.launcher_pid, scrivi)
                 time.sleep(RESPIRO)
                 scritti = sincronizza(origine=radice, destinazione=dest)
-                scrivi(f"copiati {scritti} file, data/ intatta")
+                scrivi(f"copiati {scritti} file, dati utente intatti")
 
             # L'archivio scaricato ha finito il suo lavoro: sono ~78 MB accanto
             # ai dati dell'utente, quanto l'applicazione intera. Si cancella solo
@@ -196,7 +202,7 @@ def main() -> int:
             else:
                 scrivi("aggiornamento interrotto; consultare l'errore prima di riaprire l'app")
             with contextlib.suppress(OSError):
-                (dest / "data" / "aggiornamento.lock").unlink(missing_ok=True)
+                (user_state / "aggiornamento.lock").unlink(missing_ok=True)
             return 1
 
         exe = Path(args.exe) if args.exe else dest / "DealFinder.exe"
@@ -222,7 +228,7 @@ def main() -> int:
             scrivi(f"non trovo {exe}: non riapro niente")
 
         with contextlib.suppress(OSError):
-            (dest / "data" / "aggiornamento.lock").unlink(missing_ok=True)
+            (user_state / "aggiornamento.lock").unlink(missing_ok=True)
 
         # Ripulire soltanto la nostra copia in TEMP, mai un percorso arbitrario
         # ricevuto dalla riga di comando. PowerShell mantiene LiteralPath per

@@ -61,12 +61,17 @@ data/logs/
 data/aggiornamenti/
 data/aggiornamento.lock
 data/local_secrets.json
+data/ai_connections.json
+data/ai_connection_secrets.json
+data/agent/
+/state/
 
 # Note operative di sessione e istruzioni per agenti AI: utili in locale, ma
 # rumore per chi apre il repo (e in italiano). L'architettura pubblica sta in
 # ARCHITECTURE.md, la roadmap nella tabella "Sources" del README.
 HANDOFF.md
 APPUNTI.md
+.giorno-notte/
 TODO.md
 CLAUDE.md
 tests/CLAUDE.md

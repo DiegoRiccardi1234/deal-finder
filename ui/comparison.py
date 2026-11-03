@@ -370,10 +370,17 @@ def _run_comparison_search(
     snapshots: dict[str, dict] = {}
     combined_log = ""
 
-    with st.status(
-        f"⏳ Confronto in corso per {len(queries)} prodotti...", expanded=True
-    ) as cmp_status:
+    from offerte.agent_service import get_service
+
+    with (
+        get_service().search_lease() as cancel_event,
+        st.status(
+            f"⏳ Confronto in corso per {len(queries)} prodotti...", expanded=True
+        ) as cmp_status,
+    ):
         for q in queries:
+            if cancel_event.is_set():
+                break
             st.write(f"🔍 Cercando **{q}**...")
             log_buf = io.StringIO()
             source_status.reset()
@@ -396,18 +403,32 @@ def _run_comparison_search(
                             cerebras_client=cerebras_client,
                             app_id=ebay_app_id,
                             cert_id=ebay_cert_id,
+                            cancel_event=cancel_event,
                         )
                 all_results[q] = res
                 combined_log += f"\n--- {q} ---\n" + log_buf.getvalue()
                 st.write(f"  ✅ **{q}** → {len(res)} risultati")
-            except Exception as exc:
+            except Exception:
                 all_results[q] = []
-                st.write(f"  ❌ **{q}** → errore: {exc}")
+                st.write(f"  ❌ **{q}** → ricerca non completata. Controlla le fonti e riprova.")
             snapshots[q] = make_search_snapshot(
                 all_results[q],
                 fonti_backend,
                 {"query": q, "condizione": condizione},
                 log_buf.getvalue(),
+            )
+            get_service().record_search(
+                {
+                    "query": q,
+                    "prezzo_min": prezzo_min,
+                    "budget_max": budget_max,
+                    "condizione": condizione,
+                    "fonti_backend": fonti_backend,
+                    "categoria": categoria,
+                    "filtri_ai": filtri_ai,
+                },
+                all_results[q],
+                source_status.snapshot(),
             )
 
         total = sum(len(v) for v in all_results.values())

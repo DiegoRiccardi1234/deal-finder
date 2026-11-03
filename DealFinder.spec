@@ -32,7 +32,7 @@ datas += collect_data_files("vinted_scraper")
 # Streamlit legge la propria versione da `importlib.metadata`, che in un bundle
 # funziona solo se ci si porta dietro la cartella `.dist-info`. Senza, l'avvio
 # muore con `PackageNotFoundError` prima di aprire la porta.
-for _pacchetto in ("streamlit", "openai", "anthropic"):
+for _pacchetto in ("streamlit", "openai", "anthropic", "mcp"):
     try:
         datas += copy_metadata(_pacchetto)
     except Exception:
@@ -65,6 +65,7 @@ hiddenimports += collect_submodules("streamlit")
 hiddenimports += collect_submodules("offerte")
 hiddenimports += collect_submodules("ui")
 hiddenimports += [
+    "install_layout",
     "app",
     "_shared",
     "offerte_tech",
@@ -121,7 +122,7 @@ analisi_agg = Analysis(
     pathex=["."],
     binaries=[],
     datas=[],
-    hiddenimports=["update_sync"],
+    hiddenimports=["update_sync", "install_layout"],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -132,14 +133,38 @@ analisi_agg = Analysis(
     noarchive=False,
 )
 
+analisi_mcp = Analysis(
+    ["scripts/mcp_entry.py"],
+    pathex=["."],
+    binaries=[],
+    datas=[("offerte/mcp_server.py", "offerte")],
+    hiddenimports=[
+        "install_layout",
+        "httpx",
+        "pydantic",
+        *collect_submodules("mcp", filter=lambda name: name != "mcp.cli" and not name.startswith("mcp.cli.")),
+    ],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=excludes,
+    cipher=block_cipher,
+    noarchive=False,
+)
+
 # `MERGE` mette in comune le dipendenze fra i due eseguibili: senza,
 # `Aggiorna.exe` si porterebbe dietro una seconda copia di tutto e lo zip
 # raddoppierebbe. L'ordine conta — il primo della lista è quello che *possiede*
 # le dipendenze condivise, e l'altro le cerca lì accanto.
-MERGE((analisi_app, "DealFinder", "DealFinder"), (analisi_agg, "Aggiorna", "Aggiorna"))
+MERGE(
+    (analisi_app, "DealFinder", "DealFinder"),
+    (analisi_agg, "Aggiorna", "Aggiorna"),
+    (analisi_mcp, "DealFinderMCP", "DealFinderMCP"),
+)
 
 pyz_app = PYZ(analisi_app.pure, analisi_app.zipped_data, cipher=block_cipher)
 pyz_agg = PYZ(analisi_agg.pure, analisi_agg.zipped_data, cipher=block_cipher)
+pyz_mcp = PYZ(analisi_mcp.pure, analisi_mcp.zipped_data, cipher=block_cipher)
 
 exe_app = EXE(
     pyz_app,
@@ -185,6 +210,22 @@ exe_agg = EXE(
     icon=None,
 )
 
+exe_mcp = EXE(
+    pyz_mcp,
+    analisi_mcp.scripts,
+    [],
+    exclude_binaries=True,
+    name="DealFinderMCP",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    # MCP stdio requires real protocol stdin/stdout; no application logging there.
+    console=True,
+    disable_windowed_traceback=False,
+    icon=None,
+)
+
 coll = COLLECT(
     exe_app,
     analisi_app.binaries,
@@ -194,8 +235,12 @@ coll = COLLECT(
     analisi_agg.binaries,
     analisi_agg.zipfiles,
     analisi_agg.datas,
+    exe_mcp,
+    analisi_mcp.binaries,
+    analisi_mcp.zipfiles,
+    analisi_mcp.datas,
     strip=False,
     upx=True,
     upx_exclude=[],
-    name="DealFinder",
+    name="DealFinder-runtime",
 )

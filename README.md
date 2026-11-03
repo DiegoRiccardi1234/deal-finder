@@ -1,6 +1,6 @@
 # 🛒 Deal Finder
 
-> AI-assisted price comparison for Italian shops and marketplaces, with optional conversational search. **Google Gemini is the default**, with Groq, OpenRouter, OpenAI and Anthropic available by explicit selection.
+> Price comparison for Italian shops and marketplaces, with optional autonomous multi-product search, official Codex accounts, optional Claude and explicitly selected API connections.
 
 [![CI](https://github.com/DiegoRiccardi1234/deal-finder/actions/workflows/ci.yml/badge.svg)](https://github.com/DiegoRiccardi1234/deal-finder/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11-blue)
@@ -10,7 +10,7 @@
 [![Ruff](https://img.shields.io/badge/lint-ruff-261230?logo=ruff&logoColor=white)](https://github.com/astral-sh/ruff)
 ![AI providers](https://img.shields.io/badge/AI-5%20providers-blueviolet)
 
-**📦 Download:** [latest release](https://github.com/DiegoRiccardi1234/deal-finder/releases/latest) — `DealFinder-windows.zip`: unzip, double-click, no Python, no terminal window, updates itself. See the GIF below for what it does.
+**📦 Download:** [latest release](https://github.com/DiegoRiccardi1234/deal-finder/releases/latest) — choose `DealFinder-organized-windows.zip` for a new installation: unzip, open the root `DealFinder.exe`, no Python or terminal window. Existing installations use the in-app updater and its compatible `DealFinder-windows.zip` asset. See [layout and migration](docs/WINDOWS-LAYOUT.md).
 
 **[🇬🇧 English](#-english) · [🇮🇹 Italiano](#-italiano)**
 
@@ -36,6 +36,8 @@ Describe what you want in plain language — the AI turns it into an optimized q
 
 ### ✨ Features
 
+- **Autonomous multi-product search** — up to ten products, one consolidated budget question, progressive saved results, cancellation and grounded advice.
+- **Native assistants and MCP** — isolated Codex accounts, optional Claude, explicit planning/analysis/advice routes, and ten local MCP tools sharing the application's data owner. MCP collection does not invoke models.
 - **Conversational search** — an LLM extracts query, budget and hardware specs from a free-text request, then auto-generates a ranked top-3 recommendation.
 - **Optional multi-provider AI** — Google Gemini by default, with task-specific Flash/Lite models and bounded model failover. No automatic provider changes; OpenRouter uses only healthy free endpoints.
 - **Parallel sources** — aggregated, de-duplicated and price-ranked. Availability and supported conditions are reported for each search, including empty searches and cached results.
@@ -93,7 +95,7 @@ that can catch a site changing its markup.
 ### 🚀 Quickstart
 
 **A. Windows bundle** — what most people want:
-download `DealFinder-windows.zip` from the [latest release](https://github.com/DiegoRiccardi1234/deal-finder/releases/latest), unzip anywhere, double-click `DealFinder.exe`. No Python, no terminal window; a price-tag icon appears in the notification area and the browser opens by itself. API keys go in *Impostazioni*, inside the app.
+download `DealFinder-organized-windows.zip` from the [latest release](https://github.com/DiegoRiccardi1234/deal-finder/releases/latest), extract the entire folder, double-click its root `DealFinder.exe`. Program files live in `app`, private data in `state`. No Python or terminal window; the browser opens by itself. Select **Usa Codex per tutte le attività** in **AI e assistenti** after separately installing and authenticating the official client, or configure an API connection. Existing users should use the in-app updater; it preserves the existing layout and data. For an explicit layout migration, follow [the Windows guide](docs/WINDOWS-LAYOUT.md).
 
 **B. From source** — the developer path:
 ```bash
@@ -114,7 +116,12 @@ Docker reads the keys from `.env`, **not** from `.streamlit/secrets.toml`: that 
 
 ### 🔑 Configuration
 
-Copy `.streamlit/secrets.toml.example` to `.streamlit/secrets.toml`. Everything is optional — scraping works without any key (AI features just stay off). Set `AI_PROVIDER` and the key(s) of the provider(s) you want; the sidebar lets you switch among the configured ones.
+Version 4.3 supports native Codex accounts, optional Claude Code, named
+compatible connections and local MCP clients including Hermes. Use **AI e
+assistenti** for explicit routing. See [AI assistants](docs/AI-ASSISTANTS.md)
+and [Windows layout and migration](docs/WINDOWS-LAYOUT.md).
+
+API connections can use `.streamlit/secrets.toml.example` copied to `.streamlit/secrets.toml`. Everything is optional — scraping works without keys; native Codex uses its own official login. Set `AI_PROVIDER` and the key(s) of an API provider if desired; the sidebar lets you switch among configured connections.
 
 | Provider | Secret | Get a key |
 |---|---|---|
@@ -182,6 +189,8 @@ Descrivi cosa cerchi in linguaggio naturale — l'AI lo trasforma in query ottim
 
 ### ✨ Funzionalità
 
+- **Ricerca autonoma multiprodotto** — fino a dieci prodotti, una domanda aggregata sui budget, risultati progressivi persistenti, annullamento e consiglio basato sulle offerte.
+- **Assistenti nativi e MCP** — account Codex isolato, Claude facoltativo, routing esplicito per piano/analisi/consiglio e dieci strumenti MCP locali con lo stesso proprietario dei dati. I tool di raccolta non invocano modelli.
 - **Ricerca conversazionale** — un LLM estrae query, budget e specifiche da una richiesta in testo libero e genera in automatico una raccomandazione top-3.
 - **AI facoltativa, Google predefinito** — Gemini Flash/Lite scelti per compito, con tentativi limitati e modelli alternativi. Nessun cambio automatico di provider; OpenRouter usa soltanto endpoint gratuiti sani.
 - **Fonti in parallelo** — aggregate, deduplicate e ordinate per prezzo. Stati e condizioni supportate sono mostrati anche senza risultati e quando si usa la cache.
@@ -208,7 +217,7 @@ Verifiche aggiornate: [revisione del 22 ottobre](docs/REVIEW-2026-10-22.md).
 ### 🚀 Avvio rapido
 
 **A. Bundle Windows** — quello che serve alla maggior parte delle persone:
-scarica `DealFinder-windows.zip` dall'[ultima release](https://github.com/DiegoRiccardi1234/deal-finder/releases/latest), scompatta dove vuoi, doppio click su `DealFinder.exe`. Niente Python, nessuna finestra nera; compare un cartellino del prezzo nell'area di notifica e il browser si apre da solo. Le chiavi si incollano in *Impostazioni*, dentro l'app.
+scarica `DealFinder-organized-windows.zip` dall'[ultima release](https://github.com/DiegoRiccardi1234/deal-finder/releases/latest), estrai l'intera cartella e apri `DealFinder.exe` nella root. Il programma vive in `app`, i dati privati in `state`. Niente Python o finestra nera; il browser si apre da solo. In **AI e assistenti**, **Usa Codex per tutte le attività** seleziona il client ufficiale installato e autenticato separatamente, oppure configura una connessione API. Se usi già l'app, usa il suo updater: conserva dati e layout e scarica l'archivio compatibile `DealFinder-windows.zip`. Per migrare fisicamente il layout, segui [la guida Windows](docs/WINDOWS-LAYOUT.md).
 
 **B. Da sorgente** — il percorso di sviluppo:
 ```bash
@@ -229,7 +238,12 @@ Docker legge le chiavi da `.env`, **non** da `.streamlit/secrets.toml`: quel pat
 
 ### 🔑 Configurazione
 
-Copia `.streamlit/secrets.toml.example` in `.streamlit/secrets.toml`. Tutto è opzionale — lo scraping funziona senza chiavi (le funzioni AI restano spente). Imposta `AI_PROVIDER` e la/le chiave/i del provider che vuoi; dalla sidebar scegli tra quelli configurati. (Tabella provider sopra.)
+La versione 4.3 supporta account Codex, Claude Code facoltativo,
+connessioni compatibili e client MCP locali, incluso Hermes. Il pannello **AI e
+assistenti** gestisce il routing esplicito. Vedi [AI e assistenti](docs/AI-ASSISTANTS.md)
+e [layout Windows e migrazione](docs/WINDOWS-LAYOUT.md).
+
+Per le connessioni API puoi copiare `.streamlit/secrets.toml.example` in `.streamlit/secrets.toml`. Tutto è opzionale: lo scraping funziona senza chiavi e Codex usa il proprio login ufficiale. Se desideri un provider API, imposta `AI_PROVIDER` e la/le chiave/i; dalla sidebar scegli le connessioni configurate. (Tabella provider sopra.)
 
 Altri valori: `APP_PASSWORD` (password dashboard), `EBAY_APP_ID` / `EBAY_CERT_ID` (eBay Browse API).
 

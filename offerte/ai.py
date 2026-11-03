@@ -68,6 +68,11 @@ def _get_ai_client() -> object | None:
     Gemini via offerte.providers). None se non configurato o SDK mancante.
     """
     from offerte import providers
+    from offerte.connection_routing import routed_client
+
+    routed = routed_client("analysis")
+    if routed is not None:
+        return routed
 
     if st is not None:
         try:
@@ -85,6 +90,19 @@ _get_cerebras_api_key = _get_ai_api_key
 _get_cerebras_client = _get_ai_client
 
 
+def _client_for_task(task: str):
+    from offerte.connection_routing import routed_client
+    from offerte import providers
+
+    selected = routed_client(task)
+    if selected is not None:
+        return selected
+    legacy = _get_cerebras_client()
+    if getattr(legacy, "_dealfinder_routed", False) is True:
+        return providers.build_client()
+    return legacy
+
+
 def fetch_specs_ai(
     offerte: list[Offerta],
     categoria: str,
@@ -93,6 +111,16 @@ def fetch_specs_ai(
     """Arricchisce le offerte con specs tramite una singola chiamata AI batch."""
     if not offerte:
         return offerte
+
+    from offerte.connection_routing import routed_client
+
+    selected = routed_client("analysis")
+    if selected is not None:
+        cerebras_client = selected
+    elif getattr(cerebras_client, "_dealfinder_routed", False) is True:
+        from offerte import providers
+
+        cerebras_client = providers.build_client()
 
     categoria_norm = _normalize_category(categoria)
 
@@ -492,7 +520,7 @@ def detect_category_and_questions(testo_utente: str) -> dict[str, object]:
     categoria_base = _infer_category(lower)
     domande_base, preferenze_chiare_base = _questions_for_missing(categoria_base, lower)
 
-    client = _get_cerebras_client()
+    client = _client_for_task("plan")
     if client is None:
         categoria = categoria_base
         return {
@@ -627,7 +655,7 @@ def parse_search_intent(risposta_utente: str) -> dict[str, object]:
     if not testo:
         return default
 
-    client = _get_cerebras_client()
+    client = _client_for_task("plan")
     if client is None:
         guess = dict(default)
         m_range = re.search(r"(\d{2,5})\s*[-/a]\s*(\d{2,5})", testo.lower())
@@ -858,6 +886,16 @@ def filtra_risultati_con_ai(risultati: list[Offerta], filtri: dict[str, str]) ->
                 variante_label = ""
 
                 for key, value in filtri_variante.items():
+                    if key == "storage":
+                        from offerte.product_constraints import different_storage
+
+                        if different_storage(
+                            offerta.nome, candidato.nome, offerta.specs, candidato.specs
+                        ):
+                            variante_diversa = True
+                            variante_label = "Versione con storage diverso"
+                            break
+                        continue
                     terms = color_synonyms.get(value, {value}) if key == "colore" else {value}
                     ref_has_value = any(t in titolo_ref for t in terms)
                     cand_has_value = any(t in titolo_cand for t in terms)
@@ -1049,6 +1087,16 @@ def chat_with_retry(
     gli errori fatali interrompono subito il tentativo.
     """
     from offerte import providers
+
+    if getattr(client, "_dealfinder_routed", False) is True:
+        # Native/explicit connection routing owns its own error/cancel policy;
+        # it must never fall through into the legacy API model pool.
+        from offerte.providers import _Completion
+
+        task = "advice" if compito == "consiglio" else client.task
+        value = client.router.complete(task, messages)
+        content = json.dumps(value, ensure_ascii=False) if isinstance(value, dict) else value
+        return _Completion(content)
 
     provider = providers.active_provider()
     candidates = providers.ranked_models(provider, client, compito=compito)

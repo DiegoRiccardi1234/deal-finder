@@ -4,7 +4,8 @@
 
 Produce:
     dist/DealFinder/                 la cartella da scompattare, con DealFinder.exe
-    dist/DealFinder-windows.zip      quello che si allega alla release
+    dist/DealFinder-organized-windows.zip  nuove installazioni organizzate
+    dist/DealFinder-windows.zip            aggiornamenti legacy compatibili
 
 A differenza dello ZIP di sorgenti che pubblicavamo prima, qui non c'è niente
 da scegliere né da escludere a mano: nel pacchetto entra solo ciò che è
@@ -18,8 +19,13 @@ import argparse
 import shutil
 import subprocess
 import sys
-import zipfile
 from pathlib import Path
+
+if str(Path(__file__).resolve().parents[1]) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from scripts.package_windows import create_release_archives, organize_bundle
+from install_layout import is_redirected
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = ROOT / "DealFinder.spec"
@@ -39,9 +45,13 @@ def main(argv: list[str] | None = None) -> int:
         "--output-dir", type=Path, help="Cartella separata per dist/ e build/ di verifica"
     )
     args = parser.parse_args(argv)
+    output_argument = args.output_dir.absolute() if args.output_dir else ROOT
+    if any(is_redirected(p) for p in (output_argument, *output_argument.parents)):
+        raise ValueError("output di build reindirizzato non ammesso")
     output = args.output_dir.resolve() if args.output_dir else ROOT
     dist = output / "dist"
     build = output / "build"
+    raw_bundle = dist / "DealFinder-runtime"
     bundle = dist / "DealFinder"
     if not SPEC.exists():
         print(f"manca lo spec: {SPEC}", file=sys.stderr)
@@ -49,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
 
     for cartella in (dist, build):
         # La pulizia riguarda esclusivamente i due output verificati.
-        if cartella.resolve().parent != output.resolve() or cartella.is_symlink():
+        if cartella.resolve().parent != output.resolve() or is_redirected(cartella):
             raise ValueError(f"cartella di build non sicura: {cartella}")
         if cartella.exists():
             shutil.rmtree(cartella)
@@ -69,13 +79,10 @@ def main(argv: list[str] | None = None) -> int:
         ],
         cwd=ROOT,
     )
-    if not bundle.exists():
-        print("PyInstaller non ha prodotto dist/DealFinder/", file=sys.stderr)
+    if not raw_bundle.exists():
+        print("PyInstaller non ha prodotto il runtime", file=sys.stderr)
         return 2
-
-    guida = ROOT / "scripts" / "bundle_LEGGIMI.txt"
-    if guida.exists():
-        shutil.copy2(guida, bundle / "LEGGIMI.txt")
+    organize_bundle(raw_bundle, bundle)
 
     file_bundle = [f for f in bundle.rglob("*") if f.is_file()]
     if len(file_bundle) < MINIMO_FILE:
@@ -86,15 +93,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 3
 
-    zip_path = dist / "DealFinder-windows.zip"
-    print(f"creo {zip_path.name}...")
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as archivio:
-        for file in file_bundle:
-            archivio.write(file, file.relative_to(bundle.parent))
-    print(
-        f"fatto: {zip_path} ({zip_path.stat().st_size // (1024 * 1024)} MB, "
-        f"{len(file_bundle)} file)"
-    )
+    for zip_path in create_release_archives(raw_bundle, bundle, dist).values():
+        print(f"fatto: {zip_path} ({zip_path.stat().st_size // (1024 * 1024)} MB)")
     return 0
 
 

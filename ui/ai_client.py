@@ -200,11 +200,15 @@ class _MockCerebrasClient:
         self.chat = _MockChat()
 
 
-def _get_ai_client(api_key: str) -> object | None:
+def _get_ai_client(api_key: str, *, task: str = "plan") -> object | None:
     if _is_test_mode():
         return _MockCerebrasClient()
     from offerte import providers
+    from offerte.connection_routing import routed_client
 
+    routed = routed_client(task)
+    if routed is not None:
+        return routed
     return providers.build_client(providers.active_provider())
 
 

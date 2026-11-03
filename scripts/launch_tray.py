@@ -38,7 +38,7 @@ def _harden_stdio() -> None:
     for name in ("stdout", "stderr"):
         stream = getattr(sys, name, None)
         usable = stream is not None
-        if usable:
+        if stream is not None:
             try:
                 descrittore = stream.fileno()
             except Exception:
@@ -75,7 +75,9 @@ def _declare_workspace() -> str:
     if os.environ.get("DEAL_FINDER_WORKSPACE"):
         return os.environ["DEAL_FINDER_WORKSPACE"]
     if getattr(sys, "frozen", False):
-        workspace = _Path(sys.executable).resolve().parent
+        from install_layout import installation_root
+
+        workspace = installation_root(_Path(sys.executable))
     else:
         workspace = _Path(__file__).resolve().parent.parent
     os.environ["DEAL_FINDER_WORKSPACE"] = str(workspace)
@@ -100,9 +102,12 @@ import urllib.error  # noqa: E402
 import urllib.request  # noqa: E402
 import webbrowser  # noqa: E402
 from pathlib import Path  # noqa: E402
+from typing import Any  # noqa: E402
 
 ROOT = Path(os.environ["DEAL_FINDER_WORKSPACE"])
-LOG_FILE = ROOT / "data" / "logs" / "deal-finder.log"
+from install_layout import is_organized, state_dir  # noqa: E402
+
+LOG_FILE = state_dir(ROOT) / "logs" / "deal-finder.log"
 
 #: Porta di partenza: quella di default di Streamlit, così l'indirizzo è quello
 #: che l'utente ha già visto in sviluppo e nella documentazione.
@@ -236,6 +241,19 @@ def _spegni_ordinato() -> None:
     aggiornamento.
     """
     try:
+        from offerte.agent_service import shutdown_services
+
+        if not shutdown_services(timeout=30):
+            logging.getLogger(__name__).error(
+                "chiusura incompleta: servizio ancora attivo, database e processo restano aperti"
+            )
+            return
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "chiusura del servizio non riuscita: non chiudo SQLite"
+        )
+        return
+    try:
         from offerte import db
 
         db.close_all()
@@ -263,7 +281,6 @@ def run_tray(url: str) -> None:
         copy_to_clipboard(url)
 
     def on_quit(icon, _item=None) -> None:
-        icon.stop()
         _spegni_ordinato()
 
     menu = pystray.Menu(
@@ -314,7 +331,7 @@ def _avvia_streamlit(port: int) -> threading.Thread:
     from streamlit import config as st_config
     from streamlit.web import bootstrap
 
-    bootstrap._set_up_signal_handler = lambda _server: None  # type: ignore[attr-defined]
+    bootstrap._set_up_signal_handler = lambda server: None
 
     from offerte import paths
 
@@ -322,7 +339,7 @@ def _avvia_streamlit(port: int) -> threading.Thread:
     if not script.is_file():
         raise SystemExit(f"app.py non trovato in {script.parent}")
 
-    flag_options = {
+    flag_options: dict[str, Any] = {
         "server.port": port,
         "server.address": "127.0.0.1",
         # Il browser lo apriamo noi, quando il server risponde davvero.
@@ -333,6 +350,10 @@ def _avvia_streamlit(port: int) -> threading.Thread:
         "browser.gatherUsageStats": False,
         "global.developmentMode": False,
     }
+    if is_organized(ROOT):
+        # Preserve any private legacy Streamlit settings relocated by migration.
+        private_secrets = state_dir(ROOT) / ".streamlit" / "secrets.toml"
+        flag_options["secrets.files"] = [str(private_secrets)]
 
     # Come fa `streamlit run`: prima si dichiara qual è lo script principale
     # (serve a trovare `.streamlit/config.toml` e i secrets accanto a lui), poi
@@ -368,7 +389,7 @@ def main() -> int:
     # riblocca i file che l'aggiornatore sta sostituendo e la copia muore a
     # metà. Il lucchetto vecchio non conta: vorrebbe dire che l'aggiornatore è
     # morto, e restare chiusi per sempre sarebbe peggio.
-    lucchetto = ROOT / "data" / "aggiornamento.lock"
+    lucchetto = state_dir(ROOT) / "aggiornamento.lock"
     if not os.environ.get("DEAL_FINDER_AGGIORNATO"):
         try:
             eta = time.time() - lucchetto.stat().st_mtime

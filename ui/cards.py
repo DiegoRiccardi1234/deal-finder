@@ -41,7 +41,12 @@ from ui.state import _format_price
 def _render_offerta_card(offerta: Offerta, idx: int, best_price: float = 0) -> str:
     import html as _html
 
-    source_label = offerta.fonte.replace(".it", "").replace(".com", "").upper()
+    source_label = (
+        (offerta.fonte or offerta.negozio or "Negozio")
+        .replace(".it", "")
+        .replace(".com", "")
+        .upper()
+    )
     price_str = _format_price(offerta.prezzo)
     spedizione_raw = (
         offerta.spedizione if offerta.spedizione and offerta.spedizione != "n.d." else ""

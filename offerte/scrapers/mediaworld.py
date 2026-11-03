@@ -20,6 +20,56 @@ from offerte.source_status import report_blocked, report_error
 
 log = get_logger(__name__)
 
+_AMOUNT = r"(?:\d{1,3}(?:[.\s]\d{3})+|\d+)(?:[.,]\d{2})?"
+_MONEY = re.compile(
+    rf"(?P<before>{_AMOUNT})\s*(?:€|EUR\b)|(?:€|EUR\b)\s*(?P<after>{_AMOUNT})", re.I
+)
+_INSTALLMENT = re.compile(r"/\s*(?:mese|rata|mo)\b|\b(?:rat[ae]|mensil\w*|finanziamento)\b", re.I)
+
+
+def _sale_price(tag) -> float:
+    """Read monetary values only, excluding reference prices and seller metadata.
+
+    Real cards put "Venduto e spedito da Beatrix20" inside product-price.
+    Feeding that whole text to parse_price strips its prefix through "da" and
+    mistakes the seller's 20 for the price. Never parse arbitrary card prose.
+    """
+    if tag is None or "strike-price" in str(tag.get("data-test", "")):
+        return math.inf
+    clean = BeautifulSoup(str(tag), "html.parser")
+    for extra in clean.select(
+        '[data-test*="strike-price"], [data-test*="additional-info"], '
+        '[data-test*="installment"], [data-test*="financing"], del, s'
+    ):
+        extra.decompose()
+    values: set[float] = set()
+    for node in clean.find_all(string=True):
+        text = str(node).replace("\u00a0", " ").replace("\u202f", " ")
+        parent = node.parent
+        context = parent.get_text(" ", strip=True) if parent else text
+        if _INSTALLMENT.search(context):
+            continue
+        if parent and parent.parent and parent.parent.name not in ("[document]", "article"):
+            # A value can be split from the adjacent '/mese' label.
+            sibling_context = parent.parent.get_text(" ", strip=True)
+            sibling_prices = {
+                parse_price(match.group("before") or match.group("after"))
+                for match in _MONEY.finditer(sibling_context)
+            }
+            if _INSTALLMENT.search(sibling_context) and len(sibling_prices) <= 1:
+                continue
+        for match in _MONEY.finditer(text):
+            price = parse_price(match.group("before") or match.group("after"))
+            if math.isfinite(price):
+                values.add(price)
+    if not values:
+        text = clean.get_text(" ", strip=True).replace("\u00a0", " ")
+        if re.fullmatch(_AMOUNT, text):
+            return parse_price(text)
+    # Duplicated visual/accessibility values are one price. Conflicting values
+    # are ambiguous: let the structured-data fallback handle them.
+    return next(iter(values)) if len(values) == 1 else math.inf
+
 
 def scrape_mediaworld(
     query: str,
@@ -35,7 +85,7 @@ def scrape_mediaworld(
       1. article[data-test="mms-product-card"] (confermato a marzo 2026):
            - Nome:    [data-test="product-title"]
            - Link:   primo a[href] nell'article
-           - Prezzo: regex su testo grezzo "Consigliato X,–€Y,00€Z,00" → min(prezzi)
+           - Prezzo: importo di vendita, senza listino, rate o metadati venditore
       2. JSON-LD <script type="application/ld+json"> @type=ItemList
       3. CSS selettori generici come last-resort
     """
@@ -110,47 +160,10 @@ def scrape_mediaworld(
                         continue
                     seen_links.add(link)
 
-                    # Prezzo: prova prima il selettore specifico, poi fallback regex
-                    # MediaWorld mostra sia il prezzo pieno sia le rate mensili (/mese).
-                    # Occorre ignorare le rate e prendere il prezzo intero.
-                    _RATE_KW = ("/mese", "mese", "/rata", "rata", "/mo", "mensil")
-
-                    def _strip_rate_context(
-                        raw: str, context: str, _rate_kw: tuple = _RATE_KW
-                    ) -> bool:
-                        """Restituisce True se 'raw' appare vicino a keyword da rata."""
-                        idx = context.find(raw)
-                        if idx == -1:
-                            return False
-                        window = context[idx : idx + len(raw) + 20].lower()
-                        return any(k in window for k in _rate_kw)
-
-                    price_tag = art.select_one('[data-test="product-price"]') or art.select_one(
+                    price_tag = art.select_one('[data-test~="product-price"]') or art.select_one(
                         '[data-test*="price"]'
                     )
-                    price_text_full = art.get_text(" ", strip=True).replace("\u00a0", " ")
-                    if price_tag:
-                        pt_text = price_tag.get_text(" ", strip=True).replace("\u00a0", " ")
-                        # Se il testo del tag contiene indicatori di rata, ignora il tag
-                        # e leggi il prezzo dal testo completo dell'article
-                        if any(k in pt_text.lower() for k in _RATE_KW):
-                            price_tag = None  # forza fallback
-                        else:
-                            prezzo = parse_price(pt_text)
-                    if not price_tag:
-                        # fallback regex sul testo grezzo, escludendo le rate
-                        raw_prices = re.findall(r"\d{1,4},\d{2}", price_text_full)
-                        prices: list[float] = []
-                        for rp in raw_prices:
-                            if _strip_rate_context(rp, price_text_full):
-                                continue
-                            p = parse_price(rp)
-                            if math.isfinite(p) and p > 20:
-                                prices.append(p)
-                        if not prices:
-                            continue
-                        # Prende il massimo: le rate sono sempre il valore minore
-                        prezzo = max(prices)
+                    prezzo = _sale_price(price_tag if price_tag is not None else art)
                     if not math.isfinite(prezzo):
                         continue
 
@@ -295,7 +308,7 @@ def scrape_mediaworld(
                     )
                     if not prezzo_tag:
                         continue
-                    prezzo = parse_price(prezzo_tag.get_text(" ", strip=True))
+                    prezzo = _sale_price(prezzo_tag)
                     if not math.isfinite(prezzo):
                         continue
 

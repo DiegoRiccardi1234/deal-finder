@@ -31,6 +31,8 @@ import time
 import zipfile
 from pathlib import Path, PurePosixPath
 
+from install_layout import LAYOUT_MARKER, is_organized, is_redirected, validate_marker_payload
+
 #: Roba dell'utente, mai sovrascritta: il database, lo storico, i preferiti, le
 #: chiavi, i log. Il confronto è sulla prima parte del percorso, quindi
 #: `data/qualunque/cosa` è protetto perché lo è `data`.
@@ -38,7 +40,7 @@ from pathlib import Path, PurePosixPath
 #: `.streamlit` è nostro e non di Trip Finder: lì vive `secrets.toml` di chi
 #: usa Deal Finder da sorgente o in Docker, e sovrascriverlo vorrebbe dire
 #: cancellargli le chiavi durante un aggiornamento.
-DA_NON_TOCCARE = ("data", ".env", ".env.local", ".streamlit")
+DA_NON_TOCCARE = ("data", "state", "vendor", ".env", ".env.local", ".streamlit")
 
 #: Quanto riprovare prima di arrendersi su un file bloccato. In tutto una
 #: trentina di secondi: Defender su un archivio appena scompattato può
@@ -52,12 +54,14 @@ def _protetto(relativo: Path) -> bool:
     return bool(parti) and parti[0].casefold() in DA_NON_TOCCARE
 
 
-def valida_archivio(percorso: Path) -> str:
+def valida_archivio(percorso: Path, *, expected_layout: str | None = None) -> str:
     """Controlla percorsi Windows, struttura e CRC prima di fermare l'app.
 
     Restituisce il prefisso della cartella del bundle (oppure stringa vuota).
     Non estrae e non modifica l'installazione.
     """
+    if expected_layout not in (None, "legacy", "organized"):
+        raise ValueError("layout archivio richiesto non valido")
     with zipfile.ZipFile(percorso) as archivio:
         nomi: set[str] = set()
         file: dict[str, zipfile.ZipInfo] = {}
@@ -89,17 +93,47 @@ def valida_archivio(percorso: Path) -> str:
             if not voce.is_dir():
                 file[normalizzato] = voce
         prefisso = "dealfinder/" if "dealfinder/dealfinder.exe" in file else ""
-        richiesti = ("dealfinder.exe", "aggiorna.exe", "leggimi.txt")
+        marker_name = prefisso + "app/" + LAYOUT_MARKER
+        organized = marker_name in file
+        if expected_layout is not None and organized != (expected_layout == "organized"):
+            raise ValueError("layout archivio diverso da quello richiesto per questa installazione")
+        richiesti = (
+            (
+                "dealfinder.exe",
+                "leggimi.txt",
+                "app/dealfinder.exe",
+                "app/aggiorna.exe",
+                "app/dealfindermcp.exe",
+            )
+            if organized
+            else ("dealfinder.exe", "aggiorna.exe", "leggimi.txt")
+        )
+        interno = prefisso + ("app/_internal/" if organized else "_internal/")
         if any(
             prefisso + nome not in file or file[prefisso + nome].file_size == 0
             for nome in richiesti
         ) or not any(
-            nome.startswith(prefisso + "_internal/") and voce.file_size > 0
-            for nome, voce in file.items()
+            nome.startswith(interno) and voce.file_size > 0 for nome, voce in file.items()
         ):
             raise ValueError(
                 "bundle incompleto: servono DealFinder.exe, Aggiorna.exe, LEGGIMI.txt e _internal"
             )
+        if organized:
+            try:
+                validate_marker_payload(
+                    json.loads(archivio.read(file[marker_name]).decode("utf-8"))
+                )
+            except (ValueError, UnicodeDecodeError) as exc:
+                raise ValueError("marker layout non valido nello ZIP") from exc
+            allowed = {"dealfinder.exe", "leggimi.txt", "app", "state"}
+            for nome in nomi:
+                relativo = nome.removeprefix(prefisso)
+                if relativo.split("/")[0] not in allowed:
+                    raise ValueError(f"file inatteso nella root organizzata: {nome}")
+                if (relativo == "state" or relativo.startswith("state/")) and nome in file:
+                    raise ValueError("lo ZIP pubblico non deve contenere stato utente")
+        elif any(nome.startswith(prefisso + "app/") for nome in file):
+            raise ValueError("layout app/ senza marker valido nello ZIP")
         if prefisso and any(not nome.startswith(prefisso) for nome in file):
             raise ValueError("file esterni alla cartella DealFinder nel bundle")
         # Un file non può essere anche il genitore di un altro percorso.
@@ -177,6 +211,37 @@ def _copia_insistendo(origine: Path, destinazione: Path) -> None:
         ) from exc
 
 
+def _mappa_file(origine: Path, destinazione: Path):
+    """Keep the installed layout; physical migration is a separate transaction."""
+    organizzato = is_organized(origine)
+    vuota = not destinazione.exists() or not any(destinazione.iterdir())
+    arrivo_organizzato = is_organized(destinazione) or (vuota and organizzato)
+    # Historic binaries cannot read state/. Never install one and silently
+    # make it open app/data as a brand-new empty database.
+    if arrivo_organizzato and not organizzato:
+        raise ValueError(
+            "Runtime legacy non compatibile con state/: ripristinare il backup completo"
+        )
+    for file in sorted(origine.rglob("*")):
+        if is_redirected(file):
+            raise ValueError(f"link o junction non ammessi nel bundle: {file}")
+        if not file.is_file():
+            continue
+        relativo = file.relative_to(origine)
+        if _protetto(relativo):
+            continue
+        if organizzato and relativo.parts[0].casefold() == "app":
+            interno = Path(*relativo.parts[1:])
+            if _protetto(interno) or (not arrivo_organizzato and interno.name == LAYOUT_MARKER):
+                continue
+            relativo = Path("app") / interno if arrivo_organizzato else interno
+        elif (
+            organizzato and not arrivo_organizzato and relativo.name.casefold() == "dealfinder.exe"
+        ):
+            continue  # The flat installation needs the runtime, not the root launcher.
+        yield file, relativo
+
+
 def sincronizza(*, origine: Path, destinazione: Path) -> int:
     """Copia tutto quello che sta in `origine` dentro `destinazione`.
 
@@ -187,21 +252,26 @@ def sincronizza(*, origine: Path, destinazione: Path) -> int:
     """
     if not origine.exists():
         raise FileNotFoundError(f"non trovo la cartella da installare: {origine}")
-    destinazione.mkdir(parents=True, exist_ok=True)
-
+    if any(is_redirected(p) for root in (origine, destinazione) for p in (root, *root.parents)):
+        raise ValueError("installazione reindirizzata non ammessa")
     origine = origine.resolve()
     destinazione = destinazione.resolve()
+    if (
+        origine == destinazione
+        or origine in destinazione.parents
+        or destinazione in origine.parents
+    ):
+        raise ValueError("origine e destinazione devono essere alberi separati")
+    if any(is_redirected(p) for p in (origine, destinazione)):
+        raise ValueError("installazione reindirizzata non ammessa")
+    mappati = list(_mappa_file(origine, destinazione))
+    destinazione.mkdir(parents=True, exist_ok=True)
     piano: list[tuple[Path, Path, Path, bool]] = []
-    for file in sorted(origine.rglob("*")):
-        if file.is_symlink():
-            raise ValueError(f"link non ammesso nel bundle: {file}")
-        if not file.is_file():
-            continue
-        relativo = file.relative_to(origine)
-        if _protetto(relativo):
-            continue
+    for file, relativo in mappati:
         arrivo = destinazione / relativo
-        if not arrivo.resolve().is_relative_to(destinazione) or arrivo.is_symlink():
+        if not arrivo.resolve().is_relative_to(destinazione) or any(
+            is_redirected(p) for p in (arrivo, *arrivo.parents) if p.is_relative_to(destinazione)
+        ):
             raise ValueError(f"percorso di installazione non sicuro: {arrivo}")
         if _e_questo_programma(arrivo):
             continue

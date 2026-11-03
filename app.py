@@ -99,6 +99,13 @@ _theme_mode = str(st.session_state.get("ui_theme", "light") or "light").strip().
 if _theme_mode not in {"light", "dark"}:
     _theme_mode = "light"
 load_css(theme_mode=_theme_mode)
+from offerte.update import is_cloud as _local_is_cloud
+
+if not _local_is_cloud():
+    # Acquire workspace ownership before the auth gate can open SQLite.
+    from offerte.agent_service import get_service as _early_agent_service
+
+    _early_agent_service()
 try:
     _APP_PASSWORD = st.secrets.get("APP_PASSWORD", "") if hasattr(st, "secrets") else ""
 except Exception:
@@ -155,6 +162,29 @@ if _APP_PASSWORD and not _APP_TEST_MODE:
 api_key = _get_ai_api_key()
 render_nav(active_page="tool")
 _init_state()
+from offerte.update import is_cloud as _is_cloud
+from offerte.connection_routing import get_router as _get_router
+
+if not _is_cloud():
+    from offerte.agent_service import get_service as _get_agent_service
+
+    _agent_service = _get_agent_service()
+    try:
+        _agent_service.resume_mcp()
+    except Exception:
+        st.warning("Collegamento MCP non disponibile. Controlla la porta in AI e assistenti.")
+    _search_mode = st.radio(
+        "Modalità ricerca",
+        ["Assistente autonomo", "Ricerca classica"],
+        index=0 if _get_router().has_route("plan") else 1,
+        horizontal=True,
+        key="search_mode",
+    )
+    if _search_mode == "Assistente autonomo":
+        from ui.assistant import render_assistant
+
+        render_assistant()
+        st.stop()
 cerebras_client = _get_ai_client(api_key)
 _presearch_done = st.session_state.get("presearch_ready", False)
 query_input: str = ""

@@ -4,6 +4,16 @@ Deal Finder
 Le offerte dei negozi e mercatini selezionati, confrontate in una schermata.
 La disponibilita' delle singole fonti viene indicata dopo ogni ricerca.
 
+I due pacchetti Windows
+----------------------
+
+DealFinder-organized-windows.zip e' consigliato per una nuova installazione:
+DealFinder.exe e LEGGIMI.txt nella root, programma in app/, dati in state/.
+DealFinder-windows.zip conserva il formato storico per gli aggiornamenti:
+runtime, Aggiorna.exe e _internal nella root, dati personali in data/.
+Il nome storico resta invariato per i vecchi updater. Gli aggiornamenti
+mantengono il formato gia' installato.
+
 
 Come si avvia
 -------------
@@ -48,7 +58,11 @@ predefinito. Il free tier richiede una chiave di un progetto Google senza
 billing attivo e ha limiti di utilizzo. OpenRouter usa soltanto modelli :free;
 gli altri provider restano selezionabili esplicitamente. Non esiste un
 passaggio automatico a pagamento. Le chiavi restano su questo computer,
-nel file data/local_secrets.json, e non vengono mai rimostrate a schermo.
+nel file state/local_secrets.json (data/local_secrets.json nel pacchetto
+storico), e non vengono mai rimostrate a schermo.
+Le connessioni Codex e Claude usano i CLI gia' installati sul computer:
+non sono inclusi nel pacchetto. Claude e' opzionale. Se manca un runtime o
+il suo accesso, l'app lo segnala senza passare automaticamente a un'API.
 
 Le specifiche non presenti negli annunci restano sconosciute. La guida alle
 domande non viene aggiornata automaticamente dall'AI come catalogo prodotti.
@@ -57,30 +71,40 @@ domande non viene aggiornata automaticamente dall'AI come catalogo prodotti.
 Dove finiscono i tuoi dati
 --------------------------
 
-Tutto nella cartella data/, accanto a DealFinder.exe: lo storico delle
+Tutto nella cartella state/ del formato organizzato, oppure data/ del formato
+storico, accanto a DealFinder.exe: lo storico delle
 ricerche, i preferiti, lo storico dei prezzi, i log, le chiavi. Se sposti la
 cartella si sposta tutto; se la cancelli riparti da zero. Niente esce da qui
 tranne le richieste ai negozi e, se l'hai accesa, al fornitore di IA che hai
 scelto.
 
-Gli aggiornamenti non toccano data/: quello che hai salvato resta.
+Gli aggiornamenti non toccano la cartella dei dati: quello che hai salvato resta.
 Prima delle sostituzioni viene preparato un backup. Se una copia fallisce,
 l'aggiornatore tenta di ripristinare i file precedenti; se non riesce,
 conserva backup e istruzioni e non riavvia un'installazione incompleta.
 
 
-Non toccare _internal
----------------------
+Non toccare app
+---------------
 
-E' il programma vero e proprio, smontato nei suoi pezzi. Spostare o cancellare
-qualcosa la' dentro impedisce l'avvio. La cartella si sposta tutta intera,
+Contiene il programma, _internal, l'aggiornatore e l'adapter MCP. Il piccolo
+DealFinder.exe nella root li avvia senza console. Spostare o cancellare
+qualcosa in app impedisce l'avvio. La cartella si sposta tutta intera,
 oppure niente.
+Nel pacchetto storico questi componenti sono nella root: conservarli tutti.
+
+Le installazioni storiche usano data/ e il runtime nella root. Un nuovo
+pacchetto organizzato non si installa direttamente con il vecchio updater:
+l'aggiornamento usa il pacchetto storico compatibile. Per riordinare anche
+una installazione storica serve una migrazione locale verificata.
+Un marker layout corrotto blocca l'avvio per evitare dati vuoti di ripiego.
 
 
 Se qualcosa non parte
 ---------------------
 
-Guarda data/logs/deal-finder.log: e' l'unico posto dove un errore d'avvio
+Guarda state/logs/deal-finder.log (data/logs/deal-finder.log nel formato
+storico): e' il posto dove un errore d'avvio
 lascia traccia, perche' non c'e' una console dove stamparlo.
 
 

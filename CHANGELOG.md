@@ -6,9 +6,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [4.2.2] - 2026-10-22
+## [4.3.0] - 2026-11-03
+
+Includes the previously unreleased 4.2.2 fixes.
+
+### Added
+- Autonomous searches for up to ten products, with one consolidated budget
+  question, progressive saved results, cancellation and final grounded advice.
+- Isolated native Codex runtime, optional Claude support, named compatible
+  connections and explicit per-task routes for planning, analysis and advice.
+- Authenticated local MCP service with ten tools and a STDIO adapter sharing
+  the application's database owner. MCP collection does not invoke AI models.
+- Organized Windows installation with a root launcher, `app` program files and
+  private `state`, plus reversible migration and preserved updater rollback.
+
+### Windows downloads and updates
+- **New installations:** download `DealFinder-organized-windows.zip`, extract
+  the entire folder and open its root `DealFinder.exe`.
+- **Existing installations:** the in-app updater uses `DealFinder-windows.zip`,
+  a compatible flat archive. It preserves existing data and layout; updating
+  does not physically migrate an old installation to `app/state`.
+- Organized installations select their matching archive for future updates.
+  For an explicit layout migration, follow [the Windows guide](https://github.com/DiegoRiccardi1234/deal-finder/blob/v4.3.0/docs/WINDOWS-LAYOUT.md).
+- Codex and Claude clients are not bundled. Install and authenticate the chosen
+  official client separately; Claude is optional. Native AI uses account quota,
+  and failures do not implicitly enable a paid API fallback.
 
 ### Fixed
+- MediaWorld prices no longer parse the seller suffix in `Beatrix20` as a
+  EUR20 phone. Monetary values exclude reference prices, installments and
+  seller metadata without imposing an arbitrary minimum price.
+- Phone family/exact matching preserves model suffixes, generations and Plus;
+  storage comparisons distinguish unique capacities from ambiguous or unknown values.
+- Native structured responses retain full local schema validation. Final advice
+  uses separate prose instructions and renders recognized analysis-shaped replies.
+- Legacy intent preparation follows the selected planning route independently
+  of offer analysis and saved API credentials.
 - Resolved all 42 Mypy findings across the backend and UI, including AI response
   contracts, optional imports, HTTP parameters and nullable values.
 - Optional history fallbacks accept the same arguments as the real module;

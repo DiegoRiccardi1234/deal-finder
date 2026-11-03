@@ -256,21 +256,28 @@ def _run_search(
             try:
                 source_status.reset()
                 with contextlib.redirect_stdout(log_buffer):
-                    risultati = cerca_offerte(
-                        query=query,
-                        budget_max=float(budget_max),
-                        prezzo_min=float(prezzo_min),
-                        filtri_ai=filtri_ai,
-                        top_n=int(top_n),
-                        export_csv=False,
-                        condizione=condizione,
-                        fonti=fonti_backend,
-                        categoria=categoria,
-                        cerebras_client=cerebras_client,
-                        app_id=ebay_app_id,
-                        cert_id=ebay_cert_id,
-                        progress_callback=on_source_done,
-                    )
+                    from offerte.agent_service import get_service
+
+                    def collect(cancel_event):
+                        return cerca_offerte(
+                            query=query,
+                            budget_max=float(budget_max),
+                            prezzo_min=float(prezzo_min),
+                            filtri_ai=filtri_ai,
+                            top_n=int(top_n),
+                            export_csv=False,
+                            condizione=condizione,
+                            fonti=fonti_backend,
+                            categoria=categoria,
+                            cerebras_client=cerebras_client,
+                            app_id=ebay_app_id,
+                            cert_id=ebay_cert_id,
+                            progress_callback=on_source_done,
+                            cancel_event=cancel_event,
+                        )
+
+                    with get_service().search_lease() as cancel_event:
+                        risultati = collect(cancel_event)
                 n = len(risultati)
                 search_status.update(
                     label=f"✅ Ricerca completata — {n} {'offerta trovata' if n == 1 else 'offerte trovate'}",
@@ -288,6 +295,11 @@ def _run_search(
         )
         st.session_state["search_snapshot"] = snapshot
         st.session_state["search_cache_origin"] = "live"
+        from offerte.agent_service import get_service
+
+        get_service().record_search(
+            st.session_state["_last_search_params"], risultati, source_status.snapshot()
+        )
         # Salva in cache per 5 minuti
         st.session_state["_search_cache"] = {
             "key": _cache_key,
@@ -326,13 +338,12 @@ def _run_search(
                     price_history.record(query, _min_price)
             except Exception:
                 pass
-    except Exception as exc:
+    except Exception:
         st.session_state["log_ricerca"] = log_buffer.getvalue()
         st.session_state["search_snapshot"] = make_search_snapshot(
             [], fonti_backend, st.session_state["_last_search_params"], log_buffer.getvalue()
         )
         st.session_state["search_cache_origin"] = "live"
         st.error(
-            f"❌ Si e verificato un errore durante la ricerca:\n\n```\n{exc}\n```\n\n"
-            "Verifica la connessione internet e riprova."
+            "La ricerca non è stata completata. Verifica la connessione e le fonti, poi riprova."
         )

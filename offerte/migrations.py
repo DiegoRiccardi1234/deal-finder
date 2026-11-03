@@ -111,8 +111,30 @@ def _migration_002_knowledge_base(conn: sqlite3.Connection) -> None:
     )
 
 
+def _migration_003_agents(conn: sqlite3.Connection) -> None:
+    """Durable agent work; existing user tables and rows are left unchanged."""
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS agent_operations (
+            id TEXT PRIMARY KEY,
+            kind TEXT NOT NULL,
+            status TEXT NOT NULL,
+            request_key TEXT UNIQUE,
+            fingerprint TEXT NOT NULL DEFAULT '',
+            payload_json TEXT NOT NULL,
+            result_json TEXT NOT NULL DEFAULT '{}',
+            error TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_agent_operations_created
+            ON agent_operations(created_at DESC);
+        """
+    )
+
+
 #: Migrazioni in ordine. L'indice+1 è la `schema_version` risultante.
-MIGRATIONS = [_migration_001_initial, _migration_002_knowledge_base]
+MIGRATIONS = [_migration_001_initial, _migration_002_knowledge_base, _migration_003_agents]
 
 
 def apply_migrations(conn: sqlite3.Connection) -> None:
