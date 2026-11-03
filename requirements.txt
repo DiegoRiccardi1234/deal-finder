@@ -13,7 +13,7 @@ pystray==0.19.5
 pillow==13.0.0
 
 # Provider AI (multi-provider via offerte/providers.py)
-openai==2.50.0
+openai==3.35.1
 anthropic==0.120.2
 # Gemini non ha una riga sua: passa dall'endpoint OpenAI-compatible di Google
 # attraverso il client `openai` qui sopra. Vedi offerte/providers.py.
